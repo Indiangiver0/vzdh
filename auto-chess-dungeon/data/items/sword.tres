@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="ItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/item_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "sword"
+display_name = "Меч палача"
+damage = 3
+icon = "res://assets/icons/sword.svg"

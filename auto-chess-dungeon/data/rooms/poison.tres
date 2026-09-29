@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "poison"
+display_name = "Ядовитая камера"
+short_name = "Яд"
+description = "Отравляет всех героев: 2 урона за тик, 6 тиков. Яд обходит броню и усиливает пауков. Наград героям нет."
+cost = 4
+kind = "poison"
+damage = 2
+color = Color(0.34, 0.75, 0.67, 1)
+icon = "res://assets/icons/poison.svg"

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "priest"
+display_name = "Жрица"
+hp = 65
+damage = 7
+armor = 1
+ability_description = "Лекарь · каждый третий тик лечит самого раненого союзника."
+color = Color(0.76, 0.64, 0.85, 1)
+icon = "res://assets/icons/priest.svg"

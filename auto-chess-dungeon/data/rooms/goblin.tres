@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "goblin"
+display_name = "Лагерь гоблинов"
+short_name = "Гоблины"
+description = "Дешёвый заслон. При поражении отдаёт героям 8 XP: может подарить им уровень перед следующим боем."
+cost = 3
+kind = "monster"
+hp = 24
+damage = 5
+armor = 0
+xp = 8
+color = Color(0.48, 0.72, 0.56, 1)
+icon = "res://assets/icons/goblin.svg"

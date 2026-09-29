@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "spider"
+display_name = "Паучье гнездо"
+short_name = "Пауки"
+description = "Наносит ещё +3 урона отравленной цели. Поставьте после яда. При поражении отдаёт героям 4 XP."
+cost = 5
+kind = "monster"
+hp = 32
+damage = 7
+armor = 0
+xp = 4
+color = Color(0.73, 0.59, 0.78, 1)
+icon = "res://assets/icons/spider.svg"

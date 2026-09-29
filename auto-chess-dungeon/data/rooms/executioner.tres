@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "executioner"
+display_name = "Зал палача"
+short_name = "Палач"
+description = "Мощный удар по переднему герою. При поражении отдаёт 4 XP и меч с +3 к урону."
+cost = 7
+kind = "monster"
+hp = 38
+damage = 12
+armor = 1
+xp = 4
+item = "sword"
+color = Color(0.91, 0.43, 0.36, 1)
+icon = "res://assets/icons/executioner.svg"
