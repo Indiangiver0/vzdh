@@ -47,6 +47,13 @@ func _ok(result: String, description: String) -> void:
 	_expect(result.is_empty(), "%s: %s" % [description, result])
 
 
+func _hero(game, archetype: String) -> Dictionary:
+	for hero in game.heroes:
+		if hero["id"] == archetype:
+			return hero
+	return {}
+
+
 func _finish_raid(game, batch_size: int = 1) -> int:
 	var steps: int = 0
 	while game.phase == "raid" and steps < 10000:
@@ -98,6 +105,8 @@ func _test_unlimited_floors_and_throne() -> void:
 	for floor_number in range(2, 7):
 		var before: int = game.gold
 		_ok(game.buy_floor(), "Buy floor %d" % floor_number)
+		_expect(game.phase == "floor_choice", "New floor requires a specialization choice")
+		_ok(game.choose_floor_trait("barracks"), "Choose barracks for new floor")
 		_expect(game.floor_count == floor_number and game.rooms.size() == floor_number * 5, "Every floor adds five slots, including beyond 15")
 		_expect(before - game.gold == 5 * floor_number * floor_number, "Floor price follows design curve")
 	_expect(game.rooms[0] == original_room, "Expansion preserves built rooms")
@@ -168,6 +177,7 @@ func _test_room_isolation_and_movement() -> void:
 	_ok(game.upgrade_room(0), "Upgrade one room instance")
 	_expect(game.room_stats(0)["rank"] == 2 and game.room_stats(1)["rank"] == 1, "Identical room instances have independent ranks")
 	_ok(game.buy_floor(), "Buy destination floor")
+	_ok(game.choose_floor_trait("barracks"), "Choose destination floor specialization")
 	_ok(game.move_room(0, 9), "Move room across floors")
 	_expect(game.rooms[0].is_empty() and game.room_stats(9)["rank"] == 2, "Cross-floor move preserves upgraded room")
 	_ok(game.move_room(9, 1), "Swap two occupied rooms")
@@ -254,15 +264,15 @@ func _test_party_targeting_and_healing() -> void:
 	game.defender["damage"] = 5
 	var rogue_hp: int = game.heroes[1]["hp"]
 	game.step()
-	_expect(game.heroes[0]["hp"] == 0 and game.heroes[1]["hp"] == rogue_hp, "Knight takes first hit; excess damage does not spill to rogue")
+	_expect(_hero(game, "knight")["hp"] == 0 and _hero(game, "rogue")["hp"] == rogue_hp, "Knight takes first hit; excess damage does not spill to rogue")
 	game.step()
-	_expect(game.heroes[1]["hp"] == rogue_hp - 5 and game.total_kills == 1, "Next tick retargets rogue after knight death, without duplicate rewards")
+	_expect(_hero(game, "rogue")["hp"] == rogue_hp - 5 and game.total_kills == 1, "Next tick retargets rogue after knight death, without duplicate rewards")
 
 	game = _battle_party()
 	game.heroes[0]["hp"] = 40
 	game.heroes[1]["hp"] = 10
 	game.combat_tick = 2
-	var incoming: int = int(game.heroes[0]["damage"]) + int(game.heroes[1]["damage"])
+	var incoming: int = ceili(float(game.heroes[0]["damage"]) * 1.25) + int(game.heroes[1]["damage"])
 	game.step()
 	_expect(game.heroes[1]["hp"] == 18, "Third combat tick heals the most wounded living ally by eight HP")
 	_expect(game.defender["hp"] == 10000 - incoming, "Healing priest does not also attack on the same tick")
@@ -279,10 +289,10 @@ func _test_party_targeting_and_healing() -> void:
 	game = _battle_party()
 	game.heroes[0]["hp"] = 0
 	game._process_deaths()
-	game.heroes[1]["hp"] = 10
+	_hero(game, "rogue")["hp"] = 10
 	game.combat_tick = 2
 	game.step()
-	_expect(game.heroes[0]["hp"] == 0 and game.heroes[1]["hp"] == 17, "Priest heals living rogue and never resurrects dead knight")
+	_expect(_hero(game, "knight")["hp"] == 0 and _hero(game, "rogue")["hp"] == 17, "Priest heals living rogue and never resurrects dead knight")
 
 
 func _test_poison_order_and_traps() -> void:
@@ -293,10 +303,10 @@ func _test_poison_order_and_traps() -> void:
 	game.heroes[2]["poison_ticks"] = 1
 	game.heroes[2]["poison_damage"] = 2
 	game.combat_tick = 2
-	var incoming: int = int(game.heroes[0]["damage"]) + int(game.heroes[1]["damage"])
+	var incoming: int = ceili(float(game.heroes[0]["damage"]) * 1.25) + int(game.heroes[1]["damage"])
 	game.step()
-	_expect(game.heroes[2]["hp"] == 0 and game.heroes[2]["death_processed"], "Poison kills priest before third-tick action")
-	_expect(game.heroes[1]["hp"] == 10, "Priest killed by poison cannot heal")
+	_expect(_hero(game, "priest")["hp"] == 0 and _hero(game, "priest")["death_processed"], "Poison kills priest before third-tick action")
+	_expect(_hero(game, "rogue")["hp"] == 10, "Priest killed by poison cannot heal")
 	_expect(game.defender["hp"] == 10000 - incoming, "Priest killed by poison cannot attack")
 
 	game = _battle_party("spider")
@@ -305,9 +315,9 @@ func _test_poison_order_and_traps() -> void:
 	game.heroes[0]["poison_damage"] = 2
 	game.defender["damage"] = 7
 	game.step()
-	_expect(game.heroes[0]["hp"] == front_hp - 12, "Spider retains poison synergy on final poison tick")
+	_expect(game.heroes[0]["hp"] == front_hp - 10, "Spider retains poison synergy on final poison tick, with knight mitigation")
 	game.step()
-	_expect(game.heroes[0]["hp"] == front_hp - 19, "Spider loses poison bonus after poison expires")
+	_expect(game.heroes[0]["hp"] == front_hp - 16, "Spider loses poison bonus after poison expires")
 
 	game = _game()
 	game.wave = 8
@@ -315,18 +325,21 @@ func _test_poison_order_and_traps() -> void:
 	game.shop["poison"] = 2
 	_ok(game.buy_room(0, "poison"), "Build poison chamber")
 	_ok(game.buy_room(1, "spikes"), "Build follow-up spike trap")
-	var starting_hp: Array[int] = []
+	var starting_hp: Dictionary = {}
 	for hero in game.heroes:
-		starting_hp.append(hero["hp"])
+		starting_hp[hero["id"]] = hero["hp"]
 	_ok(game.start_raid(), "Start trap sequence")
 	game.step()
-	for index in range(3):
-		_expect(game.heroes[index]["hp"] == starting_hp[index] - 2 and game.heroes[index]["poison_ticks"] == 5, "Poison chamber applies one status-only tick per hero")
+	for hero in game.heroes:
+		_expect(hero["hp"] == starting_hp[hero["id"]] - 2 and hero["poison_ticks"] == 2, "Ranger shortens poison for the party before the first status tick")
 	game.step()
-	_expect(game.heroes[0]["hp"] == starting_hp[0] - 20, "Spikes bypass knight armor then advance poison once")
-	_expect(game.heroes[1]["hp"] == starting_hp[1] - 4 and game.heroes[2]["hp"] == starting_hp[2] - 4, "Trap status tick damages rear party members without priest healing")
+	for hero in game.heroes:
+		var expected_loss: int = 11 if hero["id"] == "rogue" else 4
+		_expect(hero["hp"] == starting_hp[hero["id"]] - expected_loss, "Ranger takes reduced trap hit while poison continues across the party")
 	game.step()
-	_expect(game.current_slot == game.rooms.size() and game.combat_tick == 0 and game.heroes[2]["poison_ticks"] == 4, "Empty slots and throne entry do not add combat or poison ticks")
+	_expect(game.current_slot == game.rooms.size() and game.combat_tick == 0, "Empty slots and throne entry do not add combat ticks")
+	for hero in game.heroes:
+		_expect(hero["poison_ticks"] == 1, "Transitions do not add poison ticks")
 
 
 func _test_hero_xp_and_equipment() -> void:
@@ -348,10 +361,10 @@ func _test_hero_xp_and_equipment() -> void:
 	_expect(game.heroes[0]["items"].has("shield") and game.heroes[0]["armor"] == 3, "Shield prioritizes knight and adds one armor")
 	game.heroes[0]["hp"] = 0
 	game._process_deaths()
-	_expect(game.heroes[0]["items"].is_empty() and not game.heroes[1]["items"].has("shield"), "Dead hero equipment disappears without transfer")
+	_expect(_hero(game, "knight")["items"].is_empty() and not _hero(game, "rogue")["items"].has("shield"), "Dead hero equipment disappears without transfer")
 	game._award_room_loot({"xp": 8, "item": "shield"})
-	_expect(game.heroes[0]["xp"] == 3 and game.heroes[1]["xp"] == 7 and game.heroes[2]["xp"] == 6, "Loot XP excludes dead hero and conserves all XP among survivors")
-	_expect(game.heroes[1]["items"].has("shield"), "Shield priority skips dead knight")
+	_expect(_hero(game, "knight")["xp"] == 3 and _hero(game, "rogue")["xp"] == 7 and _hero(game, "priest")["xp"] == 6, "Loot XP excludes dead hero and conserves all XP among survivors")
+	_expect(_hero(game, "rogue")["items"].has("shield"), "Shield priority skips dead knight")
 
 	game = _game()
 	var previous_max: int = game.heroes[0]["max_hp"]
@@ -380,7 +393,7 @@ func _test_lord_levels_and_rage() -> void:
 	_expect(not game.start_raid().is_empty(), "Cannot start next raid before choosing upgrades")
 	for _choice in range(4):
 		_ok(game.choose_upgrade("hp"), "Choose repeatable creature health boost")
-	_expect(game.phase == "prepare" and game.upgrades["hp"] == 4 and game.room_stats(0)["hp"] == 34, "Repeated health choices add to forty percent and round once")
+	_expect(game.phase == "prepare" and game.upgrades["hp"] == 4 and game.room_stats(0)["hp"] == 42, "Repeated health choices add to forty percent and round once")
 	_expect(game.lord["max_hp"] == 160, "Creature passive health bonuses do not multiply lord health")
 
 	game = _battle_party()

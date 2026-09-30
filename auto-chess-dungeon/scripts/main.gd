@@ -2,6 +2,7 @@ extends Control
 
 const Game = preload("res://scripts/dungeon_game.gd")
 const Content = preload("res://scripts/content_catalog.gd")
+const DungeonView = preload("res://scripts/dungeon_view.gd")
 const INK = Color("#0e1118")
 const PANEL = Color("#181e28")
 const TILE = Color("#212938")
@@ -21,7 +22,7 @@ var paused: bool = false
 var sound_on: bool = true
 var accumulator: float = 0.0
 var message: String = "Выберите комнату в магазине, затем свободное место на этаже."
-var profile: Dictionary = {"wave": 0, "kills": 0, "floors": 1, "level": 1}
+var profile: Dictionary = {"wave": 0, "kills": 0, "floors": 1, "level": 1, "unlocked_paths": []}
 var page: VBoxContainer
 var floor_scroll: ScrollContainer
 var log_box: RichTextLabel
@@ -34,9 +35,16 @@ var sounds: Dictionary = {}
 var screenshot_path: String = ""
 var demo_mode: bool = false
 var preview_raid: bool = false
+var menu_open: bool = true
+var has_run: bool = false
+var volume: float = 0.65
+var dungeon_view: Control
+var menu_preview: Control
+var resume_paused: bool = false
 
 func _ready() -> void:
 	_load_local()
+	game.unlocked_paths.assign(profile.get("unlocked_paths", []))
 	game.restart()
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--capture="):
@@ -46,6 +54,8 @@ func _ready() -> void:
 		if argument == "--preview-raid":
 			preview_raid = true
 	if demo_mode:
+		menu_open = false
+		has_run = true
 		_make_demo()
 		if preview_raid:
 			game.start_raid()
@@ -99,13 +109,18 @@ func _build_shell() -> void:
 func _refresh() -> void:
 	if is_instance_valid(floor_scroll):
 		scroll_position = floor_scroll.scroll_vertical
+	if is_instance_valid(dungeon_view) and dungeon_view.get_parent():
+		dungeon_view.get_parent().remove_child(dungeon_view)
 	for child in page.get_children():
 		page.remove_child(child)
 		child.queue_free()
+	if menu_open:
+		_build_menu()
+		return
 	_header()
 	var body = HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 14)
+	body.add_theme_constant_override("separation", 12)
 	page.add_child(body)
 	_party_panel(body)
 	_dungeon_panel(body)
@@ -117,7 +132,7 @@ func _refresh() -> void:
 		var target_floor: int = mini(game.current_slot / 5, game.floor_count)
 		if target_floor != active_floor and game.current_slot >= 0:
 			active_floor = target_floor
-			floor_scroll.set_deferred("scroll_vertical", target_floor * 152)
+			floor_scroll.set_deferred("scroll_vertical", target_floor * 160)
 	_show_phase_modal()
 
 func _header() -> void:
@@ -137,16 +152,20 @@ func _header() -> void:
 	_stat(head, "РЕКОРД", str(int(profile.get("wave", 0))), VIOLET)
 	var small = VBoxContainer.new()
 	head.add_child(small)
-	small.add_child(_button("Правила", _show_help))
+	small.add_child(_button("Меню", _open_menu))
 	small.add_child(_button("Звук: " + ("вкл" if sound_on else "выкл"), _toggle_sound))
 
 func _party_panel(parent: Control) -> void:
-	var box = _panel(parent, 246)
+	var box = _panel(parent, 222)
 	var side = _vbox(box)
 	side.add_child(_eyebrow("РАЗВЕДКА"))
 	side.add_child(_label("Приключенцы", 23))
 	var state_text: String = "Следующая группа" if game.phase == "prepare" else "Группа в подземелье"
 	side.add_child(_label(state_text + " · %d чел." % game.heroes.size(), 12, MUTED))
+	var expedition: String = game.wave_title if game.wave % 5 == 0 else "Цель: особый отряд на волне %d" % (game.wave + 5 - game.wave % 5)
+	var expedition_label = _label(expedition, 12, GOLD, true)
+	expedition_label.tooltip_text = game.wave_description
+	side.add_child(expedition_label)
 	var party_scroll = ScrollContainer.new()
 	party_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	party_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -175,6 +194,8 @@ func _party_panel(parent: Control) -> void:
 		inner.add_child(_bar(float(hero.hp), float(hero.max_hp), RED if hero.hp > 0 else MUTED))
 		inner.add_child(_label("%d/%d HP    Урон %d  ·  Броня %d" % [maxi(0, hero.hp), hero.max_hp, hero.damage, hero.armor], 11, MUTED))
 		var status: String = str(definition.get("trait", ""))
+		if str(hero.id) == "rogue":
+			status = "Инструменты: %d · ловушки" % int(hero.get("disarm_charges", 2))
 		if hero.hp <= 0:
 			status = "Повержен"
 		elif int(hero.get("poison_ticks", 0)) > 0:
@@ -186,14 +207,14 @@ func _party_panel(parent: Control) -> void:
 				names_list.append(str(Content.item(str(id)).get("name", id)))
 			status += " · " + ", ".join(names_list)
 		card.tooltip_text = status
-		if not compact or int(hero.get("poison_ticks", 0)) > 0 or not items.is_empty():
+		if not compact or str(hero.id) == "rogue" or int(hero.get("poison_ticks", 0)) > 0 or not items.is_empty():
 			var status_label = _label(status, 10 if compact else 11, GREEN if int(hero.get("poison_ticks", 0)) > 0 else MUTED, not compact)
 			if compact:
 				status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			inner.add_child(status_label)
 	var tip: String = "Убитые монстры дают героям опыт. Иногда пустая комната лучше лёгкой добычи."
 	if game.heroes.size() > 1:
-		tip = "Рыцарь принимает удары. Яд достаёт всю группу, включая лекаря за его спиной."
+		tip = "В бой ведёт рыцарь, к ловушкам выходит следопыт. Мимик нападает на лекаря."
 	if game.heroes.size() == 1:
 		side.add_child(_label(tip, 12, MUTED, true))
 	side.add_child(HSeparator.new())
@@ -210,145 +231,60 @@ func _lord_status(parent: Control) -> void:
 func _dungeon_panel(parent: Control) -> void:
 	var box = _panel(parent)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var center = _vbox(box, 10)
+	var center = _vbox(box, 8)
 	var title_row = HBoxContainer.new()
 	center.add_child(title_row)
-	var titles = VBoxContainer.new()
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 2)
-	title_row.add_child(titles)
-	titles.add_child(_eyebrow("ВАШЕ ВЛАДЕНИЕ"))
-	titles.add_child(_label("Глубже — опаснее", 23))
-	title_row.add_child(_label("%d этаж. / %d мест" % [game.floor_count, game.rooms.size()], 12, GOLD))
+	var title = _label("Глубины вашего подземелья", 21, PAPER)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title)
+	title_row.add_child(_label("%d этаж. / %d мест" % [game.floor_count, game.rooms.size()], 11, GOLD))
 	var guidance: String = message
 	if not selected_room.is_empty() and game.phase == "prepare":
-		guidance = "Разместить: %s. Выберите пустой слот." % Content.room(selected_room).name
+		guidance = "Разместить: %s. Выберите пустую комнату." % Content.room(selected_room).name
 	elif selected_slot >= 0 and game.phase == "prepare":
-		guidance = "Выберите другой слот для переноса или обмена комнат."
+		guidance = "Выберите другой слот для переноса или обмена."
 	elif game.phase == "raid":
-		guidance = "Герои идут сверху вниз. Тронный зал — последняя защита."
-	center.add_child(_label(guidance, 12, GOLD if selected_slot >= 0 or not selected_room.is_empty() else MUTED, true))
+		guidance = str(game.last_action.get("text", "Группа спускается в подземелье."))
+		if guidance.is_empty():
+			guidance = "Группа спускается в подземелье."
+	var caption = _label(guidance, 12, GOLD if game.phase == "raid" else MUTED, true)
+	caption.custom_minimum_size.y = 34
+	center.add_child(caption)
 	floor_scroll = ScrollContainer.new()
 	floor_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	floor_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	center.add_child(floor_scroll)
-	var floors = VBoxContainer.new()
-	floors.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	floors.add_theme_constant_override("separation", 12)
-	floor_scroll.add_child(floors)
-	for f in range(game.floor_count):
-		var floor_box = VBoxContainer.new()
-		floor_box.add_theme_constant_override("separation", 7)
-		floors.add_child(floor_box)
-		var occupied: int = 0
-		for i in range(f * 5, f * 5 + 5):
-			if not game.rooms[i].is_empty():
-				occupied += 1
-		var floor_label = _label("ЭТАЖ %02d     %d / 5 КОМНАТ" % [f + 1, occupied], 11, MUTED)
-		floor_box.add_child(floor_label)
-		var slots = HBoxContainer.new()
-		slots.add_theme_constant_override("separation", 6)
-		floor_box.add_child(slots)
-		for s in range(5):
-			_room_slot(slots, f * 5 + s)
-		var down = _label("↓", 14, LINE)
-		down.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		floor_box.add_child(down)
-	var floor_button = _button("+  Новый этаж · 5 мест     %d зол." % game.floor_cost(), _buy_floor, game.phase != "prepare" or game.gold < game.floor_cost())
-	floor_button.custom_minimum_size.y = 40
-	floors.add_child(floor_button)
-	var throne = PanelContainer.new()
-	var in_throne: bool = game.phase == "raid" and game.current_slot == game.rooms.size()
-	throne.add_theme_stylebox_override("panel", _style(Color("#292a2c"), GOLD if in_throne else Color("#5a503e"), 9, 12))
-	floors.add_child(throne)
-	var throne_row = HBoxContainer.new()
-	throne.add_child(throne_row)
-	throne_row.add_child(_icon("res://assets/icons/lord.svg", 40))
-	var throne_text = VBoxContainer.new()
-	throne_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	throne_text.add_theme_constant_override("separation", 2)
-	throne_row.add_child(throne_text)
-	throne_text.add_child(_label("ТРОННЫЙ ЗАЛ", 15, GOLD))
-	throne_text.add_child(_label("Ваша комната. Всегда последняя.", 11, MUTED))
-	throne_row.add_child(_label("%d HP" % maxi(0, game.lord.hp), 17, GOLD))
-
-func _room_slot(parent: Control, index: int) -> void:
-	var room: Dictionary = game.rooms[index]
-	var filled: bool = not room.is_empty()
-	var active: bool = game.phase == "raid" and game.current_slot == index
-	var selected: bool = selected_slot == index
-	var btn = Button.new()
-	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn.custom_minimum_size = Vector2(0, 108)
-	btn.clip_contents = true
-	btn.pressed.connect(_slot_clicked.bind(index))
-	var border: Color = GOLD if selected or active else LINE
-	var bg: Color = Color("#3a3327") if active else TILE
-	if not filled:
-		bg = Color("#131a23")
-		if not selected_room.is_empty():
-			border = Color("#746346")
-	btn.add_theme_stylebox_override("normal", _style(bg, border, 7, 6))
-	parent.add_child(btn)
-	var margin = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_top", 5)
-	margin.add_theme_constant_override("margin_bottom", 5)
-	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(margin)
-	var content = VBoxContainer.new()
-	content.add_theme_constant_override("separation", 2)
-	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.add_child(content)
-	if filled:
-		var stats: Dictionary = game.room_stats(index)
-		var icon = _icon(str(stats.get("icon", "")), 42)
-		icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		if game.phase == "raid" and str(room.get("status", "")) == "cleared" and not active:
-			icon.modulate.a = 0.35
-		content.add_child(icon)
-		var title = _label(str(stats.get("short_name", stats.get("name", ""))), 11, PAPER)
-		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		content.add_child(title)
-		var info = _label("РАНГ %d" % int(room.get("rank", 1)), 9, GOLD)
-		info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		content.add_child(info)
-		if active and not game.defender.is_empty() and int(stats.get("hp", 0)) > 0:
-			content.add_child(_bar(float(game.defender.get("hp", 0)), float(game.defender.get("max_hp", 1)), RED, 4))
-		else:
-			var detail = _label("%d XP врагу" % int(stats.get("xp", 0)) if str(stats.get("kind", "")) == "monster" else "БЕЗ НАГРАДЫ", 9, MUTED)
-			detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			content.add_child(detail)
-		btn.tooltip_text = "%s\n%s" % [stats.get("name", ""), stats.get("description", "")]
-	else:
-		var plus = _label("+", 33, Color("#556277"))
-		plus.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		content.add_child(plus)
-		var title = _label("МЕСТО %d" % (index % 5 + 1), 10, MUTED)
-		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		content.add_child(title)
-		var note = _label("построить", 10, Color("#65748b"))
-		note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		content.add_child(note)
-	_ignore_mouse(content)
+	if not is_instance_valid(dungeon_view):
+		dungeon_view = DungeonView.new()
+		dungeon_view.slot_clicked.connect(_slot_clicked)
+	dungeon_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	floor_scroll.add_child(dungeon_view)
+	dungeon_view.configure(game, selected_slot, selected_room)
+	var floor_button = _button("+ УГЛУБИТЬ ПОДЗЕМЕЛЬЕ · %d зол." % game.floor_cost(), _buy_floor, game.phase != "prepare" or game.gold < game.floor_cost())
+	floor_button.custom_minimum_size.y = 38
+	floor_button.tooltip_text = "Пять новых комнат и выбор свойства этажа: лаборатория, казармы или мастерская."
+	center.add_child(floor_button)
 
 func _inspector_panel(parent: Control) -> void:
-	var box = _panel(parent, 244)
-	var right = _vbox(box)
+	var box = _panel(parent, 242)
+	var scroll = ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var right = _vbox(scroll)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_child(_eyebrow("КОМАНДНЫЙ ПУНКТ"))
 	var is_raid: bool = game.phase == "raid"
-	right.add_child(_label("Ход рейда" if is_raid else "Управление", 22))
+	right.add_child(_label("Ход рейда" if is_raid else "Управление", 21))
 	if is_raid:
 		var defender_name: String = str(game.defender.get("name", "Герои входят…"))
 		right.add_child(_label(defender_name, 17, GOLD, true))
 		if not game.defender.is_empty() and int(game.defender.get("max_hp", 0)) > 0:
 			right.add_child(_bar(float(game.defender.get("hp", 0)), float(game.defender.get("max_hp", 1)), RED))
-			right.add_child(_label("Защитник: %d HP · Урон %d" % [maxi(0, int(game.defender.get("hp", 0))), game.defender.get("damage", 0)], 12, MUTED, true))
+			right.add_child(_label("HP %d · Урон %d" % [maxi(0, int(game.defender.get("hp", 0))), game.defender.get("damage", 0)], 12, MUTED, true))
 			if game.rage > 0:
-				right.add_child(_label("Ярость защитника: +%d урона" % game.rage, 12, RED))
+				right.add_child(_label("Ярость: +%d урона" % game.rage, 12, RED))
 		elif not game.defender.is_empty():
-			right.add_child(_label("Ловушка · урон %d\nЭффект применён при входе." % int(game.defender.get("damage", 0)), 12, MUTED, true))
+			right.add_child(_label("Ловушка · эффект при входе", 12, MUTED, true))
 		var controls = HBoxContainer.new()
 		right.add_child(controls)
 		controls.add_child(_button("▶" if paused else "Ⅱ", _toggle_pause))
@@ -357,28 +293,36 @@ func _inspector_panel(parent: Control) -> void:
 			if speed == value:
 				speed_btn.add_theme_color_override("font_color", GOLD)
 			controls.add_child(speed_btn)
+		right.add_child(_label(game.wave_description, 12, MUTED, true))
 	elif selected_slot >= 0 and selected_slot < game.rooms.size() and not game.rooms[selected_slot].is_empty():
 		var stats: Dictionary = game.room_stats(selected_slot)
 		right.add_child(_label(str(stats.name), 18, GOLD, true))
 		right.add_child(_label(str(stats.description), 12, MUTED, true))
-		right.add_child(_label("HP %d  ·  Урон %d  ·  Броня %d" % [stats.get("hp", 0), stats.get("damage", 0), stats.get("armor", 0)], 12, PAPER, true))
+		right.add_child(_label("HP %d  ·  Урон %d\nБроня %d  ·  XP врагу %d" % [stats.get("hp", 0), stats.get("damage", 0), stats.get("armor", 0), stats.get("xp", 0)], 12, PAPER, true))
+		right.add_child(_label(_matchup_text(stats), 12, GREEN, true))
+		var branch: String = str(stats.get("branch", ""))
+		if not branch.is_empty():
+			right.add_child(_label("Ветка: " + branch, 13, VIOLET, true))
 		right.add_child(_button("Улучшить · %d зол." % game.upgrade_cost(selected_slot), _upgrade, game.phase != "prepare" or game.gold < game.upgrade_cost(selected_slot)))
+		if not game.specialization_options(selected_slot).is_empty():
+			right.add_child(_button("Выбрать специализацию", _show_specializations.bind(selected_slot), game.phase != "prepare"))
+		elif int(stats.get("rank", 1)) < 2:
+			right.add_child(_label("С ранга 2 — выбор ветки", 11, VIOLET))
 		right.add_child(_button("Продать · +%d зол." % game.sell_value(selected_slot), _sell, game.phase != "prepare"))
 		right.add_child(_button("Отменить выбор", _cancel_selection))
 	else:
-		right.add_child(_label("Больше этажей.\nМеньше незваных гостей.", 17, PAPER, true))
-		right.add_child(_label("Выбирайте построенные комнаты, чтобы улучшать, продавать или перемещать их.", 12, MUTED, true))
+		right.add_child(_label("Прочитайте их план.\nПостройте свой.", 17, PAPER, true))
+		right.add_child(_label("Следопыт тратит инструменты на первые ловушки. Утомите его перед опасным этажом.", 12, MUTED, true))
+		right.add_child(_label("Мимик добирается до жрицы за рыцарем. Пауки охотятся на ослабленных.", 12, MUTED, true))
 		right.add_child(_button("Лечить Лорда · %d зол." % game.heal_cost(), _heal, game.phase != "prepare" or game.gold < game.heal_cost() or game.lord.hp >= game.lord.max_hp))
-		var bonus: String = "Усиления: HP +%d%% · урон +%d%% · ловушки +%d%%" % [int(game.upgrades.get("hp", 0)) * 10, int(game.upgrades.get("damage", 0)) * 10, int(game.upgrades.get("trap", 0)) * 10]
-		right.add_child(_label(bonus, 11, VIOLET, true))
+		right.add_child(_label("HP +%d%% · урон +%d%%\nЛовушки +%d%%" % [int(game.upgrades.get("hp", 0)) * 10, int(game.upgrades.get("damage", 0)) * 10, int(game.upgrades.get("trap", 0)) * 10], 11, VIOLET))
 	right.add_child(HSeparator.new())
 	right.add_child(_eyebrow("ЛЕТОПИСЬ"))
 	log_box = RichTextLabel.new()
-	log_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	log_box.custom_minimum_size.y = 55
+	log_box.custom_minimum_size.y = 130
 	log_box.bbcode_enabled = false
 	log_box.scroll_following = true
-	log_box.add_theme_font_size_override("normal_font_size", 12)
+	log_box.add_theme_font_size_override("normal_font_size", 11)
 	log_box.add_theme_color_override("default_color", MUTED)
 	right.add_child(log_box)
 	for line in game.logs:
@@ -447,7 +391,7 @@ func _footer() -> void:
 		row.add_child(_button("Показать результат", _show_phase_modal))
 
 func _process(delta: float) -> void:
-	if game.phase != "raid" or paused:
+	if menu_open or game.phase != "raid" or paused or is_instance_valid(modal):
 		return
 	accumulator += delta * speed
 	if accumulator >= 0.5:
@@ -460,13 +404,18 @@ func _process(delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_SPACE and game.phase == "raid" and not is_instance_valid(modal):
+		if event.keycode == KEY_SPACE and not menu_open and game.phase == "raid" and not is_instance_valid(modal):
 			_toggle_pause()
 		if event.keycode == KEY_ESCAPE:
-			if is_instance_valid(modal) and game.phase in ["prepare", "raid"]:
-				_close_modal()
-			else:
+			if is_instance_valid(modal):
+				if game.phase in ["prepare", "raid"] or menu_open:
+					_close_modal()
+			elif menu_open:
+				_resume_run()
+			elif selected_slot >= 0 or not selected_room.is_empty():
 				_cancel_selection()
+			else:
+				_open_menu()
 
 func _slot_clicked(index: int) -> void:
 	if game.phase != "prepare":
@@ -503,7 +452,10 @@ func _cancel_selection() -> void:
 	_refresh()
 
 func _upgrade() -> void:
-	_action(game.upgrade_room(selected_slot))
+	var error: String = game.upgrade_room(selected_slot)
+	_action(error)
+	if error.is_empty() and not game.specialization_options(selected_slot).is_empty():
+		_show_specializations(selected_slot)
 
 func _sell() -> void:
 	var error: String = game.sell_room(selected_slot)
@@ -513,8 +465,9 @@ func _sell() -> void:
 
 func _buy_floor() -> void:
 	_action(game.buy_floor())
-	scroll_position = (game.floor_count - 1) * 152
-	floor_scroll.set_deferred("scroll_vertical", scroll_position)
+	scroll_position = (game.floor_count - 1) * 160
+	if is_instance_valid(floor_scroll):
+		floor_scroll.set_deferred("scroll_vertical", scroll_position)
 
 func _heal() -> void:
 	_action(game.heal_lord())
@@ -548,11 +501,18 @@ func _toggle_sound() -> void:
 	_refresh()
 
 func _show_phase_modal() -> void:
-	if game.phase not in ["result", "level_up", "defeat"]:
+	if menu_open or game.phase not in ["result", "level_up", "floor_choice", "defeat"]:
 		return
 	_close_modal()
 	var content = _new_modal()
-	if game.phase == "level_up":
+	if game.phase == "floor_choice":
+		content.add_child(_eyebrow("НОВЫЙ ЭТАЖ · НОВЫЕ ВОЗМОЖНОСТИ"))
+		content.add_child(_label("Выберите свойство этажа", 26, GOLD))
+		content.add_child(_label("Свойство влияет на пять комнат этого этажа и сохраняется до конца забега.", 14, MUTED, true))
+		for option in game.floor_trait_options():
+			content.add_child(_button(str(option.name), _choose_floor.bind(str(option.id))))
+			content.add_child(_label(str(option.description), 13, MUTED, true))
+	elif game.phase == "level_up":
 		content.add_child(_eyebrow("НОВАЯ СИЛА"))
 		content.add_child(_label("Ваше подземелье растёт", 28, GOLD))
 		content.add_child(_label("Выберите усиление. Осталось выборов: %d" % game.pending_upgrades, 15, MUTED, true))
@@ -569,6 +529,12 @@ func _show_phase_modal() -> void:
 		content.add_child(_label("Здоровье Лорда: %d / %d" % [game.lord.hp, game.lord.max_hp], 15, GOLD))
 		content.add_child(_label("Урон Лорду: %d HP\nГерои получили: %d уровней и %d предметов" % [game.report.get("lord_damage", 0), game.report.get("hero_levels", 0), game.report.get("items", 0)], 14, MUTED, true))
 		content.add_child(_label("Комнаты восстановлены. Золото и этажи остаются с вами.", 14, MUTED, true))
+		var unlock: String = str(game.report.get("unlock", ""))
+		if not unlock.is_empty():
+			for entry in game.unlock_catalog():
+				if str(entry.id) == unlock:
+					content.add_child(_label("НОВЫЙ ЧЕРТЁЖ: " + str(entry.name), 19, GREEN, true))
+					content.add_child(_label(str(entry.description), 14, MUTED, true))
 		content.add_child(_button("ПРОДОЛЖИТЬ →", _next_wave))
 	else:
 		content.add_child(_eyebrow("ТРОН ПАЛ"))
@@ -576,19 +542,20 @@ func _show_phase_modal() -> void:
 		content.add_child(_label("Пережито волн: %d\nУбито героев: %d\nЭтажей: %d  ·  Уровень Лорда: %d" % [game.cleared_waves, game.total_kills, game.floor_count, game.lord.level], 18, PAPER))
 		content.add_child(_label("Рекорд: %d волн. Следующая крепость будет сильнее." % int(profile.get("wave", 0)), 14, MUTED, true))
 		content.add_child(_button("НОВОЕ ПОДЗЕМЕЛЬЕ", _restart))
+		content.add_child(_button("Главное меню", _open_menu))
 
 func _show_help() -> void:
 	if game.phase == "raid":
 		paused = true
 	_close_modal()
 	var content = _new_modal()
-	content.add_child(_eyebrow("ТРИ ПРАВИЛА ЛОРДА"))
-	content.add_child(_label("Добро пожаловать\nна тёмную сторону.", 27, GOLD))
-	content.add_child(_label("1. Купите комнаты и расставьте их по пути героев. Выбор комнаты → выбор пустого места.", 16, PAPER, true))
-	content.add_child(_label("2. Убитые монстры усиливают врага. Смотрите на XP и предметы в наградах. Порядок решает.", 16, PAPER, true))
-	content.add_child(_label("3. Копите золото на этажи и улучшения. Лорд всегда сражается последним, его здоровье сохраняется.", 16, PAPER, true))
-	content.add_child(_label("Первые 3 волны — одиночки, с 4-й — пары, с 8-й — тройки. Пробел ставит рейд на паузу.", 13, MUTED, true))
-	content.add_child(_button("К ПОДЗЕМЕЛЬЮ", _close_modal))
+	content.add_child(_eyebrow("ПОЗНАЙТЕ СВОИХ ВРАГОВ"))
+	content.add_child(_label("Порядок комнат —\nваше главное оружие.", 27, GOLD))
+	content.add_child(_label("Рыцарь ведёт бои с монстрами и выдерживает их удары. Следопыт выходит к ловушкам, но инструменты заканчиваются. Жрица сохраняет группу в живых.", 15, PAPER, true))
+	content.add_child(_label("Мимик нападает на поддержку. Пауки добивают слабых. Убитые защитники дают героям опыт и предметы — не кормите их перед тронным залом.", 15, PAPER, true))
+	content.add_child(_label("Покупайте этажи и выбирайте их свойства. Со второго ранга комнаты получают специализации. Особые отряды на волнах 5 и 10 открывают чертежи для будущих забегов.", 15, MUTED, true))
+	content.add_child(_label("Магазин → свободная комната. Построенная комната → улучшение или другой слот для переноса. Пробел — пауза, Esc — меню.", 13, MUTED, true))
+	content.add_child(_button("ПОНЯТНО", _close_modal))
 
 func _new_modal() -> VBoxContainer:
 	modal_shade = ColorRect.new()
@@ -622,14 +589,7 @@ func _choose_upgrade(id: String) -> void:
 	_action(game.choose_upgrade(id))
 
 func _restart() -> void:
-	_close_modal()
-	game.restart()
-	selected_slot = -1
-	selected_room = ""
-	scroll_position = 0
-	active_floor = -1
-	message = "Новый забег. Постройте защиту перед первой волной."
-	_refresh()
+	_begin_run()
 
 func _update_record() -> void:
 	var previous: int = int(profile.get("wave", 0))
@@ -639,6 +599,7 @@ func _update_record() -> void:
 		profile.kills = game.total_kills
 	profile.floors = maxi(int(profile.get("floors", 1)), game.floor_count)
 	profile.level = maxi(int(profile.get("level", 1)), int(game.lord.level))
+	profile["unlocked_paths"] = game.unlocked_paths.duplicate()
 	_write_json("user://profile.json", profile)
 
 func _load_local() -> void:
@@ -646,14 +607,20 @@ func _load_local() -> void:
 	for key in profile:
 		if typeof(loaded.get(key)) in [TYPE_INT, TYPE_FLOAT]:
 			profile[key] = maxi(0, int(loaded[key]))
+	profile["unlocked_paths"] = []
+	if loaded.get("unlocked_paths", []) is Array:
+		for unlock in loaded.get("unlocked_paths", []):
+			if unlock in ["ambush", "plague"] and not profile.unlocked_paths.has(unlock):
+				profile.unlocked_paths.append(unlock)
 	var settings: Dictionary = _read_json("user://settings.json")
 	sound_on = bool(settings.get("sound", true))
+	volume = clampf(float(settings.get("volume", 0.65)), 0.0, 1.0)
 	speed = int(settings.get("speed", 1))
 	if speed not in [1, 2, 4]:
 		speed = 1
 
 func _save_settings() -> void:
-	_write_json("user://settings.json", {"schema_version": 1, "sound": sound_on, "speed": speed})
+	_write_json("user://settings.json", {"schema_version": 1, "sound": sound_on, "speed": speed, "volume": volume})
 
 func _read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
@@ -696,6 +663,7 @@ func _make_sound(kind: String) -> AudioStreamWAV:
 
 func _sound(kind: String) -> void:
 	if sound_on and is_instance_valid(audio_player):
+		audio_player.volume_db = linear_to_db(maxf(volume, 0.001))
 		audio_player.stream = sounds[kind]
 		audio_player.play()
 
@@ -781,18 +749,14 @@ func _ignore_mouse(node: Node) -> void:
 		_ignore_mouse(child)
 
 func _make_demo() -> void:
-	game.wave = 8
-	game._generate_party()
-	game.gold = 150
-	game.buy_floor()
-	game.buy_floor()
-	var layout: Array = ["poison", "spider", "spikes", "executioner", "goblin", "mimic", "spikes", "executioner", "poison", "spider", "goblin", "mimic"]
-	for index in range(layout.size()):
-		game.shop[layout[index]] = 5
-		game.buy_room(index, layout[index])
-	game._generate_shop()
+	_fill_showcase(game)
+	message = "Лаборатория продлевает яд. Мастерская усиливает ловушки."
+	game.gold = 100
+	game.upgrade_room(10)
+	game.specialize_room(10, "volley")
+	game.upgrade_room(5)
+	game.specialize_room(5, "lingering")
 	game.gold = 27
-	message = "Три этажа. Пятнадцать мест. Последнее слово — за Лордом."
 
 func _capture() -> void:
 	await get_tree().process_frame
@@ -801,3 +765,212 @@ func _capture() -> void:
 	var output = get_viewport().get_texture().get_image()
 	output.save_png(screenshot_path)
 	get_tree().quit()
+func _build_menu() -> void:
+	var topline = HBoxContainer.new()
+	page.add_child(topline)
+	var edition = _eyebrow("ЛОРД ПОДЗЕМЕЛЬЯ     /     БЕСКОНЕЧНАЯ ОСАДА")
+	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	topline.add_child(edition)
+	topline.add_child(_label("РЕКОРД  %d ВОЛН" % int(profile.get("wave", 0)), 12, GOLD))
+	var main_row = HBoxContainer.new()
+	main_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_row.add_theme_constant_override("separation", 32)
+	page.add_child(main_row)
+	var left = VBoxContainer.new()
+	left.custom_minimum_size.x = 390
+	left.add_theme_constant_override("separation", 12)
+	main_row.add_child(left)
+	var spacer = Control.new()
+	spacer.custom_minimum_size.y = 22
+	left.add_child(spacer)
+	var crown = _icon("res://assets/icons/lord.svg", 84)
+	crown.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	left.add_child(crown)
+	left.add_child(_label("ВАШЕ\nПОДЗЕМЕЛЬЕ.\nИХ ПОСЛЕДНИЙ\nРЕЙД.", 38, PAPER))
+	var intro = _label("Стройте глубже. Изучайте незваных гостей.\nВыбирайте, какой страх ждёт их внизу.", 15, MUTED, true)
+	intro.custom_minimum_size.y = 58
+	left.add_child(intro)
+	if has_run and game.phase != "defeat":
+		var resume = _button("ВЕРНУТЬСЯ · ВОЛНА %d  →" % game.wave, _resume_run)
+		resume.custom_minimum_size.y = 46
+		left.add_child(resume)
+	var start = _button("НОВОЕ ПОДЗЕМЕЛЬЕ  →", _request_new_run)
+	start.custom_minimum_size.y = 50
+	start.add_theme_stylebox_override("normal", _style(GOLD, GOLD, 5, 12))
+	start.add_theme_color_override("font_color", INK)
+	left.add_child(start)
+	var actions = HBoxContainer.new()
+	left.add_child(actions)
+	actions.add_child(_button("Коллекция", _show_collection))
+	actions.add_child(_button("Как играть", _show_help))
+	actions.add_child(_button("Настройки", _show_settings))
+	left.add_child(_button("Выйти из игры", _quit_game))
+	var preview_box = _panel(main_row)
+	preview_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var preview_col = _vbox(preview_box, 10)
+	preview_col.add_child(_eyebrow("КАЖДЫЙ ЭТАЖ — ВАША СТРАТЕГИЯ"))
+	preview_col.add_child(_label("Казармы. Лаборатории. Ловушки.", 20, GOLD, true))
+	var preview_scroll = ScrollContainer.new()
+	preview_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	preview_col.add_child(preview_scroll)
+	var showcase = Game.new()
+	_fill_showcase(showcase)
+	menu_preview = DungeonView.new()
+	menu_preview.cinematic = true
+	menu_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_scroll.add_child(menu_preview)
+	menu_preview.configure(showcase)
+	preview_col.add_child(_label("Рыцари сдерживают монстров. Следопыты расходуют инструменты на ловушках. Найдите слабое место их группы.", 13, MUTED, true))
+	var foot = HBoxContainer.new()
+	page.add_child(foot)
+	var progress = _label("ОТКРЫТО %d / 2 ЧЕРТЕЖЕЙ    ·    Особые отряды на каждой 5-й волне" % game.unlocked_paths.size(), 12, VIOLET)
+	progress.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	foot.add_child(progress)
+	foot.add_child(_label("Шесть комнат. Десятки сочетаний.", 12, MUTED))
+
+func _request_new_run() -> void:
+	if has_run and game.phase != "defeat":
+		_close_modal()
+		var body = _new_modal()
+		body.add_child(_label("Начать новое подземелье?", 26, GOLD))
+		body.add_child(_label("Текущий забег закончится. Рекорд и открытые чертежи сохранятся.", 16, MUTED, true))
+		body.add_child(_button("НАЧАТЬ НОВЫЙ ЗАБЕГ", _begin_run))
+		body.add_child(_button("Вернуться", _close_modal))
+	else:
+		_begin_run()
+
+func _begin_run() -> void:
+	_close_modal()
+	game.unlocked_paths.assign(profile.get("unlocked_paths", []))
+	game.restart()
+	menu_open = false
+	has_run = true
+	paused = false
+	resume_paused = false
+	accumulator = 0.0
+	selected_slot = -1
+	selected_room = ""
+	scroll_position = 0
+	active_floor = -1
+	message = "Выберите комнату в магазине. Герои уязвимы по-разному."
+	_sound("click")
+	_refresh()
+
+func _open_menu() -> void:
+	if menu_open:
+		return
+	resume_paused = paused
+	paused = true
+	menu_open = true
+	_close_modal()
+	_refresh()
+
+func _resume_run() -> void:
+	if not has_run or game.phase == "defeat":
+		return
+	_close_modal()
+	menu_open = false
+	paused = resume_paused
+	_refresh()
+
+func _show_collection() -> void:
+	_close_modal()
+	var body = _new_modal()
+	body.add_child(_eyebrow("ЧЕРТЕЖИ ПОДЗЕМЕЛЬЯ"))
+	body.add_child(_label("Новый способ строить", 28, GOLD))
+	body.add_child(_label("Победы над особыми отрядами открывают дополнительные ветки комнат для всех следующих забегов.", 15, MUTED, true))
+	for entry in game.unlock_catalog():
+		var unlocked: bool = game.unlocked_paths.has(str(entry.id))
+		body.add_child(_label(("ОТКРЫТО · " if unlocked else "ВОЛНА %d · " % int(entry.wave)) + str(entry.name), 18, GREEN if unlocked else GOLD, true))
+		body.add_child(_label(str(entry.description), 14, MUTED, true))
+	body.add_child(_button("Назад", _close_modal))
+
+func _show_settings() -> void:
+	_close_modal()
+	var body = _new_modal()
+	body.add_child(_label("Настройки", 28, GOLD))
+	body.add_child(_button("Звук: " + ("включён" if sound_on else "выключен"), _settings_toggle_sound))
+	body.add_child(_label("Громкость", 15, MUTED))
+	var slider = HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = volume
+	slider.value_changed.connect(_set_volume)
+	body.add_child(slider)
+	body.add_child(_label("Скорость просмотра рейда", 15, MUTED))
+	var buttons = HBoxContainer.new()
+	body.add_child(buttons)
+	for value in [1, 2, 4]:
+		buttons.add_child(_button("×%d%s" % [value, " ✓" if speed == value else ""], _settings_speed.bind(value)))
+	body.add_child(_button("Готово", _close_modal))
+
+func _settings_toggle_sound() -> void:
+	sound_on = not sound_on
+	_save_settings()
+	_sound("click")
+	_show_settings()
+
+func _settings_speed(value: int) -> void:
+	speed = value
+	_save_settings()
+	_show_settings()
+
+func _set_volume(value: float) -> void:
+	volume = value
+	_save_settings()
+
+func _exit_tree() -> void:
+	if is_instance_valid(dungeon_view) and dungeon_view.get_parent() == null:
+		dungeon_view.free()
+
+func _quit_game() -> void:
+	get_tree().quit()
+
+func _fill_showcase(target) -> void:
+	target.restart(2042)
+	target.gold = 500
+	target.buy_floor()
+	target.choose_floor_trait("laboratory")
+	target.buy_floor()
+	target.choose_floor_trait("workshop")
+	var layout: Array[String] = ["goblin", "executioner", "spider", "mimic", "goblin", "poison", "spider", "poison", "spider", "executioner", "spikes", "spikes", "mimic", "poison", "executioner"]
+	for index in range(layout.size()):
+		target.shop[layout[index]] = 10
+		target.buy_room(index, layout[index])
+	target.wave = 8
+	target._generate_party()
+	target._generate_shop()
+	target.gold = 27
+func _matchup_text(stats: Dictionary) -> String:
+	match str(stats.get("id", "")):
+		"mimic":
+			return "Цель: жрица и задний ряд. Обходит прикрытие рыцаря."
+		"spider":
+			return "Цель: ослабленный герой. Яд усиливает укус."
+		"spikes", "poison":
+			return "Следопыт ослабит ловушку, пока есть инструменты. Заставьте его потратить их раньше."
+		_:
+			return "Рыцарь силён против монстров. Ловушки и нападение на поддержку ослабят его группу."
+
+func _show_specializations(index: int) -> void:
+	_close_modal()
+	var content = _new_modal()
+	content.add_child(_eyebrow("КОМНАТА ПОЛУЧАЕТ ХАРАКТЕР"))
+	content.add_child(_label("Выберите специализацию", 26, GOLD))
+	content.add_child(_label("Одна ветка на комнату. Выбор сохраняется до её продажи.", 14, MUTED, true))
+	for option in game.specialization_options(index):
+		var button = _button(str(option.name), _specialize.bind(index, str(option.id)))
+		button.custom_minimum_size.y = 44
+		content.add_child(button)
+		content.add_child(_label(str(option.description), 13, MUTED, true))
+	content.add_child(_button("Выбрать позже", _close_modal))
+
+func _specialize(index: int, id: String) -> void:
+	_close_modal()
+	_action(game.specialize_room(index, id))
+
+func _choose_floor(id: String) -> void:
+	_close_modal()
+	_action(game.choose_floor_trait(id))

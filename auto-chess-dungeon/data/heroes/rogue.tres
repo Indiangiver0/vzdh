@@ -5,10 +5,10 @@
 [resource]
 script = ExtResource("1")
 id = "rogue"
-display_name = "Разбойник"
+display_name = "Следопыт"
 hp = 60
 damage = 10
 armor = 0
-ability_description = "Убийца · получает только половину урона от шипов."
+ability_description = "Ведёт группу через ловушки. Начинает с 2 зарядов, запас растёт каждые 6 волн: шипы −60% урона или яд на 3 тика. После расхода заряда ловушки действуют полностью."
 color = Color(0.37, 0.66, 0.64, 1)
 icon = "res://assets/icons/rogue.svg"
