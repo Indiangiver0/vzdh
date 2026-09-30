@@ -1698,7 +1698,7 @@ func _show_run_collection() -> void:
 	body.add_child(HSeparator.new())
 	body.add_child(_eyebrow("ЧЕРТЕЖИ ЭТОГО ЗАБЕГА"))
 	if game.selected_blueprints.is_empty():
-		body.add_child(_label("Новые комнаты открываются при выборе награды на рубежах волн. Чертежи этого забега не переносятся в следующий.", 13, MUTED, true))
+		body.add_child(_label("Новые комнаты открываются после волн 7, 14, 21 и 28. Уже изученные чертежи не повторяются; в новом забеге открытия начинаются заново.", 13, MUTED, true))
 	for id in game.selected_blueprints:
 		var room: Dictionary = Content.room(str(id))
 		body.add_child(_label(str(room.name), 16, GREEN, true))

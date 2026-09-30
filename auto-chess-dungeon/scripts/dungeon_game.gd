@@ -1530,7 +1530,7 @@ func _finish_wave() -> void:
 		_recalculate_lord()
 		pending_upgrades += 1
 		_log("Лорд достиг уровня %d! +%d HP, +%d урона и выбор таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
-	_pending_blueprint = wave in [3, 6, 9, 12]
+	_pending_blueprint = wave in [7, 14, 21, 28]
 	_pending_relic = wave % RELIC_WAVE_INTERVAL == 0 and not _available_relic_ids().is_empty()
 	if tutorial_run and wave == 1:
 		if int(lord.level) < 2:
