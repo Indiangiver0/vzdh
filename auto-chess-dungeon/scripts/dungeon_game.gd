@@ -7,6 +7,7 @@ const Lords = preload("res://scripts/lord_catalog.gd")
 const Expedition = preload("res://scripts/expedition_catalog.gd")
 const SLOTS_PER_FLOOR: int = 5
 const MAX_LOGS: int = 70
+const RELIC_WAVE_INTERVAL: int = 10
 
 var phase: String = "prepare"
 var wave: int = 1
@@ -633,11 +634,11 @@ func _advance_reward_choice() -> void:
 			return
 		_pending_blueprint = false
 	if _pending_relic:
+		var available: Array[String] = _available_relic_ids()
+		for index in range(relic_offers.size() - 1, -1, -1):
+			if not available.has(relic_offers[index]):
+				relic_offers.remove_at(index)
 		if relic_offers.is_empty():
-			var available: Array[String] = []
-			for definition in Expedition.relics():
-				if not selected_relics.has(str(definition.id)):
-					available.append(str(definition.id))
 			relic_offers.assign(_draw_run_choices(available))
 		if not relic_offers.is_empty():
 			phase = "relic"
@@ -691,17 +692,30 @@ static func relic_definitions() -> Array[Dictionary]:
 	return Expedition.relics()
 
 
+func _available_relic_ids() -> Array[String]:
+	var available: Array[String] = []
+	for definition in Expedition.relics():
+		var id: String = str(definition.id)
+		if not selected_relics.has(id):
+			available.append(id)
+	return available
+
+
 func relic_options() -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
 	for id in relic_offers:
-		options.append(Expedition.relic(id))
+		if selected_relics.has(id):
+			continue
+		var definition: Dictionary = Expedition.relic(id)
+		if not definition.is_empty():
+			options.append(definition)
 	return options
 
 
 func choose_relic(id: String) -> String:
 	if phase != "relic" or not _pending_relic:
 		return "Сейчас нет доступной реликвии."
-	if not relic_offers.has(id) or selected_relics.has(id):
+	if not relic_offers.has(id) or not _available_relic_ids().has(id):
 		return "Выберите одну из предложенных реликвий."
 	selected_relics.append(id)
 	relic_offers.clear()
@@ -1517,7 +1531,7 @@ func _finish_wave() -> void:
 		pending_upgrades += 1
 		_log("Лорд достиг уровня %d! +%d HP, +%d урона и выбор таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
 	_pending_blueprint = wave in [3, 6, 9, 12]
-	_pending_relic = wave in [5, 10, 15]
+	_pending_relic = wave % RELIC_WAVE_INTERVAL == 0 and not _available_relic_ids().is_empty()
 	if tutorial_run and wave == 1:
 		if int(lord.level) < 2:
 			lord.level = 2

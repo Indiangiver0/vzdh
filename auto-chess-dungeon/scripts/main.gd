@@ -1705,7 +1705,7 @@ func _show_run_collection() -> void:
 		body.add_child(_label(str(room.description), 12, MUTED, true))
 	body.add_child(_eyebrow("РЕЛИКВИИ ЭТОГО ЗАБЕГА"))
 	if game.selected_relics.is_empty():
-		body.add_child(_label("Пока нет. После особых отрядов появится выбор реликвии.", 13, MUTED, true))
+		body.add_child(_label("Пока нет. После каждой %d-й волны можно выбрать ещё не изученную реликвию этого забега." % Game.RELIC_WAVE_INTERVAL, 13, MUTED, true))
 	for relic in game.relic_definitions():
 		if game.selected_relics.has(str(relic.id)):
 			body.add_child(_label(str(relic.name), 16, VIOLET, true))
