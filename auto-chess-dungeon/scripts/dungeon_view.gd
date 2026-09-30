@@ -22,6 +22,7 @@ var selected_slot: int = -1
 var selected_room: String = ""
 var cinematic: bool = false
 var show_party: bool = true
+var tutorial_slot: int = -1
 
 var _clock: float = 0.0
 var _hit_rects: Array[Rect2] = []
@@ -163,9 +164,18 @@ func _draw() -> void:
 	_draw_bedrock(Rect2(Vector2.ZERO, size))
 	for floor_index in range(int(game.floor_count)):
 		_draw_floor(floor_index)
+	_draw_combos()
 	_draw_throne()
 	if show_party and str(game.phase) in ["raid", "result", "defeat"]:
 		_draw_party()
+	if tutorial_slot >= 0 and tutorial_slot < game.rooms.size():
+		var target: Rect2 = _slot_rect(tutorial_slot).grow(-3)
+		var glow: Color = GOLD
+		glow.a = 0.72 + sin(_clock * 4) * 0.22
+		draw_rect(target, glow, false, 3.0)
+		var point: Vector2 = target.get_center() + Vector2(0, -14 + sin(_clock * 4) * 3)
+		draw_colored_polygon(PackedVector2Array([point + Vector2(-7, -12), point + Vector2(7, -12), point]), GOLD)
+		_center_text("НАЖМИТЕ", Vector2(target.get_center().x, target.end.y - 27), 10, GOLD)
 
 
 func _draw_bedrock(area: Rect2) -> void:
@@ -237,7 +247,7 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	if id == "poison":
 		_icon(id, Rect2(monster_at.x - figure_size / 2, monster_at.y - figure_size - 1, figure_size, figure_size), tint)
 		_draw_poison_motes(monster_at, float(index), cleared)
-	elif id == "spikes":
+	elif str(stats.get("kind", "")) != "monster":
 		_icon(id, Rect2(center.x - figure_size / 2, center.y - figure_size + 3, figure_size, figure_size), tint)
 	else:
 		_draw_creature_body(id, monster_at + Vector2(0, idle), figure_size, tint)
@@ -352,6 +362,19 @@ func _draw_room_props(id: String, rect: Rect2, cleared: bool) -> void:
 		"mimic":
 			for coin in range(5):
 				draw_circle(at + Vector2(coin * 4, -2 - (coin % 2) * 3), 2, GOLD.darkened(0.3 if not cleared else 0.7))
+		"shackles":
+			for chain in range(4):
+				draw_arc(at + Vector2(2, -37 + chain * 7), 4, 0, TAU, 10, Color("86918f"), 1.5)
+		"silence":
+			draw_line(at + Vector2(-3, -38), at + Vector2(15, -38), Color("7b6548"), 3)
+			draw_line(at + Vector2(6, -38), at + Vector2(6, -22), GOLD.darkened(0.3), 2)
+		"rust":
+			for mark in range(3):
+				var rune: Vector2 = at + Vector2(mark * 8, -9)
+				draw_line(rune, rune + Vector2(4, -10), CORAL.darkened(0.25), 2)
+		"guardian":
+			draw_rect(Rect2(at + Vector2(-5, -22), Vector2(19, 22)), Color("464c55"))
+			draw_line(at + Vector2(4, -20), at + Vector2(4, -6), MUTED, 2)
 	_draw_rubble(Vector2(rect.end.x - 17, rect.end.y - 18), 0.6)
 	if id not in ["spider", "executioner"]:
 		draw_line(at + Vector2(0, -28), at + Vector2(-4, -37), prop_color.darkened(0.45), 1)
@@ -360,7 +383,7 @@ func _draw_room_props(id: String, rect: Rect2, cleared: bool) -> void:
 func _draw_creature_body(id: String, at: Vector2, figure_size: float, tint: Color) -> void:
 	if id in ["mimic", "spider"]:
 		return
-	var body: Color = Color("425947") if id == "goblin" else Color("523c40")
+	var body: Color = Color("425947") if id == "goblin" else (Color("505768") if id == "guardian" else Color("523c40"))
 	body.a = tint.a
 	draw_circle(at + Vector2(0, -3), figure_size * 0.21, body)
 	draw_line(at + Vector2(-5, -1), at + Vector2(-8, 7), body.lightened(0.1), 5)
@@ -494,6 +517,12 @@ func _draw_party() -> void:
 		_bar(Rect2(hero_at + Vector2(-11, -38 - bob), Vector2(22, 3)), float(hero.hp) / maxf(1, int(hero.max_hp)), TEAL)
 		if int(hero.get("poison_ticks", 0)) > 0:
 			draw_circle(hero_at + Vector2(11, -29), 3, Color("92b957"))
+		if int(hero.get("silence_ticks", 0)) > 0 or int(hero.get("pending_silence", 0)) > 0:
+			draw_line(hero_at + Vector2(-11, -26), hero_at + Vector2(11, -9), Color("b4a0d5"), 2)
+		if int(hero.get("shackles_ticks", 0)) > 0 or int(hero.get("pending_shackles", 0)) > 0:
+			draw_arc(hero_at + Vector2(0, 3), 7, 0, PI, 12, MUTED, 2)
+		if int(hero.get("goblin_mark_slot", -1)) >= 0:
+			_center_text("◆", hero_at + Vector2(0, -43), 12, GOLD)
 		if str(game.get("active_target_id")) == str(hero.get("instance_id", "")) and str(game.phase) == "raid":
 			var marker: Vector2 = hero_at + Vector2(0, -45 - bob)
 			draw_colored_polygon(PackedVector2Array([marker + Vector2(-3, -4), marker + Vector2(3, -4), marker]), CORAL)
@@ -667,6 +696,8 @@ func _get_tooltip(at_position: Vector2) -> String:
 	var result: String = "%s · ранг %d\n%s\n" % [stats.name, stats.rank, stats.description]
 	if int(stats.hp) > 0:
 		result += "Здоровье: %d · урон: %d · броня: %d\n" % [stats.hp, stats.damage, stats.armor]
+	elif str(stats.get("kind", "")) in ["shackles", "silence", "rust"]:
+		result += "Длительность: %d боевых т. · эффект в следующем бою\n" % int(stats.get("effect_turns", 0))
 	else:
 		result += "Урон: %d, в обход брони\n" % int(stats.damage)
 	result += "Награда героям: %d XP" % int(stats.xp)
@@ -675,4 +706,26 @@ func _get_tooltip(at_position: Vector2) -> String:
 	var branch_name: String = str(stats.get("branch", ""))
 	if not branch_name.is_empty():
 		result += "\nСпециализация: " + branch_name
+	var combo: Dictionary = game.room_combo(index)
+	if not combo.is_empty():
+		result += "\nСВЯЗКА · %s\n%s" % [combo.name, combo.description]
 	return result
+
+
+func _draw_combos() -> void:
+	# Model decides the pair and direction, including right-to-left floors.
+	for combo in game.active_combos():
+		var first: Rect2 = _slot_rect(int(combo.from))
+		var second: Rect2 = _slot_rect(int(combo.to))
+		var direction: float = signf(second.get_center().x - first.get_center().x)
+		var start: Vector2 = Vector2(first.get_center().x, first.position.y + 44)
+		var finish: Vector2 = Vector2(second.get_center().x, second.position.y + 44)
+		var glow: Color = GOLD
+		glow.a = 0.75
+		draw_line(start, finish, Color(0.06, 0.07, 0.06, 0.85), 6, true)
+		draw_line(start, finish, glow, 2, true)
+		draw_colored_polygon(PackedVector2Array([finish, finish + Vector2(-7 * direction, -4), finish + Vector2(-7 * direction, 4)]), GOLD)
+		var center: Vector2 = (start + finish) * 0.5
+		draw_circle(center, 8, INK)
+		draw_arc(center, 8, 0, TAU, 20, GOLD, 1.5, true)
+		_center_text("+", center + Vector2(0, 4), 12, GOLD)

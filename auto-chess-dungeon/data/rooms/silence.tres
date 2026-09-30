@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "silence"
+display_name = "Колокол безмолвия"
+short_name = "Безмолвие"
+description = "В следующем бою блокирует особые способности героев на первые 3 тика, включая первое лечение и заклинание. Обычные атаки остаются. Следопыт с инструментом сокращает эффект до 1 тика. Наград героям нет."
+cost = 5
+kind = "silence"
+effect_turns = 3
+color = Color(0.66, 0.58, 0.78, 1)
+icon = "res://assets/icons/silence.svg"

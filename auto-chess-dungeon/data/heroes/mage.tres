@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "mage"
+display_name = "Чародей"
+hp = 48
+damage = 7
+armor = 0
+ability_description = "Заклинатель · каждый третий боевой тик наносит удар с ×1,5 урона и игнорирует 1 брони. Хрупкий: мимик может добраться до него в тылу. Безмолвие подавляет заклинание."
+color = Color(0.49, 0.62, 0.85, 1)
+icon = "res://assets/icons/mage.svg"

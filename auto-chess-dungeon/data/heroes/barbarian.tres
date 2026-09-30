@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "barbarian"
+display_name = "Варвар"
+hp = 88
+damage = 9
+armor = 0
+ability_description = "Берсерк · при 40% HP или ниже наносит на 25% больше урона. Брони нет; выгодно добить сильным ударом. Безмолвие подавляет ярость."
+color = Color(0.85, 0.48, 0.35, 1)
+icon = "res://assets/icons/barbarian.svg"

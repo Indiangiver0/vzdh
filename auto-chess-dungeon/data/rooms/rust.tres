@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "rust"
+display_name = "Ржавые руны"
+short_name = "Руны"
+description = "В следующем бою снижает броню всех героев на 1 первые 3 тика; ниже нуля броня не падает. Следопыт с инструментом сокращает эффект до 1 тика. Наград героям нет."
+cost = 4
+kind = "rust"
+effect_turns = 3
+effect_power = 1.0
+color = Color(0.80, 0.52, 0.35, 1)
+icon = "res://assets/icons/rust.svg"

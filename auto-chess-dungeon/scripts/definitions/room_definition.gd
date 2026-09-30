@@ -7,12 +7,15 @@ extends Resource
 @export var short_name: String = ""
 @export_multiline var description: String = ""
 @export var cost: int = 0
-@export_enum("monster", "poison", "spikes") var kind: String = "monster"
+@export_enum("monster", "poison", "spikes", "shackles", "silence", "rust") var kind: String = "monster"
 @export var hp: int = 0
 @export var damage: int = 0
 @export var armor: int = 0
 @export var xp: int = 0
 @export var item: String = ""
+## Base duration in combat ticks and strength for the control traps.
+@export var effect_turns: int = 0
+@export var effect_power: float = 0.0
 @export var color: Color = Color.WHITE
 @export_file("*.svg") var icon: String = ""
 
@@ -22,4 +25,5 @@ func to_dictionary() -> Dictionary:
 		"description": description, "cost": cost, "kind": kind,
 		"hp": hp, "damage": damage, "armor": armor, "xp": xp,
 		"item": item, "color": color, "icon": icon,
+		"effect_turns": effect_turns, "effect_power": effect_power,
 	}

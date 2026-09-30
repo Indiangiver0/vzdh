@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "shackles"
+display_name = "Зал оков"
+short_name = "Оковы"
+description = "Сковывает героев на первые 2 тика следующего боя: каждый чётный тик они пропускают обычную атаку. Следопыт с инструментом сокращает эффект до 1 тика. Рядом перед стражем открывает комбо «Темница». Наград героям нет."
+cost = 4
+kind = "shackles"
+effect_turns = 2
+color = Color(0.51, 0.66, 0.72, 1)
+icon = "res://assets/icons/shackles.svg"

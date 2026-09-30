@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bard"
+display_name = "Бард"
+hp = 54
+damage = 5
+armor = 0
+ability_description = "Поддержка · пока жив и не под безмолвием, усиливает урон остальных героев на 15%. Себя не усиливает; несколько песен не складываются. Уязвим для мимика."
+color = Color(0.79, 0.64, 0.42, 1)
+icon = "res://assets/icons/bard.svg"

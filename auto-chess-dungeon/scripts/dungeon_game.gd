@@ -4,6 +4,7 @@ extends RefCounted
 const Content = preload("res://scripts/content_catalog.gd")
 const Talents = preload("res://scripts/talent_catalog.gd")
 const Lords = preload("res://scripts/lord_catalog.gd")
+const Expedition = preload("res://scripts/expedition_catalog.gd")
 const SLOTS_PER_FLOOR: int = 5
 const MAX_LOGS: int = 70
 
@@ -44,11 +45,20 @@ var active_target_id: String = ""
 var seed_value: int = 0
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var talent_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var expedition_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var selected_blueprints: Array[String] = []
+var selected_relics: Array[String] = []
+var blueprint_offers: Array[String] = []
+var relic_offers: Array[String] = []
+var tutorial_run: bool = false
 
 var _waiting_for_entry: bool = true
 var _instance_counter: int = 0
 var _has_started_raid: bool = false
 var _lord_ability_values: Dictionary = {}
+var _pending_blueprint: bool = false
+var _pending_relic: bool = false
+var _echo_floors: Array[int] = []
 
 
 func _init() -> void:
@@ -64,6 +74,15 @@ func restart(new_seed: int = 0) -> void:
 		rng.seed = new_seed
 	# Talent draws must never consume the party/shop random sequence.
 	talent_rng.seed = seed_value ^ 0x54A1E17
+	expedition_rng.seed = seed_value ^ 0x73D19A2
+	tutorial_run = false
+	selected_blueprints.clear()
+	selected_relics.clear()
+	blueprint_offers.clear()
+	relic_offers.clear()
+	_pending_blueprint = false
+	_pending_relic = false
+	_echo_floors.clear()
 	phase = "prepare"
 	wave = 1
 	gold = 18
@@ -106,6 +125,34 @@ func restart(new_seed: int = 0) -> void:
 	_generate_party()
 	_generate_shop()
 	_log("Подземелье открыто. Постройте защиту и запустите первую волну.")
+
+
+func begin_tutorial() -> void:
+	# A disposable run: the caller must exclude it from permanent rewards.
+	restart(7102026)
+	tutorial_run = true
+	unlocked_paths.clear()
+	gold = 90
+	configure_lord("fallen_knight")
+	shop = {"goblin": 2, "executioner": 2, "spikes": 2, "poison": 2}
+	var novice: Dictionary = heroes[0]
+	var definition: Dictionary = Content.hero("knight")
+	novice.id = "knight"
+	novice.instance_id = "1_knight"
+	novice.name = "Рыцарь-послушник"
+	novice.icon = definition.icon
+	novice.color = definition.color
+	novice.trait = "Учебный противник: 120 HP, 4 урона. Способность Владыки активируется вручную."
+	novice.hp = 120
+	novice.max_hp = 120
+	novice.damage = 4
+	novice.armor = 1
+	novice.disarm_max = 0
+	novice.disarm_charges = 0
+	heroes.assign([novice])
+	wave_title = "Первый налёт · обучение"
+	wave_description = "Рыцарь-послушник покажет работу комнат и способности Владыки."
+	_log("Учебные 90 золотых действуют только в этом тренировочном забеге.")
 
 
 func configure_lord(id: String, mastery: int = 1, variant: String = "base") -> String:
@@ -276,6 +323,8 @@ func buy_room(index: int, id: String) -> String:
 		return "Этот слот уже занят. Выберите пустое место."
 	if not Content.room_ids().has(id):
 		return "Такой комнаты нет."
+	if Expedition.blueprint_ids().has(id) and not selected_blueprints.has(id):
+		return "Сначала выберите чертёж этой комнаты после волны."
 	if int(shop.get(id, 0)) <= 0:
 		return "Запас этой комнаты на текущую волну закончился."
 	var definition: Dictionary = Content.room(id)
@@ -315,6 +364,9 @@ func upgrade_room(index: int) -> String:
 		return "Улучшения доступны между волнами."
 	if not _valid_slot(index) or rooms[index].is_empty():
 		return "Выберите построенную комнату."
+	var stats: Dictionary = room_stats(index)
+	if int(stats.max_rank) > 0 and int(stats.rank) >= int(stats.max_rank):
+		return "Эта ловушка достигла максимального третьего ранга."
 	var price: int = upgrade_cost(index)
 	if gold < price:
 		return "Не хватает золота: нужно %d." % price
@@ -401,6 +453,11 @@ func specialization_options(index: int) -> Array[Dictionary]:
 			{"id": "volley", "name": "Залп", "description": "По 45% урона каждому живому герою."},
 			{"id": "piercing", "name": "Пробой", "description": "+60% урона переднему герою."},
 		])
+	elif str(Content.room(id).kind) in ["shackles", "silence", "rust"]:
+		options.assign([
+			{"id": "control_lingering", "name": "Долгое действие", "description": "+1 тик действия в следующем бою, максимум 6."},
+			{"id": "warded", "name": "Защитная печать", "description": "Следопыт уменьшает длительность лишь на 1 тик вместо сокращения до 1."},
+		])
 	else:
 		options.assign([
 			{"id": "fury", "name": "Ярость", "description": "+30% урона, −10% HP существа."},
@@ -460,12 +517,15 @@ func start_raid() -> String:
 	combat_tick = 0
 	rage = 0
 	lord_strikes = 0
+	_echo_floors.clear()
 	_waiting_for_entry = true
 	last_action = {}
 	active_target_id = ""
 	_reset_report()
 	for hero in heroes:
 		hero.disarm_charges = int(hero.get("disarm_max", 2 if str(hero.id) == "rogue" else 0))
+		_clear_hero_control(hero)
+		hero.erase("goblin_mark_slot")
 	for index in range(rooms.size()):
 		if rooms[index].is_empty():
 			continue
@@ -510,11 +570,7 @@ func next_wave() -> String:
 			room.status = "ready"
 	_generate_party()
 	_generate_shop()
-	phase = "level_up" if pending_upgrades > 0 else "prepare"
-	if phase == "level_up":
-		_generate_talent_offers()
-	else:
-		talent_offers.clear()
+	_advance_reward_choice()
 	_log("Приближается волна %d. Подготовьте подземелье." % wave)
 	return ""
 
@@ -540,10 +596,7 @@ func choose_talent(id: String) -> String:
 		drawback_text = " Цена: %s" % definition.drawback
 	_log("Талант «%s» · ранг %d. %s%s" % [definition.name, selected_talents[id], definition.bonus, drawback_text])
 	talent_offers.clear()
-	if pending_upgrades == 0:
-		phase = "prepare"
-	else:
-		_generate_talent_offers()
+	_advance_reward_choice()
 	return ""
 
 
@@ -558,6 +611,149 @@ func talent_options() -> Array[Dictionary]:
 		definition.rank = int(definition.current_rank) + 1
 		options.append(definition)
 	return options
+
+
+func _advance_reward_choice() -> void:
+	# Every earned reward is mandatory, with one shared continuation point.
+	if pending_upgrades > 0:
+		phase = "level_up"
+		if talent_offers.is_empty():
+			_generate_talent_offers()
+		return
+	talent_offers.clear()
+	if _pending_blueprint:
+		if blueprint_offers.is_empty():
+			var available: Array[String] = []
+			for id in Expedition.blueprint_ids():
+				if not selected_blueprints.has(id):
+					available.append(id)
+			blueprint_offers.assign(_draw_run_choices(available))
+		if not blueprint_offers.is_empty():
+			phase = "blueprint"
+			return
+		_pending_blueprint = false
+	if _pending_relic:
+		if relic_offers.is_empty():
+			var available: Array[String] = []
+			for definition in Expedition.relics():
+				if not selected_relics.has(str(definition.id)):
+					available.append(str(definition.id))
+			relic_offers.assign(_draw_run_choices(available))
+		if not relic_offers.is_empty():
+			phase = "relic"
+			return
+		_pending_relic = false
+	phase = "prepare"
+
+
+func _draw_run_choices(available: Array[String]) -> Array[String]:
+	var pool: Array[String] = available.duplicate()
+	var choices: Array[String] = []
+	for _offer in range(mini(3, pool.size())):
+		var index: int = expedition_rng.randi_range(0, pool.size() - 1)
+		choices.append(pool[index])
+		pool.remove_at(index)
+	return choices
+
+
+func blueprint_options() -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
+	for id in blueprint_offers:
+		var definition: Dictionary = Content.room(id).duplicate(true)
+		definition.description = str(definition.get("description", "")) + " Открывает покупку этой комнаты до конца забега."
+		options.append(definition)
+	return options
+
+
+func choose_blueprint(id: String) -> String:
+	if phase != "blueprint" or not _pending_blueprint:
+		return "Сейчас нет доступного чертежа."
+	if not blueprint_offers.has(id) or selected_blueprints.has(id):
+		return "Выберите один из предложенных чертежей."
+	selected_blueprints.append(id)
+	# A reward must be useful immediately, even if the shop was already drawn.
+	if not shop.has(id) and shop.size() >= 4:
+		var replaceable: Array = shop.keys()
+		replaceable.reverse()
+		for previous in replaceable:
+			if str(previous) not in ["goblin", "spikes"]:
+				shop.erase(previous)
+				break
+	shop[id] = maxi(2, int(shop.get(id, 0)))
+	blueprint_offers.clear()
+	_pending_blueprint = false
+	_log("Чертёж «%s»: комната открыта в магазине до конца забега." % Content.room(id).name)
+	_advance_reward_choice()
+	return ""
+
+
+static func relic_definitions() -> Array[Dictionary]:
+	return Expedition.relics()
+
+
+func relic_options() -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
+	for id in relic_offers:
+		options.append(Expedition.relic(id))
+	return options
+
+
+func choose_relic(id: String) -> String:
+	if phase != "relic" or not _pending_relic:
+		return "Сейчас нет доступной реликвии."
+	if not relic_offers.has(id) or selected_relics.has(id):
+		return "Выберите одну из предложенных реликвий."
+	selected_relics.append(id)
+	relic_offers.clear()
+	_pending_relic = false
+	var definition: Dictionary = Expedition.relic(id)
+	_log("Реликвия «%s». %s" % [definition.name, definition.description])
+	_advance_reward_choice()
+	return ""
+
+
+static func combo_catalog() -> Array[Dictionary]:
+	return Expedition.combos()
+
+
+func active_combos() -> Array[Dictionary]:
+	var combos: Array[Dictionary] = []
+	for index in range(rooms.size()):
+		var link: Dictionary = _outgoing_combo(index)
+		if not link.is_empty():
+			combos.append(link)
+	return combos
+
+
+func room_combo(index: int) -> Dictionary:
+	var outgoing: Dictionary = _outgoing_combo(index)
+	if not outgoing.is_empty():
+		return outgoing
+	var previous: int = _previous_route_slot(index)
+	return _outgoing_combo(previous) if previous >= 0 else {}
+
+
+func _previous_route_slot(index: int) -> int:
+	if not _valid_slot(index):
+		return -1
+	var floor_index: int = index / SLOTS_PER_FLOOR
+	var previous: int = index - (1 if floor_index % 2 == 0 else -1)
+	return previous if _valid_slot(previous) and previous / SLOTS_PER_FLOOR == floor_index else -1
+
+
+func _outgoing_combo(index: int) -> Dictionary:
+	if not _valid_slot(index) or rooms[index].is_empty():
+		return {}
+	var following: int = next_route_slot(index)
+	if not _valid_slot(following) or rooms[following].is_empty() or index / SLOTS_PER_FLOOR != following / SLOTS_PER_FLOOR:
+		return {}
+	for definition in combo_catalog():
+		if str(rooms[index].id) == str(definition.first) and str(rooms[following].id) == str(definition.second):
+			var link: Dictionary = definition.duplicate(true)
+			link["from"] = index
+			link["to"] = following
+			return link
+	return {}
 
 
 func talent_modifiers() -> Dictionary:
@@ -654,6 +850,7 @@ func room_stats(index: int) -> Dictionary:
 		"virulent": "Едкий яд", "lingering": "Долгий яд", "plague": "Чума",
 		"volley": "Залп", "piercing": "Пробой", "fury": "Ярость",
 		"bulwark": "Бастион", "ambush": "Засада",
+		"control_lingering": "Долгое действие", "warded": "Защитная печать",
 	}
 	if specialization == "fury":
 		hp_factor *= 0.9
@@ -676,21 +873,37 @@ func room_stats(index: int) -> Dictionary:
 	var base_xp: int = int(result.xp) + 2 * (rank - 1) if is_monster else 0
 	result.xp = hero_room_xp(base_xp)
 	result.rank = rank
+	result.max_rank = 3 if str(result.kind) in ["shackles", "silence", "rust"] else 0
 	result.invested = state.invested
 	result.used = state.used
 	result.specialization = specialization
 	result.branch = str(branch_names.get(specialization, ""))
 	result.floor_trait = floor_trait
 	result.poison_ticks = duration
+	if str(result.kind) in ["shackles", "silence", "rust"]:
+		result.effect_turns = mini(5, int(result.get("effect_turns", 2)) + rank - 1)
+		if specialization == "control_lingering":
+			result.effect_turns = mini(6, int(result.effect_turns) + 1)
+	if str(state.id) == "guardian" and selected_relics.has("guardian_oath"):
+		result.armor = int(result.armor) + 1
 	result.role = "Атакует переднего героя"
 	if str(state.id) == "mimic":
-		result.role = "Охотится на жрицу и следопыта в тылу"
+		result.role = "Охотится на барда, жрицу, чародея и следопыта в тылу"
 	elif str(state.id) == "spider":
 		result.role = "Добивает слабейшего, предпочитает отравленных"
 	elif str(state.id) == "poison":
 		result.role = "Отравляет всю группу на %d тиков" % duration
 	elif str(state.id) == "spikes":
 		result.role = "Бьёт всю группу" if specialization == "volley" else "Бьёт переднего героя в обход брони"
+	elif str(state.id) == "shackles":
+		result.role = "Группа пропускает атаки в чётные из первых %d тиков следующего боя" % int(result.effect_turns)
+	elif str(state.id) == "silence":
+		result.role = "Блокирует спецдействия на первые %d тика следующего боя" % int(result.effect_turns)
+	elif str(state.id) == "rust":
+		result.role = "Группа: −1 брони в первые %d тика следующего боя" % int(result.effect_turns)
+	elif str(state.id) == "guardian":
+		result.role = "Долго удерживает отряд, пока действует яд"
+	result.combo = room_combo(index)
 	result.status = state.get("status", "ready")
 	result.current_hp = int(state.get("current_hp", result.hp)) if phase in ["raid", "result", "defeat"] else int(result.hp)
 	return result
@@ -728,17 +941,22 @@ func sell_value(index: int) -> int:
 func _generate_party() -> void:
 	heroes.clear()
 	_configure_wave()
-	var ordered_ids: Array[String] = ["knight", "rogue", "priest"]
+	var templates: Array[Dictionary] = Expedition.party_templates(wave)
+	var template: Dictionary = templates[rng.randi_range(0, templates.size() - 1)]
 	var party_ids: Array[String] = []
-	if wave <= 3:
-		party_ids.append(ordered_ids[rng.randi_range(0, 2)])
-	elif wave <= 7:
-		var omitted: int = rng.randi_range(0, 2)
-		for index in range(3):
-			if index != omitted:
-				party_ids.append(ordered_ids[index])
+	party_ids.assign(template.ids)
+	# The sapper expedition must contain the specialist its preview promises.
+	if elite_id == "sappers" and not party_ids.has("rogue"):
+		party_ids[party_ids.size() - 1] = "rogue"
+	var elite_description: String = wave_description
+	if elite_id.is_empty():
+		wave_title = str(template.name)
+		wave_description = str(template.description)
 	else:
-		party_ids.assign(ordered_ids)
+		var names: Array[String] = []
+		for id in party_ids:
+			names.append(str(Content.hero(id).name))
+		wave_description += " Отряд: %s." % ", ".join(names)
 	var group_factor: float = 1.0
 	if party_ids.size() == 2:
 		group_factor = 0.75
@@ -760,16 +978,15 @@ func _generate_party() -> void:
 			"elite_armor": 1 if elite_id == "armor" else 0,
 			"disarm_max": disarm_supply if id == "rogue" else 0,
 			"disarm_charges": disarm_supply if id == "rogue" else 0,
-			"elite_modifier": wave_description if not elite_id.is_empty() else "",
+			"elite_modifier": elite_description,
 			"death_processed": false, "group_factor": group_factor,
 			"pressure": pressure, "icon": definition.icon, "color": definition.color,
 			"trait": definition.trait,
 		}
 		_recalculate_hero(hero)
+		_clear_hero_control(hero)
 		hero.hp = hero.max_hp
 		heroes.append(hero)
-	if elite_id.is_empty():
-		wave_description = "Одиночный приключенец" if heroes.size() == 1 else "Группа из %d героев: роли дополняют друг друга" % heroes.size()
 
 
 func _configure_wave() -> void:
@@ -796,6 +1013,7 @@ func _configure_wave() -> void:
 func _generate_shop() -> void:
 	shop = {"goblin": 2, "spikes": 2}
 	var remaining: Array[String] = ["executioner", "poison", "spider", "mimic"]
+	remaining.append_array(selected_blueprints)
 	for _offer in range(2):
 		var index: int = rng.randi_range(0, remaining.size() - 1)
 		shop[remaining[index]] = 2
@@ -803,14 +1021,17 @@ func _generate_shop() -> void:
 
 
 func _reorder_party(room_kind: String, announce: bool = true) -> void:
-	var priority: Array[String] = ["knight", "rogue", "priest"]
+	var priority: Array[String] = ["knight", "barbarian", "rogue", "priest", "mage", "bard"]
 	if room_kind != "monster":
-		priority.assign(["rogue", "knight", "priest"])
+		priority.assign(["rogue", "knight", "barbarian", "priest", "mage", "bard"])
 	var ordered: Array[Dictionary] = []
 	for archetype in priority:
 		for hero in heroes:
 			if int(hero.hp) > 0 and str(hero.id) == archetype:
 				ordered.append(hero)
+	for hero in heroes:
+		if int(hero.hp) > 0 and not priority.has(str(hero.id)):
+			ordered.append(hero)
 	for hero in heroes:
 		if int(hero.hp) <= 0:
 			ordered.append(hero)
@@ -834,10 +1055,14 @@ func _select_defender_target(survivors: Array[Dictionary], poisoned_at_start: Ar
 	if survivors.is_empty():
 		return {}
 	if str(defender.get("id", "")) == "mimic":
-		for archetype in ["priest", "rogue", "knight"]:
+		for archetype in ["bard", "priest", "mage", "rogue", "barbarian", "knight"]:
 			for hero in survivors:
 				if str(hero.id) == archetype:
 					return hero
+	if str(defender.get("id", "")) == "executioner" and combat_tick <= 1:
+		for hero in survivors:
+			if int(hero.get("goblin_mark_slot", -1)) == current_slot:
+				return hero
 	if str(defender.get("id", "")) == "spider":
 		var poisoned: Array[Dictionary] = []
 		for hero in survivors:
@@ -882,10 +1107,16 @@ func _enter_next_room() -> void:
 		current_slot = next_route_slot(current_slot)
 	combat_tick = 0
 	rage = 0
+	for hero in heroes:
+		for effect in ["shackles", "silence", "rust"]:
+			hero["%s_ticks" % effect] = 0
+		if int(hero.get("goblin_mark_slot", -1)) != current_slot:
+			hero.erase("goblin_mark_slot")
 	if current_slot >= rooms.size():
 		current_slot = rooms.size()
 		defender = lord
 		_reorder_party("monster")
+		_begin_combat_effects()
 		active_target_id = str(_select_defender_target(_living()).instance_id)
 		_waiting_for_entry = false
 		_log("Группа вошла в тронный зал. Лорд вступает в бой!")
@@ -897,33 +1128,13 @@ func _enter_next_room() -> void:
 	_reorder_party(str(stats.kind))
 	_log("Этаж %d · комната %d: %s." % [current_slot / 5 + 1, current_slot % 5 + 1, stats.name])
 	if str(stats.kind) == "monster":
+		_begin_combat_effects()
 		active_target_id = str(_select_defender_target(_living()).instance_id)
 		_waiting_for_entry = false
 		_action("enter", _defender_actor(), active_target_id, 0, "Группа входит: %s" % stats.name)
 		return
 	var disarmed: bool = _spend_disarm()
-	if str(stats.kind) == "spikes":
-		var targets: Array[Dictionary] = _living()
-		if str(stats.specialization) != "volley":
-			targets.resize(1)
-		for target in targets:
-			var hit: int = maxi(1, ceili(float(stats.damage) * (0.4 if disarmed else 1.0)))
-			target.hp = maxi(0, int(target.hp) - hit)
-			active_target_id = str(target.instance_id)
-			var text: String = "Шипы: %s теряет %d HP%s." % [target.name, hit, " (обезврежены на 60%)" if disarmed else ""]
-			_log(text)
-			_action("trap", _defender_actor(), active_target_id, hit, text)
-	elif str(stats.kind) == "poison":
-		var duration: int = mini(3, int(stats.poison_ticks)) if disarmed else int(stats.poison_ticks)
-		for hero in _living():
-			hero.poison_ticks = maxi(int(hero.poison_ticks), duration)
-			hero.poison_damage = maxi(int(hero.poison_damage), int(stats.damage))
-			if str(stats.specialization) == "plague":
-				hero.poison_heal_factor = 0.5
-		active_target_id = str(_living()[0].instance_id)
-		var text: String = "Вся группа отравлена: %d урона × %d тиков%s." % [stats.damage, duration, " (следопыт сократил эффект)" if disarmed else ""]
-		_log(text)
-		_action("poison", _defender_actor(), active_target_id, int(stats.damage), text)
+	_trigger_trap(stats, disarmed)
 	_process_deaths()
 	if _living().is_empty():
 		rooms[current_slot].status = "held"
@@ -939,6 +1150,82 @@ func _enter_next_room() -> void:
 	else:
 		rooms[current_slot].status = "cleared"
 		_waiting_for_entry = true
+
+
+func _trigger_trap(stats: Dictionary, disarmed: bool) -> void:
+	var floor_index: int = current_slot / SLOTS_PER_FLOOR
+	var echo: bool = selected_relics.has("trap_echo") and not _echo_floors.has(floor_index)
+	if echo:
+		_echo_floors.append(floor_index)
+		_log("Эхо механизмов: первая ловушка этажа срабатывает ещё раз с ослабленным эффектом.")
+	if str(stats.kind) == "spikes":
+		var targets: Array[Dictionary] = _living()
+		if str(stats.specialization) != "volley":
+			targets.resize(1)
+		for target in targets:
+			var hit: int = maxi(1, ceili(float(stats.damage) * (0.4 if disarmed else 1.0)))
+			if echo:
+				hit += maxi(1, floori(float(hit) * 0.4))
+			target.hp = maxi(0, int(target.hp) - hit)
+			active_target_id = str(target.instance_id)
+			var text: String = "Шипы: %s теряет %d HP%s." % [target.name, hit, " (обезврежены на 60%)" if disarmed else ""]
+			_log(text)
+			_action("trap", _defender_actor(), active_target_id, hit, text)
+	elif str(stats.kind) == "poison":
+		var duration: int = mini(3, int(stats.poison_ticks)) if disarmed else int(stats.poison_ticks)
+		var targets: Array[Dictionary] = _living()
+		for hero in targets:
+			hero.poison_ticks = maxi(int(hero.poison_ticks), duration)
+			hero.poison_damage = maxi(int(hero.poison_damage), int(stats.damage))
+			if str(stats.specialization) == "plague":
+				hero.poison_heal_factor = 0.5
+			if echo:
+				hero.hp = maxi(0, int(hero.hp) - _poison_hit(hero, maxi(1, floori(float(stats.damage) * 0.4))))
+		active_target_id = str(targets[0].instance_id)
+		var text: String = "Вся группа отравлена: %d урона × %d тиков%s." % [stats.damage, duration, " (следопыт сократил эффект)" if disarmed else ""]
+		_log(text)
+		_action("poison", _defender_actor(), active_target_id, int(stats.damage), text)
+	elif str(stats.kind) in ["shackles", "silence", "rust"]:
+		var duration: int = int(stats.effect_turns)
+		if disarmed:
+			duration = maxi(1, duration - 1) if str(stats.specialization) == "warded" else 1
+		if echo:
+			duration = mini(6, duration + 1)
+		var key: String = "pending_%s" % str(stats.kind)
+		for hero in _living():
+			# Repeated traps refresh the strongest duration, never add stacks.
+			hero[key] = maxi(int(hero.get(key, 0)), duration)
+			if str(stats.kind) == "rust":
+				hero.rust_amount = maxi(int(hero.get("rust_amount", 0)), int(stats.effect_power))
+		active_target_id = str(_living()[0].instance_id)
+		var text: String = "%s: эффект на первые %d тика следующего боя%s." % [stats.name, duration, " (следопыт ослабил)" if disarmed else ""]
+		_log(text)
+		_action("trap", _defender_actor(), active_target_id, duration, text)
+
+
+func _clear_hero_control(hero: Dictionary) -> void:
+	for effect in ["shackles", "silence", "rust"]:
+		hero["pending_%s" % effect] = 0
+		hero["%s_ticks" % effect] = 0
+	hero.rust_amount = 0
+
+
+func _begin_combat_effects() -> void:
+	for hero in _living():
+		for effect in ["shackles", "silence", "rust"]:
+			hero["%s_ticks" % effect] = int(hero.get("pending_%s" % effect, 0))
+			hero["pending_%s" % effect] = 0
+	var incoming_combo: Dictionary = _outgoing_combo(_previous_route_slot(current_slot))
+	if str(incoming_combo.get("id", "")) == "dungeon_cell":
+		defender.cell_advantage = true
+		_log("Темница: страж получает первый удар, герои пропустят первую атаку.")
+
+
+func _decay_hero_control() -> void:
+	for hero in heroes:
+		for effect in ["shackles", "silence", "rust"]:
+			var key: String = "%s_ticks" % effect
+			hero[key] = maxi(0, int(hero.get(key, 0)) - 1)
 
 
 func _combat_step() -> void:
@@ -958,7 +1245,7 @@ func _combat_step() -> void:
 	var healer_id: String = ""
 	if combat_tick % 3 == 0:
 		for hero in survivors:
-			if str(hero.id) != "priest":
+			if str(hero.id) != "priest" or int(hero.get("silence_ticks", 0)) > 0:
 				continue
 			var healing_target: Dictionary = _most_wounded(survivors)
 			if int(healing_target.hp) < int(healing_target.max_hp):
@@ -979,6 +1266,13 @@ func _combat_step() -> void:
 	var empowered_strike: bool = false
 	var ability_strike: bool = int(defender.get("ability_attacks", 0)) > 0
 	var active_attack_bonus: float = float(defender.get("revenant_damage_bonus", 0.0))
+	var combo_strike: bool = str(defender.get("id", "")) == "executioner" and combat_tick == 1 and int(target.get("goblin_mark_slot", -1)) == current_slot
+	if combo_strike:
+		active_attack_bonus += 0.15
+		target.erase("goblin_mark_slot")
+		_log("Засада: первый удар палача по отмеченному герою +15%.")
+	if current_slot < rooms.size() and combat_tick == 1 and selected_relics.has("war_banner"):
+		active_attack_bonus += 0.15
 	if ability_strike:
 		active_attack_bonus += float(defender.get("ability_attack_bonus", 0.0))
 		defender.ability_attacks = int(defender.ability_attacks) - 1
@@ -997,17 +1291,53 @@ func _combat_step() -> void:
 		defender_attack += 3
 	if str(defender.get("specialization", "")) == "ambush" and combat_tick == 1:
 		defender_attack = ceili(float(defender_attack) * 1.75)
-	var outgoing: int = maxi(1, defender_attack - int(target.armor))
+	var target_armor: int = int(target.armor)
+	if int(target.get("rust_ticks", 0)) > 0:
+		target_armor = maxi(0, target_armor - int(target.get("rust_amount", 1)))
+	var outgoing: int = maxi(1, defender_attack - target_armor)
 	var fighting_monster: bool = current_slot < rooms.size()
 	if fighting_monster and str(target.id) == "knight":
 		outgoing = maxi(1, ceili(float(outgoing) * 0.8))
 	var incoming: int = 0
+	var living_bard: String = ""
 	for hero in survivors:
-		if str(hero.instance_id) != healer_id:
-			var hero_hit: int = maxi(1, int(hero.damage) - int(defender.armor))
-			if fighting_monster and str(hero.id) == "knight":
-				hero_hit = ceili(float(hero_hit) * 1.25)
-			incoming += hero_hit
+		if str(hero.id) == "bard" and int(hero.get("silence_ticks", 0)) == 0:
+			living_bard = str(hero.instance_id)
+			break
+	for hero in survivors:
+		if str(hero.instance_id) == healer_id:
+			continue
+		var held_by_cell: bool = bool(defender.get("cell_advantage", false)) and combat_tick == 1
+		var held_by_shackles: bool = int(hero.get("shackles_ticks", 0)) > 0 and combat_tick % 2 == 0
+		if held_by_cell or held_by_shackles:
+			_log("%s пропускает атаку: %s." % [hero.name, "Темница" if held_by_cell else "оковы"])
+			continue
+		var special_allowed: bool = int(hero.get("silence_ticks", 0)) == 0
+		var hero_attack: float = float(hero.damage)
+		var armor_bypass: int = 0
+		if str(hero.id) == "mage" and combat_tick % 3 == 0 and special_allowed:
+			hero_attack *= 1.5
+			armor_bypass = 1
+			_log("Чародей выпускает заклинание: ×1,5 урона, обход 1 брони.")
+		if str(hero.id) == "barbarian" and int(hero.hp) * 5 <= int(hero.max_hp) * 2 and special_allowed:
+			hero_attack *= 1.25
+			_log("Раненый варвар впадает в ярость: +25% урона.")
+		if not living_bard.is_empty() and str(hero.id) != "bard":
+			hero_attack *= 1.15
+		var effective_armor: int = maxi(0, int(defender.armor) - armor_bypass)
+		var hero_hit: int = maxi(1, ceili(hero_attack) - effective_armor)
+		if fighting_monster and str(hero.id) == "knight":
+			hero_hit = ceili(float(hero_hit) * 1.25)
+		incoming += hero_hit
+	if not living_bard.is_empty() and survivors.size() > 1:
+		_log("Песня барда усиливает атаки союзников на 15%.")
+	if str(defender.get("id", "")) == "goblin":
+		var linked: Dictionary = _outgoing_combo(current_slot)
+		if str(linked.get("id", "")) == "marked_ambush":
+			for hero in heroes:
+				hero.erase("goblin_mark_slot")
+			target.goblin_mark_slot = int(linked.to)
+			_log("Гоблины пометили %s для соседнего палача." % target.name)
 	# All attacks are computed before either side loses HP.
 	var old_defender_hp: int = int(defender.hp)
 	target.hp = maxi(0, int(target.hp) - outgoing)
@@ -1039,9 +1369,12 @@ func _combat_step() -> void:
 	last_action.shield_absorbed = absorbed
 	last_action.shield = int(defender.get("shield", 0))
 	last_action.revived = revived
+	last_action.combo = combo_strike
+	last_action.bard = not living_bard.is_empty()
 	if current_slot == rooms.size():
 		last_action.lord_strikes = lord_strikes
 		last_action.opening_remaining = opening_strikes_remaining()
+	_decay_hero_control()
 	_process_deaths()
 	# A consumed necromancer mark has already revived the defender, if present.
 	# Unprevented mutual death in the throne room is still a player defeat.
@@ -1123,9 +1456,9 @@ func _award_room_loot(stats: Dictionary) -> void:
 	var item_id: String = str(stats.get("item", ""))
 	if item_id.is_empty():
 		return
-	var priority: Array[String] = ["knight", "rogue", "priest"]
+	var priority: Array[String] = ["knight", "barbarian", "rogue", "priest", "mage", "bard"]
 	if item_id == "sword":
-		priority.assign(["rogue", "knight", "priest"])
+		priority.assign(["rogue", "barbarian", "knight", "mage", "bard", "priest"])
 	for archetype in priority:
 		for hero in survivors:
 			if str(hero.id) != archetype or hero.items.has(item_id):
@@ -1161,6 +1494,10 @@ func _finish_wave() -> void:
 	_clear_defender_effects(lord)
 	gold += 4
 	report.gold = int(report.gold) + 4
+	if selected_relics.has("tithe_seal"):
+		gold += 2
+		report.gold = int(report.gold) + 2
+		_log("Печать дани: +2 золота за отражённую волну.")
 	if not elite_id.is_empty():
 		gold += 8
 		report.gold = int(report.gold) + 8
@@ -1179,6 +1516,16 @@ func _finish_wave() -> void:
 		_recalculate_lord()
 		pending_upgrades += 1
 		_log("Лорд достиг уровня %d! +%d HP, +%d урона и выбор таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
+	_pending_blueprint = wave in [3, 6, 9, 12]
+	_pending_relic = wave in [5, 10, 15]
+	if tutorial_run and wave == 1:
+		if int(lord.level) < 2:
+			lord.level = 2
+			_recalculate_lord()
+		pending_upgrades = maxi(1, pending_upgrades)
+		_pending_blueprint = true
+		_pending_relic = true
+		_log("Учебные награды: талант, чертёж и реликвия. Они действуют только в тренировке.")
 	phase = "result"
 	_log("Волна %d отражена! +4 золота за защиту." % wave)
 
