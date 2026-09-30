@@ -5,6 +5,7 @@ extends Control
 signal slot_clicked(index: int)
 
 const Content = preload("res://scripts/content_catalog.gd")
+const Lords = preload("res://scripts/lord_catalog.gd")
 const FLOOR_HEIGHT: float = 160.0
 const THRONE_HEIGHT: float = 170.0
 const INK = Color("101719")
@@ -29,6 +30,7 @@ var _font: Font
 var _hovered_slot: int = -1
 var _party_position: Vector2 = Vector2(-40, 96)
 var _party_goal: Vector2 = Vector2(-40, 96)
+var _party_direction: float = 1.0
 var _last_slot: int = -2
 var _last_phase: String = ""
 var _last_wave: int = -1
@@ -74,28 +76,44 @@ func _update_party(delta: float) -> void:
 	var phase: String = str(game.phase)
 	var current: int = int(game.current_slot)
 	if int(game.wave) != _last_wave or (phase == "raid" and _last_phase != "raid"):
-		_party_position = Vector2(9, 110)
+		_party_position = Vector2(18, _floor_walk_y(0))
+		_party_direction = 1.0
 		_waypoints.clear()
 		_last_slot = -2
 		_last_wave = int(game.wave)
 	if current != _last_slot:
 		var goal: Vector2 = _position_for_slot(current)
-		_waypoints.clear()
-		if current >= 0 and _last_slot >= 0 and goal.y > _party_position.y + 45:
-			var shaft_x: float = size.x - 18
-			_waypoints.append(Vector2(shaft_x, _party_position.y))
-			_waypoints.append(Vector2(shaft_x, goal.y))
-			_waypoints.append(Vector2(22, goal.y))
+		# Preserve pending stairs when simulation advances ahead of the animation.
+		# Empty floors still contribute both landings to the visible route.
+		if current >= 0:
+			var from_floor: int = maxi(0, _last_slot) / 5
+			var to_floor: int = mini(current / 5, int(game.floor_count))
+			for floor_index in range(from_floor, to_floor):
+				var shaft_x: float = _floor_exit_x(floor_index)
+				_waypoints.append(Vector2(shaft_x, _floor_walk_y(floor_index)))
+				_waypoints.append(Vector2(shaft_x, _floor_walk_y(floor_index + 1)))
 		_waypoints.append(goal)
 		_party_goal = goal
 		_last_slot = current
 	if not _waypoints.is_empty():
-		var target: Vector2 = _waypoints[0]
-		var distance: float = _party_position.distance_to(target)
-		var travel_speed: float = maxf(260.0, distance * 7.0)
-		_party_position = _party_position.move_toward(target, delta * travel_speed)
-		if _party_position.distance_to(target) < 2.0:
-			_waypoints.pop_front()
+		var remaining_distance: float = 0.0
+		var previous: Vector2 = _party_position
+		for waypoint in _waypoints:
+			remaining_distance += previous.distance_to(waypoint)
+			previous = waypoint
+		var travel: float = delta * maxf(260.0, remaining_distance * 7.0)
+		while not _waypoints.is_empty() and travel > 0.0:
+			var target: Vector2 = _waypoints[0]
+			var distance: float = _party_position.distance_to(target)
+			if absf(target.x - _party_position.x) > 0.1:
+				_party_direction = signf(target.x - _party_position.x)
+			if distance <= travel:
+				_party_position = target
+				travel -= distance
+				_waypoints.pop_front()
+			else:
+				_party_position = _party_position.move_toward(target, travel)
+				travel = 0.0
 	_last_phase = phase
 	var action = game.get("last_action")
 	if action is Dictionary:
@@ -107,16 +125,29 @@ func _update_party(delta: float) -> void:
 
 func _position_for_slot(index: int) -> Vector2:
 	if game == null or index < 0:
-		return Vector2(23, 111)
+		return Vector2(18, _floor_walk_y(0))
 	if index >= game.rooms.size():
-		return Vector2(size.x * 0.5 - 62, game.floor_count * FLOOR_HEIGHT + 111)
+		return Vector2(size.x * 0.5 + 18 - 80 * _floor_direction(int(game.floor_count)), _floor_walk_y(int(game.floor_count)))
 	var room_rect: Rect2 = _slot_rect(index)
-	return Vector2(room_rect.position.x + room_rect.size.x * 0.30, room_rect.position.y + 86)
+	var approach: float = 0.30 if _floor_direction(index / 5) > 0.0 else 0.70
+	return Vector2(room_rect.position.x + room_rect.size.x * approach, _floor_walk_y(index / 5))
+
+
+func _floor_direction(floor_index: int) -> float:
+	return 1.0 if floor_index % 2 == 0 else -1.0
+
+
+func _floor_exit_x(floor_index: int) -> float:
+	return size.x - 18.0 if _floor_direction(floor_index) > 0.0 else 18.0
+
+
+func _floor_walk_y(floor_index: int) -> float:
+	return floor_index * FLOOR_HEIGHT + 114.0
 
 
 func _slot_rect(index: int) -> Rect2:
-	var room_width: float = (size.x - 66.0) / 5.0
-	return Rect2(17 + (index % 5) * room_width, floori(float(index) / 5.0) * FLOOR_HEIGHT + 28, room_width, 120)
+	var room_width: float = (size.x - 98.0) / 5.0
+	return Rect2(49 + (index % 5) * room_width, floori(float(index) / 5.0) * FLOOR_HEIGHT + 28, room_width, 120)
 
 
 func _draw() -> void:
@@ -159,13 +190,14 @@ func _draw_floor(floor_index: int) -> void:
 	var floor_colors: Dictionary = {"plain": MUTED, "laboratory": TEAL, "barracks": CORAL, "workshop": GOLD}
 	_text(label_text, Vector2(17, top + 19), 12, GOLD)
 	_text(str(floor_names.get(floor_kind, "КАЗЕМАТЫ")), Vector2(102, top + 19), 10, floor_colors.get(floor_kind, MUTED))
-	_text("01 → 02 → 03 → 04 → 05", Vector2(size.x - 207, top + 19), 10, Color("697672"))
+	var route_text: String = "01 → 02 → 03 → 04 → 05" if floor_index % 2 == 0 else "01 ← 02 ← 03 ← 04 ← 05"
+	_text(route_text, Vector2(size.x - 207, top + 19), 10, Color("697672"))
 	for column in range(5):
 		var index: int = floor_index * 5 + column
 		var rect: Rect2 = _slot_rect(index)
 		_hit_rects.append(rect)
 		_draw_chamber(rect, index)
-	_draw_platform(Rect2(12, top + 144, size.x - 52, 15), floor_index)
+	_draw_platform(Rect2(40, top + 144, size.x - 80, 15), floor_index)
 	_draw_stairway(floor_index)
 
 
@@ -199,7 +231,7 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	var tint: Color = Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE
 	_draw_room_props(id, rect, cleared)
 	var figure_size: float = clampf(rect.size.x * 0.47, 38, 55)
-	var offset: float = 15.0 if active else 0.0
+	var offset: float = 15.0 * _floor_direction(index / 5) if active else 0.0
 	var monster_at: Vector2 = center + Vector2(offset, -8)
 	var idle: float = sin(_clock * 2.1 + index * 1.7) * 1.2
 	if id == "poison":
@@ -210,6 +242,8 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	else:
 		_draw_creature_body(id, monster_at + Vector2(0, idle), figure_size, tint)
 		_icon(id, Rect2(monster_at.x - figure_size / 2, monster_at.y - figure_size - 8 + idle, figure_size, figure_size), tint)
+		if active:
+			_draw_defender_wards(monster_at + Vector2(0, -figure_size * 0.5 - 8 + idle), figure_size / 55.0)
 	var name_size: int = 10 if rect.size.x < 112 else 12
 	_center_text(str(stats.short_name), Vector2(center.x, rect.end.y - 8), name_size, Color("929c91") if cleared else CREAM)
 	var rank: int = int(room.get("rank", 1))
@@ -227,7 +261,7 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	if cleared:
 		_text("×", Vector2(rect.position.x + 11, ground - 6), 20, Color("656966"))
 	elif active:
-		_draw_combat_sparks(Vector2(center.x - 7, ground - 36))
+		_draw_combat_sparks(Vector2(center.x - 7 * _floor_direction(index / 5), ground - 36))
 
 
 func _draw_masonry(rect: Rect2) -> void:
@@ -269,15 +303,16 @@ func _draw_platform(rect: Rect2, floor_index: int) -> void:
 
 
 func _draw_stairway(floor_index: int) -> void:
-	var x: float = size.x - 35
-	var top: float = floor_index * FLOOR_HEIGHT + 108
-	draw_rect(Rect2(x - 3, top - 72, 32, 150), Color("12191a"))
-	for step in range(7):
-		var step_y: float = top + step * 9
-		var step_x: float = x + step * 2.7
-		draw_line(Vector2(step_x - 7, step_y), Vector2(x + 23, step_y), Color("5e635b"), 3)
-	draw_line(Vector2(x - 4, top - 9), Vector2(x + 21, top + 52), Color("343e3d"), 2)
-	_text("↓", Vector2(x + 7, top - 38), 16, GOLD.darkened(0.25))
+	var x: float = _floor_exit_x(floor_index)
+	var top: float = _floor_walk_y(floor_index)
+	var direction: float = _floor_direction(floor_index)
+	draw_rect(Rect2(x - 16, top - 10, 32, FLOOR_HEIGHT + 20), Color("12191a"))
+	for step in range(17):
+		var step_y: float = top + step * FLOOR_HEIGHT / 16.0
+		draw_line(Vector2(x - 11, step_y - 2 * direction), Vector2(x + 11, step_y + 2 * direction), Color("5e635b"), 3)
+	draw_line(Vector2(x - 13, top - 5), Vector2(x - 13, top + FLOOR_HEIGHT + 5), Color("343e3d"), 2)
+	draw_line(Vector2(x + 13, top - 5), Vector2(x + 13, top + FLOOR_HEIGHT + 5), Color("343e3d"), 2)
+	_text("↓", Vector2(x - 6, top - 16), 16, GOLD.darkened(0.25))
 
 
 func _draw_empty_room(rect: Rect2, hovered: bool) -> void:
@@ -383,10 +418,13 @@ func _draw_combat_sparks(at: Vector2) -> void:
 
 
 func _draw_throne() -> void:
+	var lord_visual: Dictionary = _lord_visual()
+	var lord_icon: String = str(lord_visual.get("icon", "res://assets/icons/lord.svg"))
+	var banner_color: Color = Color(str(lord_visual.get("color", "#b86b60"))).darkened(0.45)
 	var top: float = int(game.floor_count) * FLOOR_HEIGHT
 	_text("ТРОННЫЙ ЗАЛ", Vector2(17, top + 21), 12, GOLD)
 	_text("ПОСЛЕДНЯЯ ЛИНИЯ ЗАЩИТЫ", Vector2(size.x - 212, top + 21), 9, MUTED)
-	var hall: Rect2 = Rect2(17, top + 30, size.x - 65, 117)
+	var hall: Rect2 = Rect2(49, top + 30, size.x - 98, 117)
 	draw_rect(hall, Color("1b1b20"))
 	_draw_masonry(hall)
 	var active: bool = str(game.phase) == "raid" and int(game.current_slot) >= game.rooms.size()
@@ -394,16 +432,18 @@ func _draw_throne() -> void:
 	var center: Vector2 = Vector2(size.x * 0.5 + 18, top + 115)
 	_draw_throne_furniture(center, 1.0)
 	var lord_tint: Color = Color.WHITE if int(game.lord.hp) > 0 else Color(0.42, 0.42, 0.42, 0.75)
-	_icon("lord", Rect2(center + Vector2(-31, -65), Vector2(62, 62)), lord_tint)
+	_icon(lord_icon, Rect2(center + Vector2(-31, -65), Vector2(62, 62)), lord_tint)
+	if active:
+		_draw_defender_wards(center + Vector2(0, -34), 1.12)
 	_draw_torch(Vector2(hall.position.x + 41, top + 72), 22, 1.25)
 	_draw_torch(Vector2(hall.end.x - 40, top + 72), 31, 1.25)
-	_draw_banner(Vector2(center.x - 95, top + 36), Color("6f4749"), 22, 60)
-	_draw_banner(Vector2(center.x + 79, top + 36), Color("6f4749"), 22, 60)
+	_draw_banner(Vector2(center.x - 95, top + 36), banner_color, 22, 60)
+	_draw_banner(Vector2(center.x + 79, top + 36), banner_color, 22, 60)
 	_bar(Rect2(center.x - 46, top + 127, 92, 5), float(game.lord.hp) / maxf(1, int(game.lord.max_hp)), CORAL)
 	_center_text("ЛОРД · УР. %d" % int(game.lord.level), Vector2(center.x, top + 144), 10, CREAM)
-	_draw_platform(Rect2(12, top + 150, size.x - 52, 15), int(game.floor_count))
+	_draw_platform(Rect2(40, top + 150, size.x - 80, 15), int(game.floor_count))
 	if active:
-		_draw_combat_sparks(center + Vector2(-31, -30))
+		_draw_combat_sparks(center + Vector2(-31 * _floor_direction(int(game.floor_count)), -30))
 
 
 func _draw_throne_furniture(at: Vector2, scale_factor: float) -> void:
@@ -441,7 +481,7 @@ func _draw_party() -> void:
 	var walking: bool = _party_position.distance_to(_party_goal) > 5 or not _waypoints.is_empty()
 	for index in range(living.size() - 1, -1, -1):
 		var hero: Dictionary = living[index]
-		var hero_at: Vector2 = _party_position + Vector2(-index * 12.5, -index * 4)
+		var hero_at: Vector2 = _party_position + Vector2(-index * 12.5 * _party_direction, -index * 4)
 		var foot_swing: float = sin(_clock * (14 if walking else 2.6) + index) * (3 if walking else 0.5)
 		var bob: float = absf(foot_swing) * 0.5
 		var definition: Dictionary = Content.hero(str(hero.id))
@@ -467,6 +507,9 @@ func draw_ellipse_shadow(at: Vector2, radius: float) -> void:
 
 func _draw_cinematic() -> void:
 	# The menu owns a separate illustration panel, so the keep fills this canvas.
+	var lord_visual: Dictionary = _lord_visual()
+	var lord_icon: String = str(lord_visual.get("icon", "res://assets/icons/lord.svg"))
+	var banner_color: Color = Color(str(lord_visual.get("color", "#b86b60"))).darkened(0.5)
 	draw_rect(Rect2(Vector2.ZERO, size), Color("10191c"))
 	var moon: Vector2 = Vector2(size.x * 0.70, size.y * 0.15)
 	for radius in [150.0, 112.0, 84.0]:
@@ -489,9 +532,9 @@ func _draw_cinematic() -> void:
 	_draw_arch(hall, Color("5e6154"))
 	var throne_at: Vector2 = Vector2(hall.get_center().x, hall.end.y - 32)
 	_draw_throne_furniture(throne_at, 1.65)
-	_icon("lord", Rect2(throne_at + Vector2(-50, -110), Vector2(100, 100)))
-	_draw_banner(Vector2(hall.position.x + 44, hall.position.y + 20), Color("5c363e"), 32, 94)
-	_draw_banner(Vector2(hall.end.x - 72, hall.position.y + 20), Color("5c363e"), 32, 94)
+	_icon(lord_icon, Rect2(throne_at + Vector2(-50, -110), Vector2(100, 100)))
+	_draw_banner(Vector2(hall.position.x + 44, hall.position.y + 20), banner_color, 32, 94)
+	_draw_banner(Vector2(hall.end.x - 72, hall.position.y + 20), banner_color, 32, 94)
 	_draw_torch(Vector2(hall.position.x + 48, hall.end.y - 55), 12, 1.6)
 	_draw_torch(Vector2(hall.end.x - 50, hall.end.y - 55), 42, 1.6)
 	_draw_platform(Rect2(hall.position.x - 10, hall.end.y, hall_width + 10, 17), 0)
@@ -523,13 +566,57 @@ func _bar(rect: Rect2, ratio: float, color: Color, opacity: float = 1.0) -> void
 
 
 func _icon(id: String, rect: Rect2, tint: Color = Color.WHITE) -> void:
-	if not _textures.has(id):
-		var path: String = "res://assets/icons/%s.svg" % id
+	var path: String = id if id.begins_with("res://") else "res://assets/icons/%s.svg" % id
+	if not _textures.has(path):
 		if ResourceLoader.exists(path):
-			_textures[id] = load(path)
+			_textures[path] = load(path)
 		else:
 			return
-	draw_texture_rect(_textures[id], rect, false, tint)
+	draw_texture_rect(_textures[path], rect, false, tint)
+
+
+func _lord_visual() -> Dictionary:
+	if game == null:
+		return {}
+	var archetype = game.get("lord_archetype")
+	if not archetype is String:
+		return {}
+	return Lords.get_lord(str(archetype))
+
+
+func _draw_defender_wards(at: Vector2, scale_factor: float = 1.0) -> void:
+	# Only renders existing model state. Casting and expiry belong to DungeonGame.
+	if game == null or game.defender.is_empty():
+		return
+	var current: Dictionary = game.defender
+	var radius: float = 30.0 * scale_factor
+	if int(current.get("shield", 0)) > 0:
+		draw_arc(at, radius, 0, TAU, 40, Color(0.46, 0.75, 0.79, 0.8), 2.0 * scale_factor, true)
+		var badge: Vector2 = at + Vector2(radius - 3, -radius + 8)
+		var shield: PackedVector2Array = PackedVector2Array([
+			badge + Vector2(-6, -6) * scale_factor, badge + Vector2(6, -6) * scale_factor,
+			badge + Vector2(5, 2) * scale_factor, badge + Vector2(0, 7) * scale_factor,
+			badge + Vector2(-5, 2) * scale_factor,
+		])
+		draw_colored_polygon(shield, INK)
+		shield.append(shield[0])
+		draw_polyline(shield, Color("9dced0"), 2.0 * scale_factor, true)
+	if bool(current.get("revive_mark", false)) or float(current.get("revenant_damage_bonus", 0.0)) > 0.0:
+		var tint: Color = Color("b09ac8")
+		for segment in range(4):
+			var start: float = float(segment) * PI * 0.5 + _clock * 0.18
+			draw_arc(at, radius, start, start + PI * 0.32, 12, tint, 1.8 * scale_factor, true)
+		if bool(current.get("revive_mark", false)):
+			var rune: Vector2 = at + Vector2(-radius + 3, -radius + 7)
+			draw_circle(rune, 6.0 * scale_factor, INK)
+			draw_line(rune + Vector2(0, -5) * scale_factor, rune + Vector2(0, 5) * scale_factor, tint, 2.0 * scale_factor)
+			draw_line(rune + Vector2(-4, -1) * scale_factor, rune + Vector2(4, -1) * scale_factor, tint, 2.0 * scale_factor)
+	if int(current.get("ability_attacks", 0)) > 0:
+		var crest: Vector2 = at + Vector2(0, -radius - 3)
+		draw_polyline(PackedVector2Array([
+			crest + Vector2(-6, 5) * scale_factor, crest,
+			crest + Vector2(6, 5) * scale_factor,
+		]), GOLD, 2.0 * scale_factor, true)
 
 
 func _text(value: String, at: Vector2, font_size: int, color: Color) -> void:

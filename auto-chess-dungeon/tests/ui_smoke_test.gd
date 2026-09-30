@@ -160,8 +160,18 @@ func _run() -> void:
 	_expect(ui.game.phase == "level_up" and is_instance_valid(ui.modal), "Continue callback displays earned level choices")
 	var pending: int = ui.game.pending_upgrades
 	for _choice in range(pending):
-		ui._choose_upgrade("trap")
-	_expect(ui.game.phase == "prepare" and ui.game.upgrades["trap"] == pending and not is_instance_valid(ui.modal), "Upgrade callbacks resolve all choices and return to preparation")
+		if ui.game.talent_offers.is_empty():
+			failures.append("Pending UI choice has no offered talents")
+			break
+		var before_choice: int = ui.game.pending_upgrades
+		ui._choose_talent(str(ui.game.talent_offers[0]))
+		if ui.game.pending_upgrades >= before_choice:
+			failures.append("Offered talent callback did not resolve a pending choice")
+			break
+	var selected_ranks: int = 0
+	for rank in ui.game.selected_talents.values():
+		selected_ranks += int(rank)
+	_expect(ui.game.phase == "prepare" and selected_ranks == pending and not is_instance_valid(ui.modal), "Talent callbacks resolve all offered choices and return to preparation")
 	ui._restart()
 	_expect(ui.game.wave == 1 and ui.game.gold == 18 and ui.game.rooms.size() == 5 and ui.profile["wave"] == 1, "Restart callback resets run and preserves record")
 	_expect(ui.game.unlocked_paths.has("ambush") and ui.game.lord["hp"] == 120, "Permanent branch survives restart without carrying run stats")

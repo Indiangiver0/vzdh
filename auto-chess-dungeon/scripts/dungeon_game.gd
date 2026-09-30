@@ -2,6 +2,8 @@ extends RefCounted
 ## The complete run state and deterministic battle rules. No scene or UI dependencies.
 
 const Content = preload("res://scripts/content_catalog.gd")
+const Talents = preload("res://scripts/talent_catalog.gd")
+const Lords = preload("res://scripts/lord_catalog.gd")
 const SLOTS_PER_FLOOR: int = 5
 const MAX_LOGS: int = 70
 
@@ -15,6 +17,13 @@ var rooms: Array[Dictionary] = []
 var heroes: Array[Dictionary] = []
 var lord: Dictionary = {}
 var upgrades: Dictionary = {"hp": 0, "damage": 0, "trap": 0}
+var selected_talents: Dictionary = {}
+var talent_offers: Array[String] = []
+var lord_strikes: int = 0
+var lord_archetype: String = ""
+var lord_mastery: int = 1
+var lord_variant: String = "base"
+var ability_charges: int = 0
 var shop: Dictionary = {}
 var logs: Array[String] = []
 var current_slot: int = -1
@@ -34,9 +43,12 @@ var last_action: Dictionary = {}
 var active_target_id: String = ""
 var seed_value: int = 0
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var talent_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
 var _waiting_for_entry: bool = true
 var _instance_counter: int = 0
+var _has_started_raid: bool = false
+var _lord_ability_values: Dictionary = {}
 
 
 func _init() -> void:
@@ -50,6 +62,8 @@ func restart(new_seed: int = 0) -> void:
 	else:
 		seed_value = new_seed
 		rng.seed = new_seed
+	# Talent draws must never consume the party/shop random sequence.
+	talent_rng.seed = seed_value ^ 0x54A1E17
 	phase = "prepare"
 	wave = 1
 	gold = 18
@@ -65,6 +79,15 @@ func restart(new_seed: int = 0) -> void:
 		"damage": 10, "armor": 1, "level": 1, "xp": 0,
 	}
 	upgrades = {"hp": 0, "damage": 0, "trap": 0}
+	selected_talents.clear()
+	talent_offers.clear()
+	lord_strikes = 0
+	lord_archetype = ""
+	lord_mastery = 1
+	lord_variant = "base"
+	ability_charges = 0
+	_lord_ability_values.clear()
+	_has_started_raid = false
 	shop.clear()
 	logs.clear()
 	current_slot = -1
@@ -83,6 +106,165 @@ func restart(new_seed: int = 0) -> void:
 	_generate_party()
 	_generate_shop()
 	_log("Подземелье открыто. Постройте защиту и запустите первую волну.")
+
+
+func configure_lord(id: String, mastery: int = 1, variant: String = "base") -> String:
+	if phase != "prepare" or wave != 1 or _has_started_raid:
+		return "Владыку выбирают до первого рейда нового забега."
+	var definition: Dictionary = Lords.get_lord(id)
+	var values: Dictionary = Lords.ability_values(id, mastery, variant)
+	if definition.is_empty() or values.is_empty():
+		return "Неизвестный Владыка."
+	lord_archetype = id
+	lord_mastery = int(values.mastery)
+	lord_variant = str(values.variant)
+	# Mastery and variant are snapshots: profile changes cannot alter a running raid.
+	_lord_ability_values = values.duplicate(true)
+	ability_charges = int(values.charges)
+	lord.name = str(definition.name)
+	_clear_defender_effects(lord)
+	_log("Владыка: %s · мастерство %d." % [lord.name, lord_mastery])
+	return ""
+
+
+func lord_passive_modifiers() -> Dictionary:
+	return {
+		"monster_hp": float(_lord_ability_values.get("monster_hp_bonus", 0.0)),
+		"hero_room_xp": float(_lord_ability_values.get("hero_xp_bonus", 0.0)),
+		"poison_duration": float(_lord_ability_values.get("poison_duration_bonus", 0.0)),
+	}
+
+
+func ability_status() -> Dictionary:
+	var definition: Dictionary = Lords.get_lord(lord_archetype)
+	var name: String = str(definition.get("ability_name", "Способность Владыки"))
+	var description: String = str(definition.get("ability_description", ""))
+	if not _lord_ability_values.is_empty():
+		if lord_archetype == "fallen_knight":
+			description = "Щит: %d%% максимального HP защитника." % roundi(float(_lord_ability_values.shield_fraction) * 100.0)
+			if int(_lord_ability_values.empowered_attacks) > 0:
+				description += " Следующие %d удара: +%d%% урона." % [_lord_ability_values.empowered_attacks, roundi(float(_lord_ability_values.attack_bonus) * 100.0)]
+		elif lord_archetype == "necromancer":
+			description = "Метка возвращает защитника после смертельного удара с %d%% HP." % roundi(float(_lord_ability_values.revive_fraction) * 100.0)
+			if float(_lord_ability_values.revive_damage_bonus) > 0.0:
+				description += " После возвращения: +%d%% урона до конца комнаты." % roundi(float(_lord_ability_values.revive_damage_bonus) * 100.0)
+		elif lord_archetype == "plague_alchemist":
+			description = "Вся группа: яд %d × %d тиков. Уже отравленным — ещё %d урона яда." % [_lord_ability_values.poison_damage, _scaled_poison_duration(int(_lord_ability_values.poison_ticks)), _lord_ability_values.burst_damage]
+	var effect_parts: Array[String] = []
+	if int(defender.get("shield", 0)) > 0:
+		effect_parts.append("Щит %d" % int(defender.shield))
+	if int(defender.get("ability_attacks", 0)) > 0:
+		effect_parts.append("Усиленных ударов: %d" % int(defender.ability_attacks))
+	if bool(defender.get("revive_mark", false)):
+		effect_parts.append("Метка возвращения: %d%% HP" % roundi(float(defender.revive_fraction) * 100.0))
+	if float(defender.get("revenant_damage_bonus", 0.0)) > 0.0:
+		effect_parts.append("Возвращённый: +%d%% урона" % roundi(float(defender.revenant_damage_bonus) * 100.0))
+	var reason: String = _ability_block_reason()
+	return {
+		"name": name, "description": description, "charges": ability_charges,
+		"max_charges": int(_lord_ability_values.get("charges", 0)),
+		"can_cast": reason.is_empty(), "reason": reason, "effect": " · ".join(effect_parts),
+		"shield": int(defender.get("shield", 0)),
+		"empowered_attacks": int(defender.get("ability_attacks", 0)),
+		"revive_mark": bool(defender.get("revive_mark", false)),
+	}
+
+
+func _ability_block_reason() -> String:
+	if lord_archetype.is_empty() or _lord_ability_values.is_empty():
+		return "Для этого забега Владыка не выбран."
+	if phase != "raid":
+		return "Способность доступна во время рейда."
+	if int(lord.hp) <= 0:
+		return "Владыка погиб."
+	if ability_charges <= 0:
+		return "Заряды этой волны закончились."
+	if _waiting_for_entry or defender.is_empty() or int(defender.get("hp", 0)) <= 0 or _living().is_empty():
+		return "Дождитесь боя с живым защитником."
+	if current_slot < 0 or current_slot > rooms.size():
+		return "Сейчас нет активного боя."
+	if current_slot < rooms.size() and str(defender.get("kind", "")) != "monster":
+		return "Способность применяется в боевой комнате или тронном зале."
+	if lord_archetype == "fallen_knight" and (int(defender.get("shield", 0)) > 0 or int(defender.get("ability_attacks", 0)) > 0):
+		return "У этого защитника ещё действует предыдущий щит или усиление."
+	if lord_archetype == "necromancer" and bool(defender.get("revive_mark", false)):
+		return "Этот защитник уже отмечен для возвращения."
+	return ""
+
+
+func cast_ability() -> String:
+	var reason: String = _ability_block_reason()
+	if not reason.is_empty():
+		return reason
+	ability_charges -= 1
+	var message: String = ""
+	var amount: int = 0
+	var target_id: String = _defender_actor()
+	if lord_archetype == "fallen_knight":
+		var shield: int = maxi(1, ceili(float(defender.max_hp) * float(_lord_ability_values.shield_fraction)))
+		defender.shield = shield
+		defender.ability_attacks = int(_lord_ability_values.empowered_attacks)
+		defender.ability_attack_bonus = float(_lord_ability_values.attack_bonus)
+		amount = shield
+		message = "%s: щит +%d, усиленных ударов %d." % [defender.name, shield, defender.ability_attacks]
+	elif lord_archetype == "necromancer":
+		defender.revive_mark = true
+		defender.revive_fraction = float(_lord_ability_values.revive_fraction)
+		defender.revive_damage_bonus = float(_lord_ability_values.revive_damage_bonus)
+		amount = maxi(1, ceili(float(defender.max_hp) * float(defender.revive_fraction)))
+		message = "%s отмечен: смертельный удар вернёт его с %d HP." % [defender.name, amount]
+	elif lord_archetype == "plague_alchemist":
+		var targets: Array[Dictionary] = _living()
+		var duration: int = _scaled_poison_duration(int(_lord_ability_values.poison_ticks))
+		var burst_total: int = 0
+		for hero in targets:
+			var was_poisoned: bool = int(hero.poison_ticks) > 0
+			if was_poisoned:
+				var burst: int = _poison_hit(hero, int(_lord_ability_values.burst_damage))
+				hero.hp = maxi(0, int(hero.hp) - burst)
+				burst_total += burst
+			else:
+				hero.poison_heal_factor = 1.0
+			hero.poison_damage = maxi(int(hero.poison_damage), int(_lord_ability_values.poison_damage))
+			hero.poison_ticks = maxi(int(hero.poison_ticks), duration)
+		amount = burst_total
+		target_id = str(targets[0].instance_id)
+		active_target_id = target_id
+		message = "Чумная волна: яд %d × %d тиков всей группе; вспышка %d урона уже отравленным." % [_lord_ability_values.poison_damage, duration, burst_total]
+		_process_deaths()
+		if _living().is_empty():
+			_mark_room_held()
+			_finish_wave()
+	_log(message)
+	_action("ability", "lord", target_id, amount, message)
+	last_action.lord_archetype = lord_archetype
+	last_action.charges = ability_charges
+	return ""
+
+
+func _clear_defender_effects(target: Dictionary) -> void:
+	if target.is_empty():
+		return
+	for key in ["shield", "ability_attacks", "ability_attack_bonus", "revive_mark", "revive_fraction", "revive_damage_bonus", "revenant_damage_bonus"]:
+		target.erase(key)
+
+
+func _scaled_poison_duration(base_ticks: int) -> int:
+	return maxi(1, ceili(float(base_ticks) * (1.0 + float(talent_modifiers().poison_duration) + float(lord_passive_modifiers().poison_duration))))
+
+
+func _poison_hit(hero: Dictionary, raw_damage: int) -> int:
+	return maxi(1, floori(float(raw_damage) * float(hero.get("poison_resistance", 1.0))))
+
+
+func _try_revive_defender() -> bool:
+	if int(defender.hp) > 0 or not bool(defender.get("revive_mark", false)):
+		return false
+	defender.revive_mark = false
+	defender.hp = clampi(ceili(float(defender.max_hp) * float(defender.revive_fraction)), 1, int(defender.max_hp))
+	defender.revenant_damage_bonus = maxf(float(defender.get("revenant_damage_bonus", 0.0)), float(defender.get("revive_damage_bonus", 0.0)))
+	_log("%s возвращается с %d HP: метка израсходована." % [defender.name, defender.hp])
+	return true
 
 
 func buy_room(index: int, id: String) -> String:
@@ -267,12 +449,17 @@ func start_raid() -> String:
 		return "Сначала завершите текущую волну и выберите усиления."
 	if int(lord.hp) <= 0:
 		return "Лорд погиб. Начните новый забег."
+	_has_started_raid = true
+	_clear_defender_effects(defender)
+	_clear_defender_effects(lord)
+	ability_charges = int(_lord_ability_values.get("charges", 0))
 	phase = "raid"
 	current_slot = -1
 	defender = {}
 	tick = 0
 	combat_tick = 0
 	rage = 0
+	lord_strikes = 0
 	_waiting_for_entry = true
 	last_action = {}
 	active_target_id = ""
@@ -309,10 +496,13 @@ func next_wave() -> String:
 	if phase != "result":
 		return "Текущая волна ещё не завершена."
 	wave += 1
+	_clear_defender_effects(defender)
+	ability_charges = int(_lord_ability_values.get("charges", 0))
 	current_slot = -1
 	defender = {}
 	combat_tick = 0
 	rage = 0
+	lord_strikes = 0
 	last_action = {}
 	active_target_id = ""
 	for room in rooms:
@@ -321,26 +511,116 @@ func next_wave() -> String:
 	_generate_party()
 	_generate_shop()
 	phase = "level_up" if pending_upgrades > 0 else "prepare"
+	if phase == "level_up":
+		_generate_talent_offers()
+	else:
+		talent_offers.clear()
 	_log("Приближается волна %d. Подготовьте подземелье." % wave)
 	return ""
 
 
 func choose_upgrade(id: String) -> String:
+	# Compatibility entry point: only the current offered talent IDs are accepted.
+	return choose_talent(id)
+
+
+func choose_talent(id: String) -> String:
 	if phase != "level_up" or pending_upgrades <= 0:
-		return "Сейчас нет доступных усилений."
-	if not upgrades.has(id):
-		return "Неизвестное усиление."
-	upgrades[id] = int(upgrades[id]) + 1
+		return "Сейчас нет доступного выбора таланта."
+	if not talent_offers.has(id):
+		return "Выберите один из трёх предложенных талантов."
+	var definition: Dictionary = Talents.get_talent(id)
+	if definition.is_empty() or not _talent_is_eligible(definition):
+		return "Этот талант сейчас недоступен."
+	selected_talents[id] = int(selected_talents.get(id, 0)) + 1
+	_recalculate_lord()
 	pending_upgrades -= 1
-	var names: Dictionary = {
-		"hp": "Крепкие прислужники: +10% HP существ",
-		"damage": "Жестокие прислужники: +10% урона существ",
-		"trap": "Опасные ловушки: +10% урона яда и шипов",
-	}
-	_log(str(names[id]))
+	var drawback_text: String = ""
+	if not str(definition.drawback).is_empty():
+		drawback_text = " Цена: %s" % definition.drawback
+	_log("Талант «%s» · ранг %d. %s%s" % [definition.name, selected_talents[id], definition.bonus, drawback_text])
+	talent_offers.clear()
 	if pending_upgrades == 0:
 		phase = "prepare"
+	else:
+		_generate_talent_offers()
 	return ""
+
+
+func talent_options() -> Array[Dictionary]:
+	# A read-only view: repainting the UI cannot reroll choices or change health.
+	var options: Array[Dictionary] = []
+	for id in talent_offers:
+		var definition: Dictionary = Talents.get_talent(id).duplicate(true)
+		if definition.is_empty():
+			continue
+		definition.current_rank = int(selected_talents.get(id, 0))
+		definition.rank = int(definition.current_rank) + 1
+		options.append(definition)
+	return options
+
+
+func talent_modifiers() -> Dictionary:
+	var modifiers: Dictionary = {
+		"lord_hp": 0.0, "lord_damage": 0.0, "lord_armor": 0.0,
+		"monster_hp": 0.0, "monster_damage": 0.0, "trap_damage": 0.0,
+		"spike_damage": 0.0, "poison_duration": 0.0, "kill_gold": 0.0,
+		"hero_room_xp": 0.0, "floor_cost": 0.0, "heal_cost": 0.0,
+		"opening_strikes": 0.0, "opening_multiplier": 1.0,
+	}
+	for id in selected_talents:
+		var rank: int = maxi(0, int(selected_talents[id]))
+		var definition: Dictionary = Talents.get_talent(str(id))
+		if definition.is_empty() or rank == 0:
+			continue
+		var effects: Dictionary = definition.get("modifiers", {})
+		for key in effects:
+			if str(key) == "opening_multiplier":
+				# Catalog stores the absolute multiplier (2 means double), not +200%.
+				modifiers[key] = float(modifiers[key]) + (float(effects[key]) - 1.0) * rank
+			else:
+				modifiers[key] = float(modifiers.get(key, 0.0)) + float(effects[key]) * rank
+	return modifiers
+
+
+func opening_strikes_remaining() -> int:
+	return maxi(0, int(talent_modifiers().opening_strikes) - lord_strikes)
+
+
+func _talent_is_eligible(definition: Dictionary) -> bool:
+	if int(lord.level) < int(definition.get("min_level", 1)):
+		return false
+	var rank: int = int(selected_talents.get(str(definition.id), 0))
+	var maximum: int = int(definition.get("max_rank", 0))
+	return maximum == 0 or rank < maximum
+
+
+func _generate_talent_offers() -> void:
+	talent_offers.clear()
+	if phase != "level_up" or pending_upgrades <= 0:
+		return
+	var eligible: Array[String] = []
+	for id in Talents.ids():
+		var definition: Dictionary = Talents.get_talent(id)
+		if not definition.is_empty() and _talent_is_eligible(definition):
+			eligible.append(id)
+	for _offer in range(mini(3, eligible.size())):
+		var index: int = talent_rng.randi_range(0, eligible.size() - 1)
+		talent_offers.append(eligible[index])
+		eligible.remove_at(index)
+
+
+func _recalculate_lord() -> void:
+	var old_hp: int = int(lord.hp)
+	var damage_taken: int = maxi(0, int(lord.max_hp) - old_hp)
+	var levels: int = int(lord.level) - 1
+	var modifiers: Dictionary = talent_modifiers()
+	lord.max_hp = maxi(1, ceili(float(120 + 10 * levels) * (1.0 + float(modifiers.lord_hp))))
+	lord.damage = maxi(1, ceili(float(10 + levels) * (1.0 + float(modifiers.lord_damage))))
+	lord.armor = maxi(0, 1 + int(modifiers.lord_armor))
+	# Increasing max HP preserves wounds; lowering it cannot kill a living lord.
+	# Repeated calls with the same base/modifiers neither heal nor resurrect.
+	lord.hp = clampi(int(lord.max_hp) - damage_taken, 1, int(lord.max_hp)) if old_hp > 0 else 0
 
 
 func room_stats(index: int) -> Dictionary:
@@ -351,8 +631,12 @@ func room_stats(index: int) -> Dictionary:
 	var rank: int = int(state.rank)
 	var rank_factor: float = 1.0 + 0.25 * float(rank - 1)
 	var is_monster: bool = str(result.kind) == "monster"
-	var hp_factor: float = 1.0 + 0.1 * float(upgrades.hp)
+	var modifiers: Dictionary = talent_modifiers()
+	var hp_factor: float = 1.0 + 0.1 * float(upgrades.hp) + float(modifiers.monster_hp) + float(lord_passive_modifiers().monster_hp)
 	var damage_factor: float = 1.0 + 0.1 * float(upgrades.damage if is_monster else upgrades.trap)
+	damage_factor += float(modifiers.monster_damage if is_monster else modifiers.trap_damage)
+	if str(result.kind) == "spikes":
+		damage_factor += float(modifiers.spike_damage)
 	var floor_index: int = index / SLOTS_PER_FLOOR
 	var floor_trait: String = floor_traits[floor_index] if floor_index < floor_traits.size() else "plain"
 	var specialization: String = str(state.get("specialization", ""))
@@ -383,12 +667,14 @@ func room_stats(index: int) -> Dictionary:
 		damage_factor *= 1.6
 	elif specialization == "lingering":
 		duration += 3
+	duration = _scaled_poison_duration(duration)
 	result.hp = ceili(float(result.hp) * rank_factor * hp_factor) if is_monster else 0
 	result.max_hp = result.hp
 	result.damage = ceili(float(result.damage) * rank_factor * damage_factor)
 	if specialization == "virulent":
 		result.damage = int(result.damage) + 1
-	result.xp = int(result.xp) + 2 * (rank - 1) if is_monster else 0
+	var base_xp: int = int(result.xp) + 2 * (rank - 1) if is_monster else 0
+	result.xp = hero_room_xp(base_xp)
 	result.rank = rank
 	result.invested = state.invested
 	result.used = state.used
@@ -410,13 +696,20 @@ func room_stats(index: int) -> Dictionary:
 	return result
 
 
+func hero_room_xp(base_xp: int) -> int:
+	# Round the shared pool to the nearest integer: a small greed penalty must not
+	# turn a 3 XP room into 4 XP (+33%) before its rank has even increased.
+	return maxi(0, roundi(float(base_xp) * (1.0 + float(talent_modifiers().hero_room_xp) + float(lord_passive_modifiers().hero_room_xp))))
+
+
 func floor_cost() -> int:
 	var next_floor: int = floor_count + 1
-	return 5 * next_floor * next_floor
+	return maxi(1, ceili(float(5 * next_floor * next_floor) * (1.0 + float(talent_modifiers().floor_cost))))
 
 
 func heal_cost() -> int:
-	return 6 + 2 * floori(float(wave - 1) / 5.0)
+	var base_cost: int = 6 + 2 * floori(float(wave - 1) / 5.0)
+	return maxi(1, ceili(float(base_cost) * (1.0 + float(talent_modifiers().heal_cost))))
 
 
 func upgrade_cost(index: int) -> int:
@@ -565,10 +858,28 @@ func _action(kind: String, actor: String, target: String, amount: int, message: 
 	last_action = {"kind": kind, "actor": actor, "target": target, "amount": amount, "text": message}
 
 
+func next_route_slot(index: int) -> int:
+	# Slots keep their physical left-to-right IDs; traversal alternates per floor.
+	if index < 0:
+		return 0
+	if index >= rooms.size():
+		return rooms.size()
+	var floor_index: int = index / SLOTS_PER_FLOOR
+	var direction: int = 1 if floor_index % 2 == 0 else -1
+	var next_column: int = index % SLOTS_PER_FLOOR + direction
+	if next_column >= 0 and next_column < SLOTS_PER_FLOOR:
+		return index + direction
+	var next_floor: int = floor_index + 1
+	if next_floor >= floor_count:
+		return rooms.size()
+	return next_floor * SLOTS_PER_FLOOR + (0 if next_floor % 2 == 0 else SLOTS_PER_FLOOR - 1)
+
+
 func _enter_next_room() -> void:
-	current_slot += 1
+	_clear_defender_effects(defender)
+	current_slot = next_route_slot(current_slot)
 	while current_slot < rooms.size() and rooms[current_slot].is_empty():
-		current_slot += 1
+		current_slot = next_route_slot(current_slot)
 	combat_tick = 0
 	rage = 0
 	if current_slot >= rooms.size():
@@ -665,7 +976,23 @@ func _combat_step() -> void:
 		_log("Ярость защитника: +%d урона." % rage)
 	var target: Dictionary = _select_defender_target(survivors, poisoned_at_start)
 	active_target_id = str(target.instance_id)
-	var defender_attack: int = int(defender.damage) + rage
+	var empowered_strike: bool = false
+	var ability_strike: bool = int(defender.get("ability_attacks", 0)) > 0
+	var active_attack_bonus: float = float(defender.get("revenant_damage_bonus", 0.0))
+	if ability_strike:
+		active_attack_bonus += float(defender.get("ability_attack_bonus", 0.0))
+		defender.ability_attacks = int(defender.ability_attacks) - 1
+	var scaled_attack: float = float(defender.damage) * (1.0 + active_attack_bonus)
+	if current_slot == rooms.size():
+		var modifiers: Dictionary = talent_modifiers()
+		if lord_strikes < int(modifiers.opening_strikes):
+			scaled_attack *= float(modifiers.opening_multiplier)
+			empowered_strike = true
+		lord_strikes += 1
+	# Add temporary attack bonuses, multiply opening wrath, then round once.
+	# Rage and target armor remain outside these multipliers.
+	var defender_attack: int = ceili(scaled_attack)
+	defender_attack += rage
 	if str(defender.id) == "spider" and poisoned_at_start.has(str(target.instance_id)):
 		defender_attack += 3
 	if str(defender.get("specialization", "")) == "ambush" and combat_tick == 1:
@@ -684,17 +1011,40 @@ func _combat_step() -> void:
 	# All attacks are computed before either side loses HP.
 	var old_defender_hp: int = int(defender.hp)
 	target.hp = maxi(0, int(target.hp) - outgoing)
-	defender.hp = maxi(0, old_defender_hp - incoming)
+	var absorbed: int = mini(int(defender.get("shield", 0)), incoming)
+	if absorbed > 0:
+		defender.shield = int(defender.shield) - absorbed
+		_log("Щит %s поглотил %d урона." % [defender.name, absorbed])
+	defender.hp = maxi(0, old_defender_hp - (incoming - absorbed))
+	var hp_lost: int = old_defender_hp - int(defender.hp)
+	var revived: bool = _try_revive_defender()
 	if current_slot == rooms.size():
-		report.lord_damage = int(report.lord_damage) + old_defender_hp - int(defender.hp)
+		report.lord_damage = int(report.lord_damage) + hp_lost
 	else:
 		rooms[current_slot].current_hp = defender.hp
 	_log("%s → %s: %d урона · группа → %s: %d." % [defender.name, target.name, outgoing, defender.name, incoming])
-	_action("attack", _defender_actor(), active_target_id, outgoing, "%s → %s: −%d HP" % [defender.name, target.name, outgoing])
+	var action_text: String = "%s → %s: −%d HP" % [defender.name, target.name, outgoing]
+	if empowered_strike:
+		action_text = "Первый гнев · удар %d: %s" % [lord_strikes, action_text]
+		_log(action_text)
+	if ability_strike:
+		action_text += " · усиление щита"
+	if revived:
+		action_text += " · защитник возвращается"
+	_action("attack", _defender_actor(), active_target_id, outgoing, action_text)
 	last_action.incoming = incoming
 	last_action.defender_hp = int(defender.hp)
+	last_action.empowered = empowered_strike
+	last_action.ability_empowered = ability_strike
+	last_action.shield_absorbed = absorbed
+	last_action.shield = int(defender.get("shield", 0))
+	last_action.revived = revived
+	if current_slot == rooms.size():
+		last_action.lord_strikes = lord_strikes
+		last_action.opening_remaining = opening_strikes_remaining()
 	_process_deaths()
-	# Mutual death in the throne room is always a player defeat.
+	# A consumed necromancer mark has already revived the defender, if present.
+	# Unprevented mutual death in the throne room is still a player defeat.
 	if current_slot == rooms.size() and int(lord.hp) <= 0:
 		_finish_defeat()
 		return
@@ -706,6 +1056,7 @@ func _combat_step() -> void:
 		rooms[current_slot].status = "cleared"
 		_log("%s повержен. Герои забирают награду." % defender.name)
 		_award_room_loot(defender)
+		_clear_defender_effects(defender)
 		_waiting_for_entry = true
 
 
@@ -713,8 +1064,7 @@ func _apply_poison() -> void:
 	for hero in _living():
 		if int(hero.poison_ticks) <= 0:
 			continue
-		var damage: int = int(hero.poison_damage)
-		damage = maxi(1, floori(float(damage) * float(hero.get("poison_resistance", 1.0))))
+		var damage: int = _poison_hit(hero, int(hero.poison_damage))
 		hero.hp = maxi(0, int(hero.hp) - damage)
 		hero.poison_ticks = int(hero.poison_ticks) - 1
 		_log("Яд: %s −%d HP (%d тиков осталось)." % [hero.name, damage, hero.poison_ticks])
@@ -732,7 +1082,8 @@ func _process_deaths() -> void:
 		hero.death_processed = true
 		changed = true
 		hero.items = []
-		var coins: int = 3 + floori(float(wave - 1) / 3.0)
+		var base_coins: int = 3 + floori(float(wave - 1) / 3.0)
+		var coins: int = maxi(0, ceili(float(base_coins) * (1.0 + float(talent_modifiers().kill_gold))))
 		var experience: int = 5 + int(hero.level)
 		gold += coins
 		lord.xp = int(lord.xp) + experience
@@ -806,6 +1157,8 @@ func _finish_wave() -> void:
 	if int(lord.hp) <= 0:
 		_finish_defeat()
 		return
+	_clear_defender_effects(defender)
+	_clear_defender_effects(lord)
 	gold += 4
 	report.gold = int(report.gold) + 4
 	if not elite_id.is_empty():
@@ -820,12 +1173,12 @@ func _finish_wave() -> void:
 	cleared_waves += 1
 	while int(lord.xp) >= 10 + 6 * (int(lord.level) - 1):
 		lord.xp = int(lord.xp) - (10 + 6 * (int(lord.level) - 1))
+		var previous_max_hp: int = int(lord.max_hp)
+		var previous_damage: int = int(lord.damage)
 		lord.level = int(lord.level) + 1
-		lord.max_hp = int(lord.max_hp) + 10
-		lord.damage = int(lord.damage) + 1
-		lord.hp = mini(int(lord.max_hp), int(lord.hp) + 10)
+		_recalculate_lord()
 		pending_upgrades += 1
-		_log("Лорд достиг уровня %d! +10 HP, +1 урона и выбор усиления." % int(lord.level))
+		_log("Лорд достиг уровня %d! +%d HP, +%d урона и выбор таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
 	phase = "result"
 	_log("Волна %d отражена! +4 золота за защиту." % wave)
 
@@ -834,6 +1187,8 @@ func _finish_defeat() -> void:
 	if phase == "defeat":
 		return
 	phase = "defeat"
+	_clear_defender_effects(defender)
+	_clear_defender_effects(lord)
 	_log("Лорд пал. Пережито волн: %d · убито героев: %d." % [cleared_waves, total_kills])
 
 

@@ -33,7 +33,17 @@ func _run_strategy(run_seed: int, policy: String) -> int:
 		if game.phase == "result":
 			game.next_wave()
 		while game.phase == "level_up":
-			game.choose_upgrade("trap" if policy == "traps" else ("damage" if int(game.upgrades.damage) <= int(game.upgrades.hp) else "hp"))
+			var talent_id: String = _preferred_talent(game, policy)
+			if talent_id.is_empty():
+				push_error("Probe cannot resolve level: no offered talent")
+				failed = true
+				return game.cleared_waves
+			var pending_before: int = game.pending_upgrades
+			var choice_error: String = game.choose_talent(talent_id)
+			if not choice_error.is_empty() or game.pending_upgrades >= pending_before:
+				push_error("Probe talent choice did not advance: " + choice_error)
+				failed = true
+				return game.cleared_waves
 		_resolve_floor_choice(game, policy)
 		if game.wave > WAVE_LIMIT:
 			break
@@ -71,6 +81,20 @@ func _run_strategy(run_seed: int, policy: String) -> int:
 			return game.cleared_waves
 	print("policy=%s seed=%d survived=%d floors=%d floor2@%d floor3@%d kills=%d lordLv=%d gold=%d healSpent=%d lordDamage=%d steps=%d end=%s" % [policy, run_seed, game.cleared_waves, game.floor_count, floor_2_wave, floor_3_wave, game.total_kills, int(game.lord.level), game.gold, total_healing_gold, lord_damage, step_count, game.phase])
 	return game.cleared_waves
+
+
+func _preferred_talent(game, policy: String) -> String:
+	if game.talent_offers.is_empty():
+		return ""
+	var preference: Array[String] = ["minion_fury", "sturdy_minions", "trap_mastery", "expansion", "blood_income", "iron_throne", "overlord_might", "opening_wrath"]
+	if policy == "traps":
+		preference.assign(["trap_mastery", "lasting_poison", "greed", "expansion", "blood_income", "iron_throne", "opening_wrath", "overlord_might"])
+	elif policy == "creatures":
+		preference.assign(["minion_fury", "sturdy_minions", "greed", "expansion", "blood_income", "iron_throne", "overlord_might", "thick_armor"])
+	for id in preference:
+		if game.talent_offers.has(id):
+			return id
+	return str(game.talent_offers[0])
 
 
 func _resolve_floor_choice(game, policy: String) -> void:

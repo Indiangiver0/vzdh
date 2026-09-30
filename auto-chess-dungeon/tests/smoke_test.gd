@@ -231,9 +231,13 @@ func _test_old_room_sale_and_persistence() -> void:
 	var gold_after: int = game.gold
 	var hp_after: int = game.lord["hp"]
 	_ok(game.next_wave(), "Advance after successful defense")
+	_expect(game.gold == gold_after and game.lord["hp"] == hp_after, "Preparation transition preserves gold and injured lord health before talent choices")
 	while game.phase == "level_up":
-		_ok(game.choose_upgrade("hp"), "Resolve pending upgrade")
-	_expect(game.gold == gold_after and game.lord["hp"] == hp_after, "Preparation preserves gold and injured lord health")
+		game.talent_offers.assign(["sturdy_minions"])
+		var choice_error: String = game.choose_talent("sturdy_minions")
+		_ok(choice_error, "Resolve pending talent")
+		if not choice_error.is_empty():
+			break
 	_expect(game.rooms[0]["rank"] == 2 and game.rooms[0]["used"], "Used room and its rank persist after wave")
 	var stock_before: int = game.shop["goblin"]
 	_ok(game.sell_room(0), "Sell a used upgraded room")
@@ -392,8 +396,9 @@ func _test_lord_levels_and_rage() -> void:
 	_expect(game.phase == "level_up", "Pending level choices block preparation")
 	_expect(not game.start_raid().is_empty(), "Cannot start next raid before choosing upgrades")
 	for _choice in range(4):
-		_ok(game.choose_upgrade("hp"), "Choose repeatable creature health boost")
-	_expect(game.phase == "prepare" and game.upgrades["hp"] == 4 and game.room_stats(0)["hp"] == 42, "Repeated health choices add to forty percent and round once")
+		game.talent_offers.assign(["sturdy_minions"])
+		_ok(game.choose_talent("sturdy_minions"), "Choose repeatable creature health talent")
+	_expect(game.phase == "prepare" and game.selected_talents.get("sturdy_minions", 0) == 4 and game.room_stats(0)["hp"] == 48, "Repeated health talents add to sixty percent and round once")
 	_expect(game.lord["max_hp"] == 160, "Creature passive health bonuses do not multiply lord health")
 
 	game = _battle_party()
