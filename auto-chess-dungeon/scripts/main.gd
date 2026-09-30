@@ -468,6 +468,10 @@ func _process(delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F11:
+			_toggle_fullscreen()
+			get_viewport().set_input_as_handled()
+			return
 		if event.keycode == KEY_Q or event.physical_keycode == KEY_Q:
 			_cast_lord_ability()
 		if event.keycode == KEY_SPACE and not menu_open and game.phase == "raid" and not is_instance_valid(modal):
@@ -489,6 +493,13 @@ func _input(event: InputEvent) -> void:
 				_cancel_selection()
 			else:
 				_open_menu()
+
+func _toggle_fullscreen() -> void:
+	var window: Window = get_window()
+	if window.mode in [Window.MODE_FULLSCREEN, Window.MODE_EXCLUSIVE_FULLSCREEN]:
+		window.mode = Window.MODE_WINDOWED
+	else:
+		window.mode = Window.MODE_FULLSCREEN
 
 func _slot_clicked(index: int) -> void:
 	if menu_open or is_instance_valid(modal) or game.phase != "prepare" or not _tutorial_allow("slot:" + str(index)):
@@ -1529,6 +1540,7 @@ func _show_settings() -> void:
 	_close_modal()
 	var body = _new_modal()
 	body.add_child(_label("Настройки", 28, GOLD))
+	body.add_child(_button("Полный экран / окно · F11", _toggle_fullscreen))
 	body.add_child(_button("Звук: " + ("включён" if sound_on else "выключен"), _settings_toggle_sound))
 	body.add_child(_label("Громкость", 15, MUTED))
 	var slider = HSlider.new()
