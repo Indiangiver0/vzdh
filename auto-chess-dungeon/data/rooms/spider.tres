@@ -10,6 +10,7 @@ short_name = "Пауки"
 description = "Добивает героя с наименьшей долей HP, предпочитая отравленных. По отравленной цели +3 урона. При поражении отдаёт 3 XP."
 cost = 5
 kind = "monster"
+tags = PackedStringArray("creature", "corporeal")
 hp = 38
 damage = 8
 armor = 0

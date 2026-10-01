@@ -10,6 +10,7 @@ short_name = "Гончая"
 description = "Атакует героя с наименьшей долей HP. Если у цели осталось 40% HP или меньше, наносит на 30% больше урона."
 cost = 4
 kind = "monster"
+tags = PackedStringArray("creature", "corporeal")
 hp = 32
 damage = 8
 armor = 0

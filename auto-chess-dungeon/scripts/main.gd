@@ -229,7 +229,7 @@ func _party_panel(parent: Control) -> void:
 			for id in items:
 				names_list.append(str(Content.item(str(id)).get("name", id)))
 			status += " · " + ", ".join(names_list)
-		card.tooltip_text = status
+		card.tooltip_text = str(definition.get("trait", "")) + "\n" + status
 		var status_label = _label(status, 10 if compact else 11, GREEN if int(hero.get("poison_ticks", 0)) > 0 else MUTED, true)
 		inner.add_child(status_label)
 	if tutorial.active():
@@ -334,6 +334,7 @@ func _inspector_panel(parent: Control) -> void:
 		right.add_child(_label(str(stats.name), 18, GOLD, true))
 		var faction: Dictionary = Game.room_faction(str(stats.id))
 		right.add_child(_label("%s · ранг %d" % [faction.get("name", ""), stats.get("rank", 1)], 12, faction.get("color", MUTED)))
+		right.add_child(_label(Content.room_traits_text(stats), 11, MUTED, true))
 		_disclosure(right, "Свойства и цели", str(stats.description) + "\n" + _matchup_text(stats))
 		if str(stats.get("kind", "")) in ["shackles", "silence", "rust"]:
 			right.add_child(_label("Контроль %d т. · удар %d\nБез XP героям" % [int(stats.get("effect_turns", 0)), int(stats.get("impact_damage", 0))], 12, PAPER, true))
@@ -412,6 +413,7 @@ func _shop_panel() -> void:
 			button.tooltip_text = "%s\nБазовая длительность: %d т. · срабатывает в следующем бою.\nНе даёт героям XP." % [definition.description, definition.get("effect_turns", 0)]
 		elif str(definition.kind) != "monster":
 			button.tooltip_text = "%s\nУрон: %d · без XP героям\n%s" % [definition.description, int(definition.damage), str(definition.get("role", ""))]
+		button.tooltip_text = Content.room_traits_text(definition) + "\n" + button.tooltip_text
 		button.pressed.connect(_select_shop.bind(str(id)))
 		_style_faction_card(button, faction_color, selected_room == str(id))
 		row.add_child(button)
@@ -756,6 +758,7 @@ func _show_help() -> void:
 	for id in Content.hero_ids():
 		var hero: Dictionary = Content.hero(str(id))
 		_disclosure(content, str(hero.name), str(hero.get("trait", "")))
+	_disclosure(content, "Типы угроз", "Телесные существа уязвимы к рыцарю и варвару. Духи — к чародею. Следопыт ослабляет все ловушки и первый удар засад. Жрица защищает группу от яда. Бард усиливает весь отряд. Признаки комнаты указаны в её подсказке.")
 	_disclosure(content, "Управление", "Магазин → пустое место. Комната → другой слот для переноса. Пробел — пауза, Q — сила Лорда, Esc — меню, F11 — полный экран.")
 	_disclosure(content, "Развитие комнат · 1 / 5 / 15", "На этих рангах выбирайте развитие в инспекторе комнаты. Выбранные ступени сохраняются до продажи. Последующие выборы добавляют новые свойства к уже выбранным.")
 	content.add_child(_button("Комбо комнат и реликвии", _show_run_collection))
@@ -1640,7 +1643,7 @@ func _fill_showcase(target) -> void:
 func _matchup_text(stats: Dictionary) -> String:
 	match str(stats.get("id", "")):
 		"mimic":
-			return "Цель: бард, жрица, чародей — поддержка за передним бойцом."
+			return "Цель: бард, жрица, чародей — поддержка за передним бойцом. Живой следопыт ослабляет первый удар засады на 35%."
 		"spider":
 			return "Цель: ослабленный герой. Яд усиливает укус."
 		"ogre":
@@ -1648,23 +1651,25 @@ func _matchup_text(stats: Dictionary) -> String:
 		"war_hound":
 			return "Охотится на слабейшего; +30% урона целям с HP ≤ 40%."
 		"wraith":
-			return "Игнорирует 2 брони: эффективен против бронированных героев."
+			return "Игнорирует 2 брони. Рыцарь и варвар наносят духам на 20% меньше урона; чародей — на 25% больше без безмолвия."
 		"vampire":
 			return "Если пережил ответ, лечится на 25% реально нанесённого урона."
 		"ballista", "blade_floor":
-			return str(stats.get("role", ""))
-		"spikes", "poison":
+			return str(stats.get("role", "")) + " Следопыт ослабит ловушку, пока есть инструменты."
+		"spikes":
 			return "Следопыт ослабит ловушку, пока есть инструменты. Заставьте его потратить их раньше."
+		"poison":
+			return "Следопыт сокращает отравление за инструмент. Жрица снижает урон яда всей группе на 25%, пока жива и не заглушена."
 		"shackles":
 			return "Задерживает атаки в следующем бою. Соседний страж дополняет оковы связкой «Темница»."
 		"silence":
-			return "Против жрицы, барда, чародея и ярости варвара. Следопыт может сократить эффект."
+			return "Подавляет магию чародея, лечение и защиту от яда жрицы, песню барда. Следопыт может сократить эффект. Ярость варвара сохраняется."
 		"rust":
 			return "Ослабляет броню группы перед следующим боем. Поставьте перед сильным существом."
 		"guardian":
 			return "Удерживает героев: дайте яду время. Оковы перед стражем образуют «Темницу»."
 		_:
-			return "Рыцарь силён против монстров. Ловушки и нападение на поддержку ослабят его группу."
+			return "Рыцарь и варвар сильны против телесных существ. Ловушки, духи и нападение на поддержку ослабят их группу."
 
 func _show_specializations(index: int) -> void:
 	if not _tutorial_allow("evolution"):
@@ -1714,14 +1719,19 @@ func _hero_status(hero: Dictionary, definition: Dictionary) -> String:
 		return "Повержен"
 	var parts: PackedStringArray = []
 	match str(hero.id):
+		"knight":
+			parts.append("Силен против телесных · слаб против духов")
 		"rogue":
-			parts.append("Инструменты: %d · ослабляет ловушки" % int(hero.get("disarm_charges", 2)))
+			parts.append("Инструменты: %d · все ловушки · раскрывает засады" % int(hero.get("disarm_charges", 2)))
+		"priest":
+			parts.append("Лечение · защита группы от яда −25%" if int(hero.get("silence_ticks", 0)) <= 0 else "Лечение и защита от яда заглушены")
 		"mage":
-			parts.append("Заклинание каждый 3-й тик · пробивает броню")
+			parts.append("Против духов +25% · заклинание каждый 3-й тик" if int(hero.get("silence_ticks", 0)) <= 0 else "Магия заглушена")
 		"barbarian":
-			parts.append("ЯРОСТЬ +25%" if int(hero.hp) <= float(hero.max_hp) * 0.4 and int(hero.get("silence_ticks", 0)) <= 0 else "Ярость при HP ≤ 40%")
+			parts.append("Телесные +20% · духи −20%")
+			parts.append("ЯРОСТЬ +25%" if int(hero.hp) <= float(hero.max_hp) * 0.4 else "Ярость при HP ≤ 40%")
 		"bard":
-			parts.append("Песня: +15% урона союзникам" if int(hero.get("silence_ticks", 0)) <= 0 else "Песня заглушена")
+			parts.append("Песня: +15% урона всему отряду" if int(hero.get("silence_ticks", 0)) <= 0 else "Песня заглушена")
 		_:
 			parts.append(str(definition.get("trait", "")))
 	if int(hero.get("poison_ticks", 0)) > 0:
@@ -1875,7 +1885,7 @@ func _deal_card(parent: Control, offer: Dictionary) -> void:
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var faction: Dictionary = Game.room_faction(str(offer.get("room_id", "")))
 	_style_faction_card(button, faction.get("color", GOLD), selecting_deal)
-	button.tooltip_text = str(offer.get("description", "")) + "\n" + str(offer.get("risk_text", "")) + "\nРанг растёт с номером волны. Отмена выбора не меняет предложение.\nДо начала волны продажа этой комнаты снимает риск."
+	button.tooltip_text = Content.room_traits_text(definition) + "\n" + str(offer.get("description", "")) + "\n" + str(offer.get("risk_text", "")) + "\nРанг растёт с номером волны. Отмена выбора не меняет предложение.\nДо начала волны продажа этой комнаты снимает риск."
 	column.add_child(button)
 	column.add_child(_label(str(offer.get("risk_text", "")), 11, RED, true))
 

@@ -10,6 +10,7 @@ short_name = "Страж"
 description = "Живучий защитник с небольшим уроном: затягивает бой, пока яд повреждает отряд. Если прямо перед ним стоят оковы, комбо «Темница» лишает героев атак в первый тик. При поражении отдаёт 3 XP."
 cost = 6
 kind = "monster"
+tags = PackedStringArray("creature", "corporeal")
 hp = 64
 damage = 5
 armor = 1

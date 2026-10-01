@@ -10,6 +10,7 @@ short_name = "Яд"
 description = "Отравляет всех героев: 2 урона за тик, 6 тиков. Яд обходит броню и усиливает пауков. Наград героям нет."
 cost = 4
 kind = "poison"
+tags = PackedStringArray("trap", "poison")
 damage = 2
 color = Color(0.34, 0.75, 0.67, 1)
 icon = "res://assets/icons/poison.svg"

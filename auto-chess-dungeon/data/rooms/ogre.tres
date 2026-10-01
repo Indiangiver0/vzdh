@@ -10,6 +10,7 @@ short_name = "Огр"
 description = "Выдерживает затяжной бой. Каждый третий боевой тик удар дубиной наносит ×1,5 урона."
 cost = 7
 kind = "monster"
+tags = PackedStringArray("creature", "corporeal")
 hp = 80
 damage = 9
 armor = 1

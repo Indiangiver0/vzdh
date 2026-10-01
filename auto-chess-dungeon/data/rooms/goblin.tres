@@ -10,6 +10,7 @@ short_name = "Гоблины"
 description = "Дешёвый заслон. При поражении отдаёт героям 5 XP: несколько слабых комнат могут подарить им уровень."
 cost = 3
 kind = "monster"
+tags = PackedStringArray("creature", "corporeal")
 hp = 30
 damage = 6
 armor = 0

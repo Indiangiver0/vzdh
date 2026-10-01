@@ -10,6 +10,7 @@ short_name = "Руны"
 description = "В следующем бою снижает броню всех героев на 1 первые 3 тика; ниже нуля броня не падает. Следопыт с инструментом сокращает эффект до 1 тика. Наград героям нет."
 cost = 4
 kind = "rust"
+tags = PackedStringArray("trap")
 effect_turns = 3
 effect_power = 1.0
 color = Color(0.80, 0.52, 0.35, 1)

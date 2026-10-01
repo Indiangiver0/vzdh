@@ -10,6 +10,7 @@ short_name = "Палач"
 description = "Мощный удар по переднему герою. При поражении отдаёт 3 XP и меч с +3 к урону."
 cost = 7
 kind = "monster"
+tags = PackedStringArray("creature", "corporeal")
 hp = 46
 damage = 14
 armor = 1

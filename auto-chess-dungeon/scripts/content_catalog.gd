@@ -54,3 +54,13 @@ static func room_ids() -> Array[String]:
 
 static func hero_ids() -> Array[String]:
 	return ["knight", "rogue", "priest", "mage", "barbarian", "bard"]
+
+static func room_traits_text(stats: Dictionary) -> String:
+	var labels: Array[String] = []
+	var names: Dictionary = {"creature": "Существо", "corporeal": "Телесное", "spirit": "Дух", "trap": "Ловушка", "poison": "Яд", "ambush": "Засада"}
+	for tag in stats.get("tags", []):
+		if names.has(str(tag)):
+			labels.append(str(names[str(tag)]))
+	if int(stats.get("armor", 0)) > 0:
+		labels.append("Броня")
+	return " · ".join(labels)

@@ -273,12 +273,13 @@ func cast_ability() -> String:
 		message = "%s отмечен: смертельный удар вернёт его с %d HP." % [defender.name, amount]
 	elif lord_archetype == "plague_alchemist":
 		var targets: Array[Dictionary] = _living()
+		var poison_aura: float = _poison_aura_multiplier()
 		var duration: int = _scaled_poison_duration(int(_lord_ability_values.poison_ticks))
 		var burst_total: int = 0
 		for hero in targets:
 			var was_poisoned: bool = int(hero.poison_ticks) > 0
 			if was_poisoned:
-				var burst: int = _poison_hit(hero, int(_lord_ability_values.burst_damage))
+				var burst: int = _poison_hit(hero, int(_lord_ability_values.burst_damage), poison_aura)
 				burst_total += _inflict_hero_damage(hero, burst, "lord")
 			else:
 				hero.poison_heal_factor = 1.0
@@ -309,8 +310,18 @@ func _scaled_poison_duration(base_ticks: int) -> int:
 	return maxi(1, ceili(float(base_ticks) * (1.0 + float(talent_modifiers().poison_duration) + float(lord_passive_modifiers().poison_duration))))
 
 
-func _poison_hit(hero: Dictionary, raw_damage: int) -> int:
-	return maxi(1, floori(float(raw_damage) * float(hero.get("poison_resistance", 1.0))))
+func _poison_aura_multiplier() -> float:
+	for hero in _living():
+		if str(hero.id) == "priest" and int(hero.get("silence_ticks", 0)) == 0:
+			return 0.75
+	return 1.0
+
+
+func _poison_hit(hero: Dictionary, raw_damage: int, aura_multiplier: float = 1.0) -> int:
+	# Callers snapshot the aura before a group hit, so a priest dying during
+	# that same hit cannot change protection according to party order.
+	var multiplier: float = maxf(0.5, float(hero.get("poison_resistance", 1.0)) * aura_multiplier)
+	return maxi(1, floori(float(raw_damage) * multiplier))
 
 
 func _try_revive_defender() -> bool:
@@ -1133,7 +1144,7 @@ func room_stats(index: int) -> Dictionary:
 		result.armor = int(result.armor) + 1
 	result.role = "Атакует переднего героя"
 	if str(state.id) == "mimic":
-		result.role = "Охотится на барда, жрицу, чародея и следопыта в тылу"
+		result.role = "Засада на поддержку в тылу; живой следопыт ослабляет первый удар на 35%"
 	elif str(state.id) == "spider":
 		result.role = "Добивает слабейшего, предпочитает отравленных"
 	elif str(state.id) == "poison":
@@ -1155,7 +1166,7 @@ func room_stats(index: int) -> Dictionary:
 	elif str(state.id) == "shackles":
 		result.role = "Группа пропускает атаки в чётные из первых %d тиков следующего боя" % int(result.effect_turns)
 	elif str(state.id) == "silence":
-		result.role = "Блокирует спецдействия на первые %d тика следующего боя" % int(result.effect_turns)
+		result.role = "Подавляет магию, лечение, защиту от яда и песню на первые %d тика следующего боя" % int(result.effect_turns)
 	elif str(state.id) == "rust":
 		result.role = "Группа: −1 брони в первые %d тика следующего боя" % int(result.effect_turns)
 	elif str(state.id) == "guardian":
@@ -1437,12 +1448,13 @@ func _trigger_trap(stats: Dictionary, disarmed: bool) -> void:
 	elif str(stats.kind) == "poison":
 		var duration: int = mini(int(stats.disarm_poison_turns), int(stats.poison_ticks)) if disarmed else int(stats.poison_ticks)
 		var targets: Array[Dictionary] = _living()
+		var poison_aura: float = _poison_aura_multiplier()
 		for hero in targets:
 			_apply_hero_poison(hero, int(stats.damage), duration, _battle_source())
 			if str(stats.specialization) == "plague":
 				hero.poison_heal_factor = 0.5
 			if echo:
-				_inflict_hero_damage(hero, _poison_hit(hero, maxi(1, floori(float(stats.damage) * 0.4))), _battle_source())
+				_inflict_hero_damage(hero, _poison_hit(hero, maxi(1, floori(float(stats.damage) * 0.4)), poison_aura), _battle_source())
 		active_target_id = str(targets[0].instance_id)
 		var text: String = "Вся группа отравлена: %d урона × %d тиков%s." % [stats.damage, duration, " (следопыт сократил эффект)" if disarmed else ""]
 		_log(text)
@@ -1599,8 +1611,19 @@ func _combat_step() -> void:
 	target_armor = maxi(0, target_armor - room_armor_bypass)
 	var outgoing: int = maxi(1, defender_attack - target_armor)
 	var fighting_monster: bool = current_slot < rooms.size()
-	if fighting_monster and str(target.id) == "knight":
+	var defender_tags: PackedStringArray = defender.get("tags", PackedStringArray())
+	var fighting_corporeal: bool = fighting_monster and defender_tags.has("corporeal")
+	var fighting_spirit: bool = fighting_monster and defender_tags.has("spirit")
+	if fighting_corporeal and str(target.id) == "knight":
 		outgoing = maxi(1, ceili(float(outgoing) * 0.8))
+	var ambush_exposed: bool = false
+	if fighting_monster and defender_tags.has("ambush") and combat_tick == 1:
+		for hero in survivors:
+			if str(hero.id) == "rogue":
+				outgoing = maxi(1, ceili(float(outgoing) * 0.65))
+				ambush_exposed = true
+				_log("Следопыт распознал засаду: первый удар ослаблен на 35%.")
+				break
 	var incoming: int = 0
 	var living_bard: String = ""
 	var silenced_bard_source: String = ""
@@ -1624,8 +1647,7 @@ func _combat_step() -> void:
 			_log("%s пропускает атаку: %s." % [hero.name, "Темница" if held_by_cell else "оковы"])
 			continue
 		var special_allowed: bool = int(hero.get("silence_ticks", 0)) == 0
-		if str(hero.id) != "bard":
-			ally_attacked = true
+		ally_attacked = true
 		var hero_attack: float = float(hero.damage)
 		var armor_bypass: int = 0
 		if str(hero.id) == "mage" and combat_tick % 3 == 0:
@@ -1636,24 +1658,32 @@ func _combat_step() -> void:
 			else:
 				_battle_add(str(hero.get("silence_source", "")), "control_actions")
 		if str(hero.id) == "barbarian" and int(hero.hp) * 5 <= int(hero.max_hp) * 2:
-			if special_allowed:
-				hero_attack *= 1.25
-				_log("Раненый варвар впадает в ярость: +25% урона.")
-			else:
-				_battle_add(str(hero.get("silence_source", "")), "control_actions")
-		if not living_bard.is_empty() and str(hero.id) != "bard":
+			hero_attack *= 1.25
+			_log("Раненый варвар впадает в ярость: +25% урона.")
+		if not living_bard.is_empty():
 			hero_attack *= 1.15
 		var effective_armor: int = maxi(0, int(defender.armor) - armor_bypass)
 		var hero_hit: int = maxi(1, ceili(hero_attack) - effective_armor)
-		if fighting_monster and str(hero.id) == "knight":
+		if fighting_corporeal and str(hero.id) == "knight":
 			hero_hit = ceili(float(hero_hit) * 1.25)
+		elif fighting_corporeal and str(hero.id) == "barbarian":
+			hero_hit = ceili(float(hero_hit) * 1.2)
+		elif fighting_spirit:
+			if str(hero.id) in ["knight", "barbarian"]:
+				hero_hit = maxi(1, ceili(float(hero_hit) * 0.8))
+			elif str(hero.id) == "mage":
+				if special_allowed:
+					hero_hit = ceili(float(hero_hit) * 1.25)
+				elif combat_tick % 3 != 0:
+					# Charged spell suppression is already counted on every third tick.
+					_battle_add(str(hero.get("silence_source", "")), "control_actions")
 		incoming += hero_hit
 	if cell_triggered:
 		_battle_add(_battle_source(), "combos")
 	if living_bard.is_empty() and ally_attacked and not silenced_bard_source.is_empty():
 		_battle_add(silenced_bard_source, "control_actions")
-	if not living_bard.is_empty() and survivors.size() > 1:
-		_log("Песня барда усиливает атаки союзников на 15%.")
+	if not living_bard.is_empty() and ally_attacked:
+		_log("Песня барда усиливает атаки всего отряда на 15%.")
 	if str(defender.get("id", "")) == "goblin":
 		var linked: Dictionary = _outgoing_combo(current_slot)
 		if str(linked.get("id", "")) == "marked_ambush":
@@ -1692,6 +1722,8 @@ func _combat_step() -> void:
 		action_text += " · усиление щита"
 	if not special_strike.is_empty():
 		action_text += " · " + special_strike
+	if ambush_exposed:
+		action_text += " · засада раскрыта"
 	if lifesteal > 0:
 		action_text += " · кровопийство +%d HP" % lifesteal
 	if revived:
@@ -1708,6 +1740,7 @@ func _combat_step() -> void:
 	last_action.special_strike = special_strike
 	last_action.combo = combo_strike
 	last_action.bard = not living_bard.is_empty()
+	last_action.ambush_exposed = ambush_exposed
 	if current_slot == rooms.size():
 		last_action.lord_strikes = lord_strikes
 		last_action.opening_remaining = opening_strikes_remaining()
@@ -1731,10 +1764,11 @@ func _combat_step() -> void:
 
 
 func _apply_poison() -> void:
+	var poison_aura: float = _poison_aura_multiplier()
 	for hero in _living():
 		if int(hero.poison_ticks) <= 0:
 			continue
-		var damage: int = _poison_hit(hero, int(hero.poison_damage))
+		var damage: int = _poison_hit(hero, int(hero.poison_damage), poison_aura)
 		damage = _inflict_hero_damage(hero, damage, str(hero.get("poison_source", "")))
 		hero.poison_ticks = int(hero.poison_ticks) - 1
 		_log("Яд: %s −%d HP (%d тиков осталось)." % [hero.name, damage, hero.poison_ticks])

@@ -717,7 +717,7 @@ func _get_tooltip(at_position: Vector2) -> String:
 	if game.rooms[index].is_empty():
 		return "Этаж %d · место %d\nВыберите комнату в магазине, затем нажмите здесь." % [index / 5 + 1, index % 5 + 1]
 	var stats: Dictionary = game.room_stats(index)
-	var result: String = "%s · ранг %d\n%s\n" % [stats.name, stats.rank, stats.description]
+	var result: String = "%s · ранг %d\n%s\n%s\n" % [stats.name, stats.rank, Content.room_traits_text(stats), stats.description]
 	if str(stats.id) in ["ballista", "blade_floor"]:
 		result += str(stats.get("role", "")) + "\n"
 	var faction: Dictionary = game.room_faction(str(stats.id))
