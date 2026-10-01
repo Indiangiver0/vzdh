@@ -29,6 +29,8 @@ func allows(action: String) -> bool:
 			return action in ["pause", "speed", "ability"]
 		"select_upgrade":
 			return action == "slot:0"
+		"evolution":
+			return action in ["evolution", "evolution_choice"]
 		"upgrade":
 			return action == "upgrade"
 		"floor":
@@ -44,7 +46,8 @@ func accepted(action: String) -> void:
 		"start": ["start", "ability_wait"],
 		"ability": ["ability", "watch"],
 		"reward": ["continue", "choices"],
-		"select_upgrade": ["slot:0", "upgrade"],
+		"select_upgrade": ["slot:0", "evolution"],
+		"evolution": ["evolution_choice", "upgrade"],
 		"upgrade": ["upgrade", "floor"],
 		"floor": ["floor", "floor_choice"],
 		"floor_choice": ["floor_choice", "finish"],
@@ -78,7 +81,7 @@ func target() -> String:
 			return "slot:0"
 		"place_executioner":
 			return "slot:1"
-		"start", "ability", "upgrade", "floor":
+		"start", "ability", "upgrade", "floor", "evolution":
 			return step
 		"reward":
 			return "continue"
@@ -106,6 +109,7 @@ func prompt(phase: String) -> String:
 		"watch": "Сила применена! Наблюдайте за боем. Пробел ставит паузу, ×2 / ×4 ускоряют время.",
 		"reward": "Первая победа! Золото идёт на комнаты, опыт — на таланты. Нажмите «Продолжить», чтобы выбрать награды.",
 		"select_upgrade": "Награды выбраны. Нажмите на гоблинов в первом месте, чтобы улучшить уже построенную комнату.",
+		"evolution": "Выберите ветку гоблинов. Первая доступна на ранге 1; на рангах 5 и 15 появятся следующие решения.",
 		"upgrade": "Нажмите «Улучшить»: вы покупаете следующий ранг этой комнаты. Точные цена и характеристики — справа.",
 		"floor": "Расширим защиту: нажмите «Углубить подземелье». Получите пять новых мест перед троном.",
 		"floor_choice": "Выберите свойство нового этажа. Оно усиливает все пять мест — планируйте, что поставить на них.",
@@ -113,3 +117,17 @@ func prompt(phase: String) -> String:
 		"defeat": "Учебный трон пал. Можно повторить обучение или сразу начать своё подземелье.",
 	}
 	return str(prompts.get(step, "Следуйте золотой подсветке. Вы можете пропустить обучение в любой момент."))
+
+
+func context_hint(area: String) -> Dictionary:
+	if not active():
+		return {}
+	if area == "party" and step in ["select_goblin", "place_goblin"]:
+		return {"title": "Сначала разведка", "text": "Следопыт тратит инструменты на первые ловушки. Мимик достаёт поддержку, паук выбирает ослабленных."}
+	if area == "party" and step in ["ability_wait", "watch"]:
+		return {"title": "У врага тоже есть прогресс", "text": "Побеждённые монстры дают героям опыт. Иногда пустая комната полезнее слабого защитника."}
+	if area == "planning" and step in ["select_executioner", "place_executioner", "start"]:
+		return {"title": "Цвет — это фракция", "text": "Гоблины и палач относятся к Орде. Два разных типа включают бонус; копии одного типа не увеличивают счётчик над полем."}
+	if area == "planning" and step == "finish":
+		return {"title": "Смотрите результат", "text": "После боя отчёт покажет урон, убийства, контроль и комбо каждой комнаты. Развивайте тех, кто работает на вашу сборку."}
+	return {}

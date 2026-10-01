@@ -259,6 +259,8 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	var rank: int = int(room.get("rank", 1))
 	draw_rect(Rect2(rect.end.x - 30, ceiling + 13, 19, 13), Color("242e2b"))
 	_center_text("I".repeat(mini(rank, 3)) if rank <= 3 else "R%d" % rank, Vector2(rect.end.x - 20.5, ceiling + 23), 9, GOLD)
+	if str(game.phase) == "prepare" and not game.room_evolution_options(index).is_empty():
+		_text("◇", Vector2(rect.position.x + 29, ceiling + 22), 14, GOLD)
 	var branch_name: String = str(stats.get("branch", ""))
 	if not branch_name.is_empty():
 		_center_text(branch_name.to_upper(), Vector2(center.x, ceiling + 38), 8, TEAL)
@@ -694,10 +696,15 @@ func _get_tooltip(at_position: Vector2) -> String:
 		return "Этаж %d · место %d\nВыберите комнату в магазине, затем нажмите здесь." % [index / 5 + 1, index % 5 + 1]
 	var stats: Dictionary = game.room_stats(index)
 	var result: String = "%s · ранг %d\n%s\n" % [stats.name, stats.rank, stats.description]
+	var faction: Dictionary = game.room_faction(str(stats.id))
+	result += "Фракция: %s\n" % str(faction.get("name", ""))
 	if int(stats.hp) > 0:
 		result += "Здоровье: %d · урон: %d · броня: %d\n" % [stats.hp, stats.damage, stats.armor]
 	elif str(stats.get("kind", "")) in ["shackles", "silence", "rust"]:
 		result += "Длительность: %d боевых т. · эффект в следующем бою\n" % int(stats.get("effect_turns", 0))
+		result += "Прямой удар: %d\n" % int(stats.get("impact_damage", 0))
+		if bool(stats.get("impact_all", false)):
+			result += "Удар по группе: 60% каждому живому герою\n"
 	else:
 		result += "Урон: %d, в обход брони\n" % int(stats.damage)
 	result += "Награда героям: %d XP" % int(stats.xp)
@@ -706,6 +713,12 @@ func _get_tooltip(at_position: Vector2) -> String:
 	var branch_name: String = str(stats.get("branch", ""))
 	if not branch_name.is_empty():
 		result += "\nСпециализация: " + branch_name
+	var progression: Dictionary = game.room_progression(index)
+	for stage in progression.get("stages", []):
+		if int(stage.get("tier", 1)) > 1 and bool(stage.get("chosen", false)):
+			result += "\nРанг %d: %s" % [int(stage.tier), str(stage.get("name", ""))]
+	if not game.room_evolution_options(index).is_empty():
+		result += "\n◇ Доступен выбор развития — нажмите комнату."
 	var combo: Dictionary = game.room_combo(index)
 	if not combo.is_empty():
 		result += "\nСВЯЗКА · %s\n%s" % [combo.name, combo.description]
