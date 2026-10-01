@@ -170,7 +170,7 @@ func _header() -> void:
 	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	brand.add_theme_constant_override("separation", 0)
 	head.add_child(brand)
-	brand.add_child(_label("ЛОРД ПОДЗЕМЕЛЬЯ", 25, PAPER))
+	brand.add_child(_label("NO HERO RETURNS", 25, PAPER))
 	brand.add_child(_label("ПОСТРОЙ ИМПЕРИЮ. ПЕРЕЖИВИ СЛЕДУЮЩУЮ ВОЛНУ.", 10, MUTED))
 	_stat(head, "ВОЛНА", str(game.wave), PAPER)
 	_stat(head, "ЗОЛОТО", str(game.gold), GOLD)
@@ -1215,7 +1215,7 @@ func _capture() -> void:
 func _build_menu() -> void:
 	var topline = HBoxContainer.new()
 	page.add_child(topline)
-	var edition = _eyebrow("ЛОРД ПОДЗЕМЕЛЬЯ     /     БЕСКОНЕЧНАЯ ОСАДА")
+	var edition = _eyebrow("NO HERO RETURNS     /     БЕСКОНЕЧНАЯ ОСАДА")
 	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	topline.add_child(edition)
 	topline.add_child(_label("ОСКОЛКИ ДУШ  %d" % int(lords_profile.souls), 12, VIOLET))
