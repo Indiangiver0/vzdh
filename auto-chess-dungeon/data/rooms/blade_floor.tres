@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "blade_floor"
+display_name = "Пол вращающихся лезвий"
+short_name = "Лезвия"
+description = "Наносит урон каждому живому герою в обход брони. Следопыт ослабляет механизм, пока у него есть инструменты."
+cost = 6
+kind = "spikes"
+damage = 10
+color = Color(0.61, 0.73, 0.74, 1)
+icon = "res://assets/icons/blade_floor.svg"

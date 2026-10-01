@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "ballista"
+display_name = "Засадная баллиста"
+short_name = "Баллиста"
+description = "Стреляет в последнего живого героя группы в обход брони. Следопыт ослабляет выстрел, пока у него есть инструменты."
+cost = 6
+kind = "spikes"
+damage = 20
+color = Color(0.51, 0.65, 0.75, 1)
+icon = "res://assets/icons/ballista.svg"

@@ -241,6 +241,8 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	var tint: Color = Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE
 	_draw_room_props(id, rect, cleared)
 	var figure_size: float = clampf(rect.size.x * 0.47, 38, 55)
+	if id == "ogre":
+		figure_size *= 1.12
 	var offset: float = 15.0 * _floor_direction(index / 5) if active else 0.0
 	var monster_at: Vector2 = center + Vector2(offset, -8)
 	var idle: float = sin(_clock * 2.1 + index * 1.7) * 1.2
@@ -377,13 +379,33 @@ func _draw_room_props(id: String, rect: Rect2, cleared: bool) -> void:
 		"guardian":
 			draw_rect(Rect2(at + Vector2(-5, -22), Vector2(19, 22)), Color("464c55"))
 			draw_line(at + Vector2(4, -20), at + Vector2(4, -6), MUTED, 2)
+		"ogre":
+			draw_circle(at + Vector2(3, -4), 8, Color("746552") if not cleared else Color("49473f"))
+			draw_line(at + Vector2(-3, -8), at + Vector2(7, -2), INK, 2)
+		"war_hound":
+			for link in range(4):
+				draw_arc(at + Vector2(link * 5, -5), 3, 0, TAU, 8, Color("8d8072"), 1.5)
+		"wraith":
+			var mist: Color = Color(0.55, 0.51, 0.69, 0.18 if cleared else 0.4)
+			for mote in range(3):
+				draw_circle(at + Vector2(mote * 9, -10 - sin(_clock * 1.5 + mote) * 5), 3, mist)
+		"vampire":
+			draw_rect(Rect2(at + Vector2(-5, -31), Vector2(13, 30)), Color("4b3545"))
+			draw_line(at + Vector2(1, -27), at + Vector2(1, -11), Color("ae8ed6").darkened(0.3), 2)
+		"ballista":
+			for bolt in range(3):
+				draw_line(at + Vector2(bolt * 5, -2), at + Vector2(bolt * 5 + 3, -27), Color("987d59"), 2)
+				draw_line(at + Vector2(bolt * 5 + 1, -24), at + Vector2(bolt * 5 + 3, -29), Color("6faecb"), 2)
+		"blade_floor":
+			for groove in range(3):
+				draw_line(at + Vector2(groove * 10 - 3, -2), at + Vector2(groove * 10 + 4, -7), Color("6faecb").darkened(0.4), 2)
 	_draw_rubble(Vector2(rect.end.x - 17, rect.end.y - 18), 0.6)
 	if id not in ["spider", "executioner"]:
 		draw_line(at + Vector2(0, -28), at + Vector2(-4, -37), prop_color.darkened(0.45), 1)
 
 
 func _draw_creature_body(id: String, at: Vector2, figure_size: float, tint: Color) -> void:
-	if id in ["mimic", "spider"]:
+	if id in ["mimic", "spider", "war_hound", "wraith"]:
 		return
 	var body: Color = Color("425947") if id == "goblin" else (Color("505768") if id == "guardian" else Color("523c40"))
 	body.a = tint.a
@@ -696,6 +718,8 @@ func _get_tooltip(at_position: Vector2) -> String:
 		return "Этаж %d · место %d\nВыберите комнату в магазине, затем нажмите здесь." % [index / 5 + 1, index % 5 + 1]
 	var stats: Dictionary = game.room_stats(index)
 	var result: String = "%s · ранг %d\n%s\n" % [stats.name, stats.rank, stats.description]
+	if str(stats.id) in ["ballista", "blade_floor"]:
+		result += str(stats.get("role", "")) + "\n"
 	var faction: Dictionary = game.room_faction(str(stats.id))
 	result += "Фракция: %s\n" % str(faction.get("name", ""))
 	if int(stats.hp) > 0:

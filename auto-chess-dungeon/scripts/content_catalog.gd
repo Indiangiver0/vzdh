@@ -14,6 +14,12 @@ const ROOMS: Dictionary = {
 	"silence": preload("res://data/rooms/silence.tres"),
 	"rust": preload("res://data/rooms/rust.tres"),
 	"guardian": preload("res://data/rooms/guardian.tres"),
+	"ogre": preload("res://data/rooms/ogre.tres"),
+	"war_hound": preload("res://data/rooms/war_hound.tres"),
+	"wraith": preload("res://data/rooms/wraith.tres"),
+	"vampire": preload("res://data/rooms/vampire.tres"),
+	"ballista": preload("res://data/rooms/ballista.tres"),
+	"blade_floor": preload("res://data/rooms/blade_floor.tres"),
 }
 const HEROES: Dictionary = {
 	"knight": preload("res://data/heroes/knight.tres"),
@@ -44,7 +50,7 @@ static func item(id: String) -> Dictionary:
 	return ITEMS[id].to_dictionary()
 
 static func room_ids() -> Array[String]:
-	return ["goblin", "executioner", "poison", "spider", "spikes", "mimic", "shackles", "silence", "rust", "guardian"]
+	return ["goblin", "executioner", "poison", "spider", "spikes", "mimic", "shackles", "silence", "rust", "guardian", "ogre", "war_hound", "wraith", "vampire", "ballista", "blade_floor"]
 
 static func hero_ids() -> Array[String]:
 	return ["knight", "rogue", "priest", "mage", "barbarian", "bard"]

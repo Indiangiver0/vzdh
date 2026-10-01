@@ -10,10 +10,10 @@ const EVOLUTIONS: Dictionary = {
 	"iron_veteran": {"id": "iron_veteran", "name": "Железный ветеран", "description": "+20% HP и +2 брони существа.", "tier": 15, "modifiers": {"hp_bonus": 0.20, "armor_bonus": 2}},
 	"living_fortress": {"id": "living_fortress", "name": "Живая крепость", "description": "+40% HP существа.", "tier": 15, "modifiers": {"hp_bonus": 0.40}},
 	"fortress_champion": {"id": "fortress_champion", "name": "Чемпион крепости", "description": "+25% урона и +1 броня существа.", "tier": 15, "modifiers": {"damage_bonus": 0.25, "armor_bonus": 1}},
-	"spike_force": {"id": "spike_force", "name": "Тяжёлый механизм", "description": "+20% урона шипов.", "tier": 5, "modifiers": {"damage_bonus": 0.20}},
-	"spike_safety": {"id": "spike_safety", "name": "Скрытый спуск", "description": "После обезвреживания шипы сохраняют 70% урона вместо 40%.", "tier": 5, "modifiers": {"disarm_multiplier": 0.70}},
-	"spike_crusher": {"id": "spike_crusher", "name": "Сокрушитель", "description": "+35% урона шипов.", "tier": 15, "modifiers": {"damage_bonus": 0.35}},
-	"spike_failsafe": {"id": "spike_failsafe", "name": "Тройной спуск", "description": "После обезвреживания шипы сохраняют 90% урона.", "tier": 15, "modifiers": {"disarm_multiplier": 0.90}},
+	"spike_force": {"id": "spike_force", "name": "Тяжёлый механизм", "description": "+20% урона этого механизма.", "tier": 5, "modifiers": {"damage_bonus": 0.20}},
+	"spike_safety": {"id": "spike_safety", "name": "Скрытый спуск", "description": "После обезвреживания механизм сохраняет 70% урона вместо 40%.", "tier": 5, "modifiers": {"disarm_multiplier": 0.70}},
+	"spike_crusher": {"id": "spike_crusher", "name": "Сокрушитель", "description": "+35% урона этого механизма.", "tier": 15, "modifiers": {"damage_bonus": 0.35}},
+	"spike_failsafe": {"id": "spike_failsafe", "name": "Тройной спуск", "description": "После обезвреживания механизм сохраняет 90% урона.", "tier": 15, "modifiers": {"disarm_multiplier": 0.90}},
 	"poison_brewer": {"id": "poison_brewer", "name": "Сильный настой", "description": "+20% урона каждого тика яда.", "tier": 5, "modifiers": {"damage_bonus": 0.20}},
 	"poison_sticky": {"id": "poison_sticky", "name": "Тягучий настой", "description": "+2 тика длительности яда.", "tier": 5, "modifiers": {"poison_turns": 2}},
 	"poison_stable": {"id": "poison_stable", "name": "Стойкий настой", "description": "Следопыт сокращает яд до 5 тиков вместо 3, если исходный эффект не короче.", "tier": 5, "modifiers": {"disarm_poison_turns": 5}},
@@ -32,7 +32,7 @@ static func factions() -> Array[Dictionary]:
 	return [
 		{
 			"id": "horde", "name": "Орда", "color": Color("#db8b64"),
-			"room_ids": ["goblin", "spider", "executioner"],
+			"room_ids": ["goblin", "spider", "executioner", "ogre", "war_hound"],
 			"bonuses": [
 				{"threshold": 2, "description": "2 типа: +12% HP существ Орды.", "modifiers": {"monster_hp": 0.12}},
 				{"threshold": 3, "description": "3 типа: ещё +12% урона существ Орды.", "modifiers": {"monster_damage": 0.12}},
@@ -40,7 +40,7 @@ static func factions() -> Array[Dictionary]:
 		},
 		{
 			"id": "coven", "name": "Ковен", "color": Color("#ae8ed6"),
-			"room_ids": ["poison", "mimic", "guardian"],
+			"room_ids": ["poison", "mimic", "guardian", "wraith", "vampire"],
 			"bonuses": [
 				{"threshold": 2, "description": "2 типа: +10% урона комнат Ковена.", "modifiers": {"monster_damage": 0.10, "trap_damage": 0.10}},
 				{"threshold": 3, "description": "3 типа: ещё +1 броня существ Ковена.", "modifiers": {"monster_armor": 1}},
@@ -48,7 +48,7 @@ static func factions() -> Array[Dictionary]:
 		},
 		{
 			"id": "mechanisms", "name": "Механизмы", "color": Color("#6faecb"),
-			"room_ids": ["spikes", "shackles", "silence", "rust"],
+			"room_ids": ["spikes", "shackles", "silence", "rust", "ballista", "blade_floor"],
 			"bonuses": [
 				{"threshold": 2, "description": "2 типа: +10% урона ловушек Механизмов.", "modifiers": {"trap_damage": 0.10}},
 				{"threshold": 3, "description": "3 типа: ещё +1 тик контроля Механизмов, максимум 6.", "modifiers": {"control_turns": 1}},

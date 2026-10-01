@@ -339,6 +339,10 @@ func _inspector_panel(parent: Control) -> void:
 			right.add_child(_label("Контроль %d т. · удар %d\nБез XP героям" % [int(stats.get("effect_turns", 0)), int(stats.get("impact_damage", 0))], 12, PAPER, true))
 			if bool(stats.get("impact_all", false)):
 				right.add_child(_label("Удар по группе · 60% каждому", 12, VIOLET, true))
+		elif str(stats.get("kind", "")) != "monster":
+			right.add_child(_label("Урон %d · без XP героям" % int(stats.get("damage", 0)), 12, PAPER, true))
+			if str(stats.id) in ["ballista", "blade_floor"]:
+				right.add_child(_label(str(stats.get("role", "")), 12, VIOLET, true))
 		else:
 			right.add_child(_label("HP %d  ·  Урон %d\nБроня %d  ·  XP врагу %d" % [stats.get("hp", 0), stats.get("damage", 0), stats.get("armor", 0), stats.get("xp", 0)], 12, PAPER, true))
 		_room_combo_details(right, selected_slot)
@@ -406,6 +410,8 @@ func _shop_panel() -> void:
 		button.tooltip_text = "%s\nБазовые HP: %d · Урон: %d · Броня: %d\nНаграда врагу на ранге 1: %d XP" % [definition.description, definition.hp, definition.damage, definition.armor, reward_xp]
 		if str(definition.kind) in ["shackles", "silence", "rust"]:
 			button.tooltip_text = "%s\nБазовая длительность: %d т. · срабатывает в следующем бою.\nНе даёт героям XP." % [definition.description, definition.get("effect_turns", 0)]
+		elif str(definition.kind) != "monster":
+			button.tooltip_text = "%s\nУрон: %d · без XP героям\n%s" % [definition.description, int(definition.damage), str(definition.get("role", ""))]
 		button.pressed.connect(_select_shop.bind(str(id)))
 		_style_faction_card(button, faction_color, selected_room == str(id))
 		row.add_child(button)
@@ -1637,6 +1643,16 @@ func _matchup_text(stats: Dictionary) -> String:
 			return "Цель: бард, жрица, чародей — поддержка за передним бойцом."
 		"spider":
 			return "Цель: ослабленный герой. Яд усиливает укус."
+		"ogre":
+			return "Каждый третий удар ×1,5. Долгий бой помогает нанести тяжёлый удар."
+		"war_hound":
+			return "Охотится на слабейшего; +30% урона целям с HP ≤ 40%."
+		"wraith":
+			return "Игнорирует 2 брони: эффективен против бронированных героев."
+		"vampire":
+			return "Если пережил ответ, лечится на 25% реально нанесённого урона."
+		"ballista", "blade_floor":
+			return str(stats.get("role", ""))
 		"spikes", "poison":
 			return "Следопыт ослабит ловушку, пока есть инструменты. Заставьте его потратить их раньше."
 		"shackles":
@@ -1752,7 +1768,7 @@ func _show_run_collection() -> void:
 	body.add_child(HSeparator.new())
 	body.add_child(_eyebrow("ЧЕРТЕЖИ ЭТОГО ЗАБЕГА"))
 	if game.selected_blueprints.is_empty():
-		_disclosure(body, "Пока нет", "Выбор после волн 7, 14, 21 и 28. Изученные чертежи не повторяются; в новом забеге открытия начинаются заново.", "Каждые 7 волн", MUTED)
+		_disclosure(body, "Пока нет", "Выбор после каждой 7-й волны, пока есть неизученные комнаты. Чертежи не повторяются; в новом забеге открытия начинаются заново.", "Каждые 7 волн", MUTED)
 	for id in game.selected_blueprints:
 		var room: Dictionary = Content.room(str(id))
 		_disclosure(body, str(room.name), str(room.description), "В магазине", GREEN)
@@ -1859,7 +1875,7 @@ func _deal_card(parent: Control, offer: Dictionary) -> void:
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var faction: Dictionary = Game.room_faction(str(offer.get("room_id", "")))
 	_style_faction_card(button, faction.get("color", GOLD), selecting_deal)
-	button.tooltip_text = str(offer.get("description", "")) + "\n" + str(offer.get("risk_text", "")) + "\nДо начала волны продажа этой комнаты снимает риск."
+	button.tooltip_text = str(offer.get("description", "")) + "\n" + str(offer.get("risk_text", "")) + "\nРанг растёт с номером волны. Отмена выбора не меняет предложение.\nДо начала волны продажа этой комнаты снимает риск."
 	column.add_child(button)
 	column.add_child(_label(str(offer.get("risk_text", "")), 11, RED, true))
 

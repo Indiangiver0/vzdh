@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "ogre"
+display_name = "Логово огра"
+short_name = "Огр"
+description = "Выдерживает затяжной бой. Каждый третий боевой тик удар дубиной наносит ×1,5 урона."
+cost = 7
+kind = "monster"
+hp = 80
+damage = 9
+armor = 1
+xp = 4
+color = Color(0.74, 0.48, 0.29, 1)
+icon = "res://assets/icons/ogre.svg"

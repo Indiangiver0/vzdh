@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "wraith"
+display_name = "Зал призрака"
+short_name = "Призрак"
+description = "Призрачный клинок игнорирует 2 брони героя. Действует вместе с ослаблением брони ржавыми рунами."
+cost = 6
+kind = "monster"
+hp = 40
+damage = 10
+armor = 0
+xp = 3
+color = Color(0.55, 0.75, 0.79, 1)
+icon = "res://assets/icons/wraith.svg"

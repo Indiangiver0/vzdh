@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="RoomDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/definitions/room_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "vampire"
+display_name = "Покои вампира"
+short_name = "Вампир"
+description = "Лечится на 25% фактически нанесённого урона, если пережил ответный удар. Лечение не воскрешает и не превышает максимальный HP."
+cost = 7
+kind = "monster"
+hp = 44
+damage = 9
+armor = 1
+xp = 4
+color = Color(0.70, 0.34, 0.51, 1)
+icon = "res://assets/icons/vampire.svg"

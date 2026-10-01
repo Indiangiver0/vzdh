@@ -2,7 +2,7 @@ extends RefCounted
 ## Run-only choices and readable party templates. No state or random draws here.
 
 static func blueprint_ids() -> Array[String]:
-	return ["shackles", "silence", "rust", "guardian"]
+	return ["shackles", "silence", "rust", "guardian", "ogre", "war_hound", "wraith", "vampire", "ballista", "blade_floor"]
 
 
 static func combos() -> Array[Dictionary]:
@@ -15,7 +15,7 @@ static func combos() -> Array[Dictionary]:
 
 static func relics() -> Array[Dictionary]:
 	return [
-		{"id": "trap_echo", "name": "Эхо механизмов", "description": "Первая ловушка каждого этажа за волну даёт слабое эхо: 40% урона шипов или тика яда (не менее 1); контроль действует на 1 тик дольше (до 6).", "icon": "res://assets/icons/spikes.svg"},
+		{"id": "trap_echo", "name": "Эхо механизмов", "description": "Первая ловушка каждого этажа за волну даёт слабое эхо: 40% урона шипов, баллисты, лезвий или тика яда (не менее 1); контроль действует на 1 тик дольше (до 6).", "icon": "res://assets/icons/spikes.svg"},
 		{"id": "war_banner", "name": "Знамя засады", "description": "Первый удар каждого существа в каждой волне наносит на 15% больше урона. На Владыку не действует.", "icon": "res://assets/icons/executioner.svg"},
 		{"id": "tithe_seal", "name": "Печать дани", "description": "За каждую следующую отражённую волну: ещё 2 золота.", "icon": "res://assets/icons/goblin.svg"},
 		{"id": "guardian_oath", "name": "Клятва склепа", "description": "Все стражи склепа получают +1 брони. Работает также у купленных позже стражей.", "icon": "res://assets/icons/guardian.svg"},
