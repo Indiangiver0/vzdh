@@ -16,6 +16,7 @@ const MUTED = Color("8f978e")
 const GOLD = Color("d6aa60")
 const TEAL = Color("77bbab")
 const CORAL = Color("df8070")
+const TAP_DRAG_DISTANCE: float = 12.0
 
 var game = null
 var selected_slot: int = -1
@@ -23,6 +24,8 @@ var selected_room: String = ""
 var cinematic: bool = false
 var show_party: bool = true
 var tutorial_slot: int = -1
+## Set by the UI before configure/refresh; floor and model indices stay unchanged.
+var compact: bool = false
 
 var _clock: float = 0.0
 var _hit_rects: Array[Rect2] = []
@@ -38,6 +41,10 @@ var _last_wave: int = -1
 var _waypoints: Array[Vector2] = []
 var _last_action: String = ""
 var _hit_flash: float = 0.0
+var _pressed_slot: int = -1
+var _press_position: Vector2 = Vector2.ZERO
+var _press_dragged: bool = false
+var _touch_index: int = -1
 
 
 func _ready() -> void:
@@ -45,6 +52,7 @@ func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_font = ThemeDB.fallback_font
 	mouse_exited.connect(_on_mouse_exited)
+	resized.connect(_on_resized)
 	refresh()
 
 
@@ -61,7 +69,20 @@ func configure(game_ref, slot: int = -1, room_id: String = "") -> void:
 
 func refresh() -> void:
 	var floors: int = 1 if game == null else int(game.floor_count)
-	custom_minimum_size = Vector2(500, 500 if cinematic else floors * FLOOR_HEIGHT + THRONE_HEIGHT)
+	# Let the enclosing ScrollContainer receive touch drags before committing a tap.
+	mouse_filter = Control.MOUSE_FILTER_PASS
+	custom_minimum_size = Vector2(280 if compact else 500, (280 if compact else 500) if cinematic else floors * FLOOR_HEIGHT + THRONE_HEIGHT)
+	queue_redraw()
+
+
+func _on_resized() -> void:
+	_cancel_press()
+	# Old pixel coordinates must not survive a phone rotation or a layout change.
+	if game != null and not cinematic:
+		_waypoints.clear()
+		_party_position = _position_for_slot(int(game.current_slot))
+		_party_goal = _party_position
+		_last_slot = int(game.current_slot)
 	queue_redraw()
 
 
@@ -128,9 +149,9 @@ func _position_for_slot(index: int) -> Vector2:
 	if game == null or index < 0:
 		return Vector2(18, _floor_walk_y(0))
 	if index >= game.rooms.size():
-		return Vector2(size.x * 0.5 + 18 - 80 * _floor_direction(int(game.floor_count)), _floor_walk_y(int(game.floor_count)))
+		return Vector2(size.x * 0.5 + (0 if compact else 18) - (66 if compact else 80) * _floor_direction(int(game.floor_count)), _floor_walk_y(int(game.floor_count)))
 	var room_rect: Rect2 = _slot_rect(index)
-	var approach: float = 0.30 if _floor_direction(index / 5) > 0.0 else 0.70
+	var approach: float = 0.5 if compact else (0.30 if _floor_direction(index / 5) > 0.0 else 0.70)
 	return Vector2(room_rect.position.x + room_rect.size.x * approach, _floor_walk_y(index / 5))
 
 
@@ -139,7 +160,8 @@ func _floor_direction(floor_index: int) -> float:
 
 
 func _floor_exit_x(floor_index: int) -> float:
-	return size.x - 18.0 if _floor_direction(floor_index) > 0.0 else 18.0
+	var inset: float = 8.0 if compact else 18.0
+	return size.x - inset if _floor_direction(floor_index) > 0.0 else inset
 
 
 func _floor_walk_y(floor_index: int) -> float:
@@ -147,8 +169,9 @@ func _floor_walk_y(floor_index: int) -> float:
 
 
 func _slot_rect(index: int) -> Rect2:
-	var room_width: float = (size.x - 98.0) / 5.0
-	return Rect2(49 + (index % 5) * room_width, floori(float(index) / 5.0) * FLOOR_HEIGHT + 28, room_width, 120)
+	var inset: float = 16.0 if compact else 49.0
+	var room_width: float = maxf(1.0, (size.x - inset * 2.0) / 5.0)
+	return Rect2(inset + (index % 5) * room_width, floori(float(index) / 5.0) * FLOOR_HEIGHT + 28, room_width, 120)
 
 
 func _draw() -> void:
@@ -175,7 +198,7 @@ func _draw() -> void:
 		draw_rect(target, glow, false, 3.0)
 		var point: Vector2 = target.get_center() + Vector2(0, -14 + sin(_clock * 4) * 3)
 		draw_colored_polygon(PackedVector2Array([point + Vector2(-7, -12), point + Vector2(7, -12), point]), GOLD)
-		_center_text("НАЖМИТЕ", Vector2(target.get_center().x, target.end.y - 27), 10, GOLD)
+		_center_text("СЮДА" if compact else "НАЖМИТЕ", Vector2(target.get_center().x, target.end.y - 27), 10, GOLD)
 
 
 func _draw_bedrock(area: Rect2) -> void:
@@ -198,20 +221,30 @@ func _draw_floor(floor_index: int) -> void:
 		floor_kind = str(floor_types[floor_index])
 	var floor_names: Dictionary = {"plain": "КАЗЕМАТЫ", "laboratory": "ЛАБОРАТОРИЯ", "barracks": "КАЗАРМЫ", "workshop": "МАСТЕРСКАЯ"}
 	var floor_colors: Dictionary = {"plain": MUTED, "laboratory": TEAL, "barracks": CORAL, "workshop": GOLD}
-	_text(label_text, Vector2(17, top + 19), 12, GOLD)
-	_text(str(floor_names.get(floor_kind, "КАЗЕМАТЫ")), Vector2(102, top + 19), 10, floor_colors.get(floor_kind, MUTED))
+	_text(label_text, Vector2(8 if compact else 17, top + 19), 11 if compact else 12, GOLD)
+	_text(str(floor_names.get(floor_kind, "КАЗЕМАТЫ")), Vector2(83 if compact else 102, top + 19), 9 if compact else 10, floor_colors.get(floor_kind, MUTED))
 	var route_text: String = "01 → 02 → 03 → 04 → 05" if floor_index % 2 == 0 else "01 ← 02 ← 03 ← 04 ← 05"
-	_text(route_text, Vector2(size.x - 207, top + 19), 10, Color("697672"))
+	if compact:
+		var route_direction: float = _floor_direction(floor_index)
+		var arrow_tip: Vector2 = Vector2(size.x - (12 if route_direction > 0 else 37), top + 15)
+		draw_line(arrow_tip - Vector2(25 * route_direction, 0), arrow_tip, MUTED, 1.5, true)
+		draw_polyline(PackedVector2Array([arrow_tip + Vector2(-5 * route_direction, -4), arrow_tip, arrow_tip + Vector2(-5 * route_direction, 4)]), MUTED, 1.5, true)
+	else:
+		_text(route_text, Vector2(size.x - 207, top + 19), 10, Color("697672"))
 	for column in range(5):
 		var index: int = floor_index * 5 + column
 		var rect: Rect2 = _slot_rect(index)
 		_hit_rects.append(rect)
 		_draw_chamber(rect, index)
-	_draw_platform(Rect2(40, top + 144, size.x - 80, 15), floor_index)
+	var platform_inset: float = 13.0 if compact else 40.0
+	_draw_platform(Rect2(platform_inset, top + 144, size.x - platform_inset * 2, 15), floor_index)
 	_draw_stairway(floor_index)
 
 
 func _draw_chamber(rect: Rect2, index: int) -> void:
+	if compact:
+		_draw_compact_chamber(rect, index)
+		return
 	var room: Dictionary = game.rooms[index]
 	var active: bool = str(game.phase) == "raid" and int(game.current_slot) == index
 	var chosen: bool = selected_slot == index
@@ -278,6 +311,65 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 		_draw_combat_sparks(Vector2(center.x - 7 * _floor_direction(index / 5), ground - 36))
 
 
+func _draw_compact_chamber(rect: Rect2, index: int) -> void:
+	# A narrow room separates its label, defender and party into three rows.
+	# Full statistics and branch names remain available in the room inspector.
+	var room: Dictionary = game.rooms[index]
+	var active: bool = str(game.phase) == "raid" and int(game.current_slot) == index
+	var chosen: bool = selected_slot == index
+	var hovered: bool = _hovered_slot == index and str(game.phase) == "prepare"
+	var cleared: bool = str(room.get("status", "")) == "cleared"
+	var center_x: float = rect.get_center().x
+	var top: float = rect.position.y
+	var cavity: Rect2 = rect.grow(-3)
+	draw_rect(cavity, Color("151c1d") if index % 2 == 0 else Color("182021"))
+	_draw_masonry(cavity)
+	if active:
+		draw_rect(cavity, Color(0.63, 0.38, 0.14, 0.17 + 0.04 * sin(_clock * 3)))
+	elif chosen or hovered:
+		draw_rect(cavity, Color(0.31, 0.61, 0.52, 0.20 if chosen else 0.08))
+	_draw_arch(rect, GOLD if active else (TEAL if chosen else Color("515550")))
+	if chosen:
+		draw_rect(rect.grow(-3), TEAL, false, 2.0)
+	_text(str(index % 5 + 1), Vector2(rect.position.x + 7, top + 16), 9, MUTED)
+	if room.is_empty():
+		var preview_size: float = minf(30.0, rect.size.x - 14.0)
+		if not selected_room.is_empty() and str(game.phase) == "prepare":
+			_icon(selected_room, Rect2(Vector2(center_x - preview_size / 2, top + 43), Vector2.ONE * preview_size), Color(0.66, 0.83, 0.74, 0.4 if hovered else 0.22))
+		else:
+			draw_line(Vector2(center_x - 6, top + 60), Vector2(center_x + 6, top + 60), MUTED, 1.5)
+			draw_line(Vector2(center_x, top + 54), Vector2(center_x, top + 66), MUTED, 1.5)
+		_center_text_fitted("СВОБОДНО", Vector2(center_x, top + 32), 9, MUTED, rect.size.x - 8)
+		return
+	var stats: Dictionary = game.room_stats(index)
+	var rank: int = int(room.get("rank", 1))
+	var rank_text: String = str(rank)
+	var rank_width: float = maxf(16.0, _font.get_string_size(rank_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x + 6)
+	draw_rect(Rect2(rect.end.x - rank_width - 5, top + 4, rank_width, 16), Color("242e2b"))
+	_center_text(rank_text, Vector2(rect.end.x - rank_width / 2 - 5, top + 16), 10, GOLD)
+	_center_text_fitted(str(stats.short_name), Vector2(center_x, top + 33), 10, Color("929c91") if cleared else CREAM, rect.size.x - 8)
+	var figure_size: float = clampf(rect.size.x - 16.0, 28.0, 38.0)
+	var idle: float = sin(_clock * 2.1 + index * 1.7) * 1.0 if not cleared else 0.0
+	var figure: Rect2 = Rect2(center_x - figure_size / 2, top + 44 + idle, figure_size, figure_size)
+	_icon(str(stats.id), figure, Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE)
+	if active:
+		_draw_defender_wards(figure.get_center(), figure_size / 70.0)
+		_draw_combat_sparks(figure.get_center())
+	if int(stats.hp) > 0:
+		var max_hp: int = int(stats.hp)
+		var current_hp: int = int(room.get("current_hp", max_hp))
+		if active and not game.defender.is_empty():
+			current_hp = int(game.defender.get("hp", current_hp))
+		var bar_width: float = minf(34.0, rect.size.x - 14.0)
+		_bar(Rect2(center_x - bar_width / 2, top + 84, bar_width, 4), float(current_hp) / maxf(1, max_hp), CORAL, 0.4 if cleared else 1.0)
+	if cleared:
+		_center_text("×", Vector2(center_x, top + 108), 17, MUTED)
+	elif str(game.phase) == "prepare" and not game.room_evolution_options(index).is_empty():
+		_center_text_fitted("РАЗВИТИЕ", Vector2(center_x, top + 109), 8, GOLD, rect.size.x - 8)
+	elif not str(stats.get("branch", "")).is_empty() and str(game.phase) == "prepare":
+		_center_text_fitted("УСИЛЕНА", Vector2(center_x, top + 109), 8, TEAL, rect.size.x - 8)
+
+
 func _draw_masonry(rect: Rect2) -> void:
 	for row in range(4):
 		var line_y: float = rect.position.y + row * 25 + 10
@@ -320,13 +412,17 @@ func _draw_stairway(floor_index: int) -> void:
 	var x: float = _floor_exit_x(floor_index)
 	var top: float = _floor_walk_y(floor_index)
 	var direction: float = _floor_direction(floor_index)
-	draw_rect(Rect2(x - 16, top - 10, 32, FLOOR_HEIGHT + 20), Color("12191a"))
+	var half_width: float = 6.0 if compact else 16.0
+	draw_rect(Rect2(x - half_width, top - 10, half_width * 2, FLOOR_HEIGHT + 20), Color("12191a"))
 	for step in range(17):
 		var step_y: float = top + step * FLOOR_HEIGHT / 16.0
-		draw_line(Vector2(x - 11, step_y - 2 * direction), Vector2(x + 11, step_y + 2 * direction), Color("5e635b"), 3)
-	draw_line(Vector2(x - 13, top - 5), Vector2(x - 13, top + FLOOR_HEIGHT + 5), Color("343e3d"), 2)
-	draw_line(Vector2(x + 13, top - 5), Vector2(x + 13, top + FLOOR_HEIGHT + 5), Color("343e3d"), 2)
-	_text("↓", Vector2(x - 6, top - 16), 16, GOLD.darkened(0.25))
+		var tread: float = half_width - (1 if compact else 5)
+		draw_line(Vector2(x - tread, step_y - 2 * direction), Vector2(x + tread, step_y + 2 * direction), Color("5e635b"), 2 if compact else 3)
+	var rail: float = half_width - (0 if compact else 3)
+	draw_line(Vector2(x - rail, top - 5), Vector2(x - rail, top + FLOOR_HEIGHT + 5), Color("343e3d"), 1 if compact else 2)
+	draw_line(Vector2(x + rail, top - 5), Vector2(x + rail, top + FLOOR_HEIGHT + 5), Color("343e3d"), 1 if compact else 2)
+	if not compact:
+		_text("↓", Vector2(x - 6, top - 16), 16, GOLD.darkened(0.25))
 
 
 func _draw_empty_room(rect: Rect2, hovered: bool) -> void:
@@ -469,26 +565,29 @@ func _draw_throne() -> void:
 	var lord_icon: String = str(lord_visual.get("icon", "res://assets/icons/lord.svg"))
 	var banner_color: Color = Color(str(lord_visual.get("color", "#b86b60"))).darkened(0.45)
 	var top: float = int(game.floor_count) * FLOOR_HEIGHT
-	_text("ТРОННЫЙ ЗАЛ", Vector2(17, top + 21), 12, GOLD)
-	_text("ПОСЛЕДНЯЯ ЛИНИЯ ЗАЩИТЫ", Vector2(size.x - 212, top + 21), 9, MUTED)
-	var hall: Rect2 = Rect2(49, top + 30, size.x - 98, 117)
+	_text("ТРОННЫЙ ЗАЛ", Vector2(8 if compact else 17, top + 21), 12, GOLD)
+	if not compact:
+		_text("ПОСЛЕДНЯЯ ЛИНИЯ ЗАЩИТЫ", Vector2(size.x - 212, top + 21), 9, MUTED)
+	var inset: float = 16.0 if compact else 49.0
+	var hall: Rect2 = Rect2(inset, top + 30, size.x - inset * 2, 117)
 	draw_rect(hall, Color("1b1b20"))
 	_draw_masonry(hall)
 	var active: bool = str(game.phase) == "raid" and int(game.current_slot) >= game.rooms.size()
 	_draw_arch(hall, GOLD if active else Color("6f6250"))
-	var center: Vector2 = Vector2(size.x * 0.5 + 18, top + 115)
-	_draw_throne_furniture(center, 1.0)
+	var center: Vector2 = Vector2(size.x * 0.5 + (0 if compact else 18), top + 115)
+	_draw_throne_furniture(center, 0.82 if compact else 1.0)
 	var lord_tint: Color = Color.WHITE if int(game.lord.hp) > 0 else Color(0.42, 0.42, 0.42, 0.75)
-	_icon(lord_icon, Rect2(center + Vector2(-31, -65), Vector2(62, 62)), lord_tint)
+	_icon(lord_icon, Rect2(center + (Vector2(-25, -54) if compact else Vector2(-31, -65)), Vector2.ONE * (50 if compact else 62)), lord_tint)
 	if active:
 		_draw_defender_wards(center + Vector2(0, -34), 1.12)
-	_draw_torch(Vector2(hall.position.x + 41, top + 72), 22, 1.25)
-	_draw_torch(Vector2(hall.end.x - 40, top + 72), 31, 1.25)
-	_draw_banner(Vector2(center.x - 95, top + 36), banner_color, 22, 60)
-	_draw_banner(Vector2(center.x + 79, top + 36), banner_color, 22, 60)
+	_draw_torch(Vector2(hall.position.x + (17 if compact else 41), top + 72), 22, 0.8 if compact else 1.25)
+	_draw_torch(Vector2(hall.end.x - (17 if compact else 40), top + 72), 31, 0.8 if compact else 1.25)
+	_draw_banner(Vector2(center.x - (74 if compact else 95), top + 36), banner_color, 16 if compact else 22, 54 if compact else 60)
+	_draw_banner(Vector2(center.x + (58 if compact else 79), top + 36), banner_color, 16 if compact else 22, 54 if compact else 60)
 	_bar(Rect2(center.x - 46, top + 127, 92, 5), float(game.lord.hp) / maxf(1, int(game.lord.max_hp)), CORAL)
 	_center_text("ЛОРД · УР. %d" % int(game.lord.level), Vector2(center.x, top + 144), 10, CREAM)
-	_draw_platform(Rect2(40, top + 150, size.x - 80, 15), int(game.floor_count))
+	var platform_inset: float = 13.0 if compact else 40.0
+	_draw_platform(Rect2(platform_inset, top + 150, size.x - platform_inset * 2, 15), int(game.floor_count))
 	if active:
 		_draw_combat_sparks(center + Vector2(-31 * _floor_direction(int(game.floor_count)), -30))
 
@@ -526,6 +625,9 @@ func _draw_party() -> void:
 	if living.is_empty():
 		return
 	var walking: bool = _party_position.distance_to(_party_goal) > 5 or not _waypoints.is_empty()
+	if compact:
+		_draw_compact_party(living, walking)
+		return
 	for index in range(living.size() - 1, -1, -1):
 		var hero: Dictionary = living[index]
 		var hero_at: Vector2 = _party_position + Vector2(-index * 12.5 * _party_direction, -index * 4)
@@ -552,6 +654,27 @@ func _draw_party() -> void:
 			draw_colored_polygon(PackedVector2Array([marker + Vector2(-3, -4), marker + Vector2(3, -4), marker]), CORAL)
 
 
+func _draw_compact_party(living: Array[Dictionary], walking: bool) -> void:
+	var icon_size: float = clampf((_slot_rect(0).size.x - 8) / 3, 12, 18)
+	var stride: float = icon_size + 1
+	for index in range(living.size()):
+		var hero: Dictionary = living[index]
+		var column: int = index % 3
+		var row: int = index / 3
+		var row_count: int = mini(3, living.size() - row * 3)
+		var bob: float = sin(_clock * (14 if walking else 2.6) + index) * (1.2 if walking else 0.3)
+		var at: Vector2 = _party_position + Vector2((column - (row_count - 1) * 0.5) * stride * -_party_direction, 20 - row * (icon_size + 5) + bob)
+		at.x = clampf(at.x, icon_size * 0.5 + 2, size.x - icon_size * 0.5 - 2)
+		_icon(str(hero.id), Rect2(at + Vector2(-icon_size * 0.5, -icon_size), Vector2.ONE * icon_size))
+		_bar(Rect2(at + Vector2(-icon_size * 0.5, 2), Vector2(icon_size, 2)), float(hero.hp) / maxf(1, int(hero.max_hp)), TEAL)
+		if int(hero.get("poison_ticks", 0)) > 0:
+			draw_circle(at + Vector2(icon_size * 0.5 - 1, -icon_size + 1), 2, Color("92b957"))
+		if int(hero.get("silence_ticks", 0)) > 0 or int(hero.get("pending_silence", 0)) > 0:
+			draw_line(at + Vector2(-icon_size * 0.4, -icon_size + 1), at + Vector2(icon_size * 0.4, -1), Color("b4a0d5"), 1.5)
+		if str(game.get("active_target_id")) == str(hero.get("instance_id", "")) and str(game.phase) == "raid":
+			draw_rect(Rect2(at + Vector2(-icon_size * 0.5 - 1, -icon_size - 1), Vector2.ONE * (icon_size + 2)), CORAL, false, 1)
+
+
 func draw_ellipse_shadow(at: Vector2, radius: float) -> void:
 	draw_set_transform(at, 0, Vector2(1, 0.32))
 	draw_circle(Vector2.ZERO, radius, Color(0, 0, 0, 0.23))
@@ -559,19 +682,26 @@ func draw_ellipse_shadow(at: Vector2, radius: float) -> void:
 
 
 func _draw_cinematic() -> void:
+	var scale_factor: float = minf(1.0, size.x / 500.0) if compact else 1.0
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE * scale_factor)
+	_draw_cinematic_scene(size / scale_factor)
+	draw_set_transform(Vector2.ZERO)
+
+
+func _draw_cinematic_scene(canvas_size: Vector2) -> void:
 	# The menu owns a separate illustration panel, so the keep fills this canvas.
 	var lord_visual: Dictionary = _lord_visual()
 	var lord_icon: String = str(lord_visual.get("icon", "res://assets/icons/lord.svg"))
 	var banner_color: Color = Color(str(lord_visual.get("color", "#b86b60"))).darkened(0.5)
-	draw_rect(Rect2(Vector2.ZERO, size), Color("10191c"))
-	var moon: Vector2 = Vector2(size.x * 0.70, size.y * 0.15)
+	draw_rect(Rect2(Vector2.ZERO, canvas_size), Color("10191c"))
+	var moon: Vector2 = Vector2(canvas_size.x * 0.70, canvas_size.y * 0.15)
 	for radius in [150.0, 112.0, 84.0]:
 		draw_circle(moon, radius, Color(0.45, 0.62, 0.55, 0.025))
 	draw_circle(moon, 62, Color("718074"))
 	draw_circle(moon + Vector2(-15, -12), 62, Color("10191c"))
-	var left: float = size.x * 0.075
-	var hall_width: float = size.x * 0.84
-	var floor_y: float = size.y * 0.34
+	var left: float = canvas_size.x * 0.075
+	var hall_width: float = canvas_size.x * 0.84
+	var floor_y: float = canvas_size.y * 0.34
 	for tower in range(4):
 		var tower_x: float = left + tower * hall_width * 0.24
 		var tower_height: float = 72 + (tower % 2) * 52
@@ -579,7 +709,7 @@ func _draw_cinematic() -> void:
 		for tooth in range(3):
 			draw_rect(Rect2(tower_x + tooth * hall_width * 0.053, floor_y - tower_height - 11, hall_width * 0.025, 14), Color("1b272a"))
 		_draw_torch(Vector2(tower_x + 15, floor_y - tower_height + 27), float(tower + 4), 0.6)
-	var hall: Rect2 = Rect2(left + 10, floor_y, hall_width - 10, size.y * 0.33)
+	var hall: Rect2 = Rect2(left + 10, floor_y, hall_width - 10, canvas_size.y * 0.33)
 	draw_rect(hall, Color("192124"))
 	_draw_masonry(hall)
 	_draw_arch(hall, Color("5e6154"))
@@ -602,11 +732,11 @@ func _draw_cinematic() -> void:
 	# Foreground earth silhouettes give the scene depth without obscuring the UI.
 	for rock in range(17):
 		var rock_x: float = left - 80 + rock * 45
-		var rock_y: float = size.y - 13 + sin(rock * 2.3) * 14
-		draw_colored_polygon(PackedVector2Array([Vector2(rock_x, size.y), Vector2(rock_x + 5, rock_y - 19), Vector2(rock_x + 30, rock_y - 30), Vector2(rock_x + 52, size.y)]), Color("0d1518"))
+		var rock_y: float = canvas_size.y - 13 + sin(rock * 2.3) * 14
+		draw_colored_polygon(PackedVector2Array([Vector2(rock_x, canvas_size.y), Vector2(rock_x + 5, rock_y - 19), Vector2(rock_x + 30, rock_y - 30), Vector2(rock_x + 52, canvas_size.y)]), Color("0d1518"))
 	for mote in range(20):
 		var x: float = left + fmod(mote * 61.0 + sin(_clock * 0.3 + mote) * 8, hall_width)
-		var y: float = fmod(mote * 73.0 - _clock * (4 + mote % 3) + size.y * 10, size.y)
+		var y: float = fmod(mote * 73.0 - _clock * (4 + mote % 3) + canvas_size.y * 10, canvas_size.y)
 		draw_circle(Vector2(x, y), 1 if mote % 3 else 2, Color(0.80, 0.58, 0.26, 0.12 + 0.08 * sin(_clock + mote)))
 
 
@@ -681,19 +811,101 @@ func _center_text(value: String, at: Vector2, font_size: int, color: Color) -> v
 	_text(value, at - Vector2(text_width / 2, 0), font_size, color)
 
 
+func _center_text_fitted(value: String, at: Vector2, font_size: int, color: Color, width: float) -> void:
+	var result: String = value
+	if _font.get_string_size(result, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
+		while result.length() > 1 and _font.get_string_size(result + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
+			result = result.left(result.length() - 1)
+		result += "…"
+	_center_text(result, at, font_size, color)
+
+
+func _input(event: InputEvent) -> void:
+	# Track in viewport coordinates: the Control itself moves during a scroll.
+	# Tracking here also catches a drag which has already left the room's bounds.
+	if _pressed_slot < 0:
+		return
+	if event is InputEventScreenDrag and event.index == _touch_index:
+		_track_drag(event.position)
+	elif event is InputEventScreenTouch and event.pressed and _touch_index >= 0 and event.index != _touch_index:
+		_press_dragged = true
+	elif event is InputEventMouseMotion and _touch_index < 0 and event.device != -1:
+		_track_drag(event.position)
+
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_SCROLL_BEGIN, NOTIFICATION_EXIT_TREE, NOTIFICATION_VISIBILITY_CHANGED, NOTIFICATION_WM_WINDOW_FOCUS_OUT]:
+		_cancel_press()
+
+
 func _gui_input(event: InputEvent) -> void:
 	if cinematic:
+		return
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			if _touch_index < 0:
+				_touch_index = event.index
+				_begin_press(event.position)
+		elif event.index == _touch_index:
+			if event.canceled:
+				_cancel_press()
+			else:
+				_finish_press(event.position)
+		return
+	if event is InputEventScreenDrag:
+		return
+	# Godot also emits mouse events for a touch. The original touch owns the tap.
+	if event.device == -1:
 		return
 	if event is InputEventMouseMotion:
 		var next_hover: int = _slot_at(event.position)
 		if next_hover != _hovered_slot:
 			_hovered_slot = next_hover
 			queue_redraw()
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var index: int = _slot_at(event.position)
-		if index >= 0:
-			slot_clicked.emit(index)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_begin_press(event.position)
+		else:
+			_finish_press(event.position)
+
+
+func _begin_press(at: Vector2) -> void:
+	_pressed_slot = _slot_at(at)
+	_press_position = get_global_transform_with_canvas() * at
+	_press_dragged = false
+
+
+func _track_drag(at: Vector2) -> void:
+	if at.distance_to(_press_position) > TAP_DRAG_DISTANCE:
+		_press_dragged = true
+
+
+func _finish_press(at: Vector2) -> void:
+	_track_drag(get_global_transform_with_canvas() * at)
+	var index: int = _slot_at(at)
+	var is_tap: bool = not _press_dragged and index >= 0 and index == _pressed_slot
+	var was_touch: bool = _touch_index >= 0
+	_cancel_press()
+	if is_tap:
+		# Reset before emitting: main.gd may rebuild and reparent this Control.
+		if was_touch:
+			# The parent must receive touch-up to end its drag state. Rebuild only
+			# after that event has propagated through the ScrollContainer.
+			_emit_slot_tap.call_deferred(index)
+		else:
 			accept_event()
+			slot_clicked.emit(index)
+
+
+func _emit_slot_tap(index: int) -> void:
+	if is_inside_tree() and is_visible_in_tree() and game != null and index < game.rooms.size():
+		slot_clicked.emit(index)
+
+
+func _cancel_press() -> void:
+	_pressed_slot = -1
+	_touch_index = -1
+	_press_dragged = false
 
 
 func _slot_at(at: Vector2) -> int:
@@ -755,14 +967,15 @@ func _draw_combos() -> void:
 		var first: Rect2 = _slot_rect(int(combo.from))
 		var second: Rect2 = _slot_rect(int(combo.to))
 		var direction: float = signf(second.get_center().x - first.get_center().x)
-		var start: Vector2 = Vector2(first.get_center().x, first.position.y + 44)
-		var finish: Vector2 = Vector2(second.get_center().x, second.position.y + 44)
+		var start: Vector2 = Vector2(first.get_center().x, first.position.y + (39 if compact else 44))
+		var finish: Vector2 = Vector2(second.get_center().x, second.position.y + (39 if compact else 44))
 		var glow: Color = GOLD
 		glow.a = 0.75
-		draw_line(start, finish, Color(0.06, 0.07, 0.06, 0.85), 6, true)
-		draw_line(start, finish, glow, 2, true)
-		draw_colored_polygon(PackedVector2Array([finish, finish + Vector2(-7 * direction, -4), finish + Vector2(-7 * direction, 4)]), GOLD)
+		draw_line(start, finish, Color(0.06, 0.07, 0.06, 0.85), 4 if compact else 6, true)
+		draw_line(start, finish, glow, 1.5 if compact else 2, true)
+		var tip_size: float = 3.0 if compact else 4.0
+		draw_colored_polygon(PackedVector2Array([finish, finish + Vector2(-tip_size * 1.75 * direction, -tip_size), finish + Vector2(-tip_size * 1.75 * direction, tip_size)]), GOLD)
 		var center: Vector2 = (start + finish) * 0.5
-		draw_circle(center, 8, INK)
-		draw_arc(center, 8, 0, TAU, 20, GOLD, 1.5, true)
-		_center_text("+", center + Vector2(0, 4), 12, GOLD)
+		draw_circle(center, 4 if compact else 8, INK)
+		draw_arc(center, 4 if compact else 8, 0, TAU, 20, GOLD, 1.0 if compact else 1.5, true)
+		_center_text("+", center + Vector2(0, 3 if compact else 4), 8 if compact else 12, GOLD)

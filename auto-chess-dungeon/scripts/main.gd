@@ -56,8 +56,28 @@ var run_reward_claimed: bool = true
 var last_run_reward: Dictionary = {}
 var tutorial = TutorialGuide.new()
 var tutorial_saved_speed: int = 1
+var compact_ui: bool = false
+var short_ui: bool = false
+var mobile_tab: String = "dungeon"
+var shell_margin: MarginContainer
+var layout_size: Vector2i = Vector2i.ZERO
+var layout_pending: bool = false
+var layout_poll: float = 0.0
+var remembered_scrolls: Dictionary = {}
+var live_scrolls: Dictionary = {}
+var last_tutorial_step: String = ""
+var modal_scroll: ScrollContainer
+var modal_content: VBoxContainer
+var modal_frame: VBoxContainer
+var modal_width: int = 560
+var modal_is_compact: bool = false
+var touch_points: Dictionary = {}
+var refresh_after_touch: bool = false
+var refresh_keeps_modal: bool = false
 
 func _ready() -> void:
+	_apply_screen_layout()
+	get_window().size_changed.connect(_request_screen_layout)
 	_load_local()
 	game.unlocked_paths.assign(profile.get("unlocked_paths", []))
 	game.restart()
@@ -89,6 +109,72 @@ func _ready() -> void:
 	if not screenshot_path.is_empty():
 		_capture.call_deferred()
 
+func _screen_css_size() -> Vector2i:
+	if OS.has_feature("web"):
+		var dimensions = JavaScriptBridge.eval("(function(){var c=document.getElementById('canvas');var r=c?c.getBoundingClientRect():null;return JSON.stringify([Math.round(r&&r.width?r.width:window.innerWidth),Math.round(r&&r.height?r.height:window.innerHeight)]);})()")
+		if dimensions is String:
+			var parsed = JSON.parse_string(dimensions)
+			if parsed is Array and parsed.size() == 2:
+				return Vector2i(maxi(320, int(parsed[0])), maxi(240, int(parsed[1])))
+	return Vector2i(maxi(320, get_window().size.x), maxi(240, get_window().size.y))
+
+func _request_screen_layout() -> void:
+	if layout_pending:
+		return
+	layout_pending = true
+	_apply_screen_layout.call_deferred()
+
+func _apply_screen_layout() -> void:
+	layout_pending = false
+	var available: Vector2i = _screen_css_size()
+	if available == layout_size:
+		return
+	layout_size = available
+	compact_ui = available.x < 980 or (available.y < 600 and available.x < 1180)
+	short_ui = compact_ui and available.y < 500 and available.x > available.y
+	var target: Vector2i = available if compact_ui else Vector2i(1280, 800)
+	if get_window().content_scale_size != target:
+		get_window().content_scale_size = target
+	if not is_instance_valid(page):
+		return
+	_apply_shell_spacing()
+	_refresh(true)
+	if is_instance_valid(modal):
+		_adapt_modal_controls(modal)
+		_resize_modal.call_deferred()
+
+func _apply_shell_spacing() -> void:
+	var insets: Dictionary = {}
+	if OS.has_feature("web"):
+		var data = JavaScriptBridge.eval("(function(){var c=document.getElementById('canvas');if(document.fullscreenElement!==c)return '{}';var s=getComputedStyle(document.documentElement),o={};['left','right','top','bottom'].forEach(function(k){o[k]=parseFloat(s.getPropertyValue('--safe-'+k))||0;});return JSON.stringify(o);})()")
+		if data is String:
+			var parsed = JSON.parse_string(data)
+			if parsed is Dictionary:
+				insets = parsed
+	var logical_scale: float = 1.0 if compact_ui else maxf(1280.0 / maxf(1.0, layout_size.x), 800.0 / maxf(1.0, layout_size.y))
+	for edge in ["left", "right", "top", "bottom"]:
+		shell_margin.add_theme_constant_override("margin_" + edge, (6 if compact_ui else 20) + ceili(float(insets.get(edge, 0.0)) * logical_scale))
+	page.add_theme_constant_override("separation", 6 if compact_ui else 14)
+
+func _remember_scrolls() -> void:
+	for key in live_scrolls:
+		var scroll = live_scrolls[key]
+		if is_instance_valid(scroll):
+			remembered_scrolls[key] = scroll.scroll_vertical
+	live_scrolls.clear()
+
+func _track_scroll(scroll: ScrollContainer, key: String) -> void:
+	if compact_ui:
+		scroll.scroll_deadzone = 12
+	live_scrolls[key] = scroll
+	scroll.set_deferred("scroll_vertical", int(remembered_scrolls.get(key, 0)))
+
+func _responsive_box() -> BoxContainer:
+	var box = BoxContainer.new()
+	box.vertical = compact_ui
+	box.set_meta("responsive_box", true)
+	return box
+
 func _make_theme() -> void:
 	var ui_theme = Theme.new()
 	ui_theme.default_font_size = 15
@@ -114,21 +200,26 @@ func _build_shell() -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	var margin = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for edge in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + edge, 20)
-	add_child(margin)
+	shell_margin = MarginContainer.new()
+	shell_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(shell_margin)
 	page = VBoxContainer.new()
-	page.add_theme_constant_override("separation", 14)
-	margin.add_child(page)
+	shell_margin.add_child(page)
+	_apply_shell_spacing()
 
-func _refresh() -> void:
+func _refresh(keep_modal: bool = false) -> void:
 	if tutorial.observe(game):
 		paused = true
 		accumulator = 0.0
+	if compact_ui and not touch_points.is_empty():
+		refresh_after_touch = true
+		refresh_keeps_modal = refresh_keeps_modal or keep_modal
+		return
+	refresh_after_touch = false
 	if is_instance_valid(floor_scroll):
 		scroll_position = floor_scroll.scroll_vertical
+	floor_scroll = null
+	_remember_scrolls()
 	if is_instance_valid(dungeon_view) and dungeon_view.get_parent():
 		dungeon_view.get_parent().remove_child(dungeon_view)
 	for child in page.get_children():
@@ -136,29 +227,180 @@ func _refresh() -> void:
 		child.queue_free()
 	if menu_open:
 		if menu_section == "lords":
-			_build_lords_page()
+			if compact_ui:
+				_build_mobile_lords()
+			else:
+				_build_lords_page()
 		else:
-			_build_menu()
+			if compact_ui:
+				_build_mobile_menu()
+			else:
+				_build_menu()
 		return
-	_header()
-	if tutorial.active():
-		_tutorial_banner(page)
-	var body = HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 12)
-	page.add_child(body)
-	_party_panel(body)
-	_dungeon_panel(body)
-	_inspector_panel(body)
-	_shop_panel()
-	_footer()
-	floor_scroll.set_deferred("scroll_vertical", scroll_position)
+	if compact_ui:
+		_build_mobile_game()
+	else:
+		_header()
+		if tutorial.active():
+			_tutorial_banner(page)
+		var body = HBoxContainer.new()
+		body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		body.add_theme_constant_override("separation", 12)
+		page.add_child(body)
+		_party_panel(body)
+		_dungeon_panel(body)
+		_inspector_panel(body)
+		_shop_panel()
+		_footer()
+	if is_instance_valid(floor_scroll):
+		floor_scroll.set_deferred("scroll_vertical", scroll_position)
 	if game.phase == "raid":
 		var target_floor: int = mini(game.current_slot / 5, game.floor_count)
 		if target_floor != active_floor and game.current_slot >= 0:
 			active_floor = target_floor
-			floor_scroll.set_deferred("scroll_vertical", target_floor * 160)
-	_show_phase_modal()
+			scroll_position = target_floor * 160
+			if is_instance_valid(floor_scroll):
+				floor_scroll.set_deferred("scroll_vertical", scroll_position)
+	if not keep_modal:
+		_show_phase_modal()
+
+func _build_mobile_game() -> void:
+	_sync_tutorial_tab()
+	var header = HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	page.add_child(header)
+	var numbers = _vbox(header, 1)
+	numbers.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	numbers.add_child(_label("Волна %d  ·  %d зол." % [game.wave, game.gold], 17, GOLD))
+	numbers.add_child(_label("Лорд %d/%d HP  ·  ур. %d" % [maxi(0, game.lord.hp), game.lord.max_hp, game.lord.level], 13, PAPER))
+	var menu_button = _button("Меню", _open_menu)
+	menu_button.custom_minimum_size.x = 68
+	header.add_child(menu_button)
+	if tutorial.active():
+		_tutorial_banner(page)
+	var stage = BoxContainer.new()
+	stage.vertical = not short_ui
+	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stage.add_theme_constant_override("separation", 6)
+	page.add_child(stage)
+	var tabs: Container
+	var low_landscape: bool = short_ui and layout_size.y < 380
+	var floor_actions: Control = null
+	if low_landscape:
+		# A four-button rail would force the footer below a 320 px screen.
+		var grid = GridContainer.new()
+		grid.columns = 2
+		grid.custom_minimum_size.x = 146
+		grid.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		grid.add_theme_constant_override("h_separation", 4)
+		grid.add_theme_constant_override("v_separation", 4)
+		tabs = grid
+	else:
+		var strip = BoxContainer.new()
+		strip.vertical = short_ui
+		if short_ui:
+			strip.custom_minimum_size.x = 92
+		strip.add_theme_constant_override("separation", 4)
+		tabs = strip
+	if low_landscape:
+		var rail = VBoxContainer.new()
+		rail.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		rail.add_theme_constant_override("separation", 4)
+		stage.add_child(rail)
+		rail.add_child(tabs)
+		floor_actions = rail
+	else:
+		stage.add_child(tabs)
+	for entry in [["dungeon", "Поле"], ["shop", "Магазин"], ["party", "Герои"], ["room", "Комната"]]:
+		var button = _button(str(entry[1]), _set_mobile_tab.bind(str(entry[0])))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.add_theme_font_size_override("font_size", 13)
+		button.add_theme_stylebox_override("normal", _style(TILE if mobile_tab != str(entry[0]) else Color("#393326"), LINE if mobile_tab != str(entry[0]) else GOLD, 6, 6))
+		if _tutorial_tab() == str(entry[0]):
+			button.add_theme_color_override("font_color", GOLD)
+		tabs.add_child(button)
+	var body = HBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stage.add_child(body)
+	match mobile_tab:
+		"shop":
+			var scroll = ScrollContainer.new()
+			scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+			body.add_child(scroll)
+			_track_scroll(scroll, "shop")
+			_shop_panel(scroll)
+		"party":
+			_party_panel(body)
+		"room":
+			_inspector_panel(body)
+		_:
+			_dungeon_panel(body, floor_actions)
+	_mobile_actions()
+
+func _set_mobile_tab(tab: String) -> void:
+	if is_instance_valid(modal):
+		return
+	mobile_tab = tab
+	_refresh()
+
+func _tutorial_tab() -> String:
+	if not tutorial.active():
+		return ""
+	var target: String = tutorial.target()
+	if target.begins_with("shop:"):
+		return "shop"
+	if target in ["evolution", "upgrade"]:
+		return "room"
+	return "dungeon"
+
+func _sync_tutorial_tab() -> void:
+	if tutorial.step != last_tutorial_step:
+		last_tutorial_step = tutorial.step
+		if tutorial.active():
+			mobile_tab = _tutorial_tab()
+
+func _mobile_actions() -> void:
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	page.add_child(row)
+	if game.phase == "prepare":
+		if selected_slot >= 0 or not selected_room.is_empty() or selecting_deal:
+			var cancel = _button("Отмена", _cancel_selection)
+			cancel.custom_minimum_size.x = 76
+			row.add_child(cancel)
+		var start = _button("НАЧАТЬ ВОЛНУ %d" % game.wave, _start)
+		start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		start.add_theme_stylebox_override("normal", _style(GOLD, GOLD, 8, 8))
+		start.add_theme_color_override("font_color", INK)
+		row.add_child(start)
+		_tutorial_mark(start, "start")
+	elif game.phase == "raid":
+		var pause_button = _button("Далее" if paused else "Пауза", _toggle_pause)
+		pause_button.custom_minimum_size.x = 68
+		pause_button.disabled = not tutorial.allows("pause")
+		row.add_child(pause_button)
+		var speed_button = _button("×%d" % speed, _cycle_speed)
+		speed_button.custom_minimum_size.x = 44
+		speed_button.disabled = not tutorial.allows("speed")
+		row.add_child(speed_button)
+		var ability: Dictionary = game.ability_status()
+		var cast = _button("%s · %d/%d" % [ability.name, ability.charges, ability.max_charges], _cast_lord_ability, not bool(ability.can_cast))
+		cast.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cast.add_theme_color_override("font_color", GREEN)
+		cast.add_theme_font_size_override("font_size", 13)
+		cast.tooltip_text = str(ability.description) + "\n" + str(ability.reason)
+		row.add_child(cast)
+		_tutorial_mark(cast, "ability")
+	else:
+		var result = _button("Показать результат", _show_phase_modal)
+		result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(result)
+
+func _cycle_speed() -> void:
+	_set_speed(2 if speed == 1 else 4 if speed == 2 else 1)
 
 func _header() -> void:
 	var head = HBoxContainer.new()
@@ -182,9 +424,11 @@ func _header() -> void:
 
 func _party_panel(parent: Control) -> void:
 	var box = _panel(parent, 222)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL if compact_ui else Control.SIZE_FILL
 	var outer_scroll = ScrollContainer.new()
 	outer_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(outer_scroll)
+	_track_scroll(outer_scroll, "party")
 	var side = _vbox(outer_scroll)
 	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	side.add_child(_eyebrow("РАЗВЕДКА"))
@@ -205,6 +449,8 @@ func _party_panel(parent: Control) -> void:
 	for hero in game.heroes:
 		var card = PanelContainer.new()
 		var compact: bool = game.heroes.size() > 1
+		if compact_ui:
+			compact = false
 		card.add_theme_stylebox_override("panel", _style(TILE if hero.hp > 0 else Color("#1d2027"), LINE, 8, 7 if compact else 10))
 		heroes_col.add_child(card)
 		var inner = _vbox(card, 3 if compact else 5)
@@ -252,20 +498,25 @@ func _lord_status(parent: Control) -> void:
 	parent.add_child(_label("До таланта: XP %d / %d" % [game.lord.xp, 10 + 6 * (int(game.lord.level) - 1)], 11, VIOLET))
 	parent.add_child(_button("Таланты Владыки · %d" % _talent_count(), _show_talents))
 
-func _dungeon_panel(parent: Control) -> void:
+func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
 	var box = _panel(parent)
+	if floor_actions != null:
+		box.add_theme_stylebox_override("panel", _style(PANEL, LINE, 10, 6))
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var center = _vbox(box, 8)
 	var title_row = HBoxContainer.new()
+	title_row.visible = floor_actions == null
 	center.add_child(title_row)
-	var title = _label("Глубины вашего подземелья", 21, PAPER)
+	var title = _label("Подземелье · %d этаж." % game.floor_count if compact_ui else "Глубины вашего подземелья", 15 if compact_ui else 21, PAPER)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(title)
-	title_row.add_child(_label("%d этаж. / %d мест" % [game.floor_count, game.rooms.size()], 11, GOLD))
-	_faction_counters(center)
+	if not compact_ui:
+		title_row.add_child(_label("%d этаж. / %d мест" % [game.floor_count, game.rooms.size()], 11, GOLD))
+	if not short_ui:
+		_faction_counters(center)
 	var guidance: String = message
 	if selecting_deal and game.phase == "prepare":
-		guidance = "Сделка: выберите пустое место. Отмена — Esc или «Снять выбор»."
+		guidance = "Сделка: выберите пустое место." if compact_ui else "Сделка: выберите пустое место. Отмена — Esc или «Снять выбор»."
 	elif not selected_room.is_empty() and game.phase == "prepare":
 		guidance = "Разместить: %s. Выберите пустую комнату." % Content.room(selected_room).name
 	elif selected_slot >= 0 and game.phase == "prepare":
@@ -274,32 +525,54 @@ func _dungeon_panel(parent: Control) -> void:
 		guidance = str(game.last_action.get("text", "Группа спускается в подземелье."))
 		if guidance.is_empty():
 			guidance = "Группа спускается в подземелье."
+	if short_ui:
+		title.text = guidance
+		title.add_theme_font_size_override("font_size", 13)
+		title.max_lines_visible = 2
+		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var caption = _label(guidance, 12, GOLD if game.phase == "raid" else MUTED, true)
-	caption.custom_minimum_size.y = 34
-	center.add_child(caption)
+	caption.custom_minimum_size.y = 0 if compact_ui else 34
+	if not short_ui:
+		caption.max_lines_visible = 2 if compact_ui else -1
+		caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		center.add_child(caption)
+	else:
+		caption.free()
 	floor_scroll = ScrollContainer.new()
 	floor_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	floor_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	center.add_child(floor_scroll)
+	if compact_ui:
+		floor_scroll.scroll_deadzone = 12
 	if not is_instance_valid(dungeon_view):
 		dungeon_view = DungeonView.new()
 		dungeon_view.slot_clicked.connect(_slot_clicked)
 	dungeon_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	floor_scroll.add_child(dungeon_view)
 	var preview_room: String = str(game.deal_offer().get("room_id", "")) if selecting_deal else selected_room
+	dungeon_view.compact = compact_ui
 	dungeon_view.configure(game, selected_slot, preview_room)
 	dungeon_view.tutorial_slot = _tutorial_slot()
-	var floor_button = _button("+ УГЛУБИТЬ ПОДЗЕМЕЛЬЕ · %d зол." % game.floor_cost(), _buy_floor, game.phase != "prepare" or game.gold < game.floor_cost())
-	floor_button.custom_minimum_size.y = 38
+	var floor_button = _button("+ Этаж · %d зол." % game.floor_cost() if compact_ui else "+ УГЛУБИТЬ ПОДЗЕМЕЛЬЕ · %d зол." % game.floor_cost(), _buy_floor, game.phase != "prepare" or game.gold < game.floor_cost())
+	floor_button.custom_minimum_size.y = 44 if compact_ui else 38
 	floor_button.tooltip_text = "Пять новых комнат и выбор свойства этажа: лаборатория, казармы или мастерская."
-	center.add_child(floor_button)
+	if floor_actions != null:
+		floor_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		floor_actions.add_child(floor_button)
+	elif compact_ui:
+		floor_button.custom_minimum_size.x = 126
+		title_row.add_child(floor_button)
+	else:
+		center.add_child(floor_button)
 	_tutorial_mark(floor_button, "floor")
 
 func _inspector_panel(parent: Control) -> void:
 	var box = _panel(parent, 242)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL if compact_ui else Control.SIZE_FILL
 	var scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(scroll)
+	_track_scroll(scroll, "room")
 	var right = _vbox(scroll)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var is_raid: bool = game.phase == "raid"
@@ -360,6 +633,8 @@ func _inspector_panel(parent: Control) -> void:
 			right.add_child(evolution_button)
 			_tutorial_mark(evolution_button, "evolution")
 		right.add_child(_button("Продать · +%d зол." % game.sell_value(selected_slot), _sell, game.phase != "prepare"))
+		if compact_ui:
+			right.add_child(_button("Перенести · выбрать место на поле", _set_mobile_tab.bind("dungeon"), game.phase != "prepare"))
 		right.add_child(_button("Отменить выбор", _cancel_selection))
 	else:
 		if tutorial.active():
@@ -368,6 +643,8 @@ func _inspector_panel(parent: Control) -> void:
 		var modifiers: Dictionary = game.talent_modifiers()
 		var passive: Dictionary = game.lord_passive_modifiers()
 		right.add_child(_label("Существа: HP %s · урон %s\nЛовушки: урон %s" % [_percent(float(modifiers.get("monster_hp", 0.0)) + float(passive.get("monster_hp", 0.0))), _percent(float(modifiers.get("monster_damage", 0.0))), _percent(float(modifiers.get("trap_damage", 0.0)))], 11, VIOLET, true))
+	if compact_ui:
+		_faction_counters(right)
 	right.add_child(_button("Комбо · %d  /  Реликвии · %d" % [game.active_combos().size(), game.selected_relics.size()], _show_run_collection))
 	if not game.battle_room_report().is_empty():
 		right.add_child(_button("Вклад комнат · " + ("текущий бой" if is_raid else "прошлый бой"), _show_battle_report))
@@ -383,11 +660,12 @@ func _inspector_panel(parent: Control) -> void:
 	for line in game.logs:
 		log_box.append_text(str(line) + "\n\n")
 
-func _shop_panel() -> void:
+func _shop_panel(parent: Control = null) -> void:
 	var shop_area = VBoxContainer.new()
 	shop_area.add_theme_constant_override("separation", 7)
-	page.add_child(shop_area)
-	var header = HBoxContainer.new()
+	shop_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	(page if parent == null else parent).add_child(shop_area)
+	var header = _responsive_box()
 	shop_area.add_child(header)
 	var title = _eyebrow("МАГАЗИН КОМНАТ")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -395,8 +673,12 @@ func _shop_panel() -> void:
 	var offer: Dictionary = game.deal_offer()
 	if not offer.is_empty():
 		_deal_card(header, offer)
-	var row = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	if compact_ui:
+		shop_area.add_child(_label("Выберите карту, затем свободное место на поле.", 14, MUTED, true))
+	var row = GridContainer.new()
+	row.columns = (2 if short_ui else 1) if compact_ui else maxi(1, game.shop.size())
+	row.add_theme_constant_override("h_separation", 10)
+	row.add_theme_constant_override("v_separation", 10)
 	shop_area.add_child(row)
 	for id in game.shop:
 		var definition: Dictionary = Content.room(str(id))
@@ -406,7 +688,7 @@ func _shop_panel() -> void:
 		var reward_xp: int = game.hero_room_xp(int(definition.xp))
 		var button = Button.new()
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.custom_minimum_size.y = 98
+		button.custom_minimum_size.y = 170 if compact_ui else 98
 		button.disabled = game.phase != "prepare" or stock <= 0 or game.gold < int(definition.cost)
 		button.tooltip_text = "%s\nБазовые HP: %d · Урон: %d · Броня: %d\nНаграда врагу на ранге 1: %d XP" % [definition.description, definition.hp, definition.damage, definition.armor, reward_xp]
 		if str(definition.kind) in ["shackles", "silence", "rust"]:
@@ -429,8 +711,11 @@ func _shop_panel() -> void:
 		text_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		text_col.add_theme_constant_override("separation", 4)
 		contents.add_child(text_col)
-		var room_name = _label(("✓ " if selected_room == str(id) else "") + str(definition.name), 14, PAPER if not button.disabled else MUTED)
+		var room_name = _label(("✓ " if selected_room == str(id) else "") + str(definition.name), 16 if compact_ui else 14, PAPER if not button.disabled else MUTED)
 		room_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		if compact_ui:
+			room_name.custom_minimum_size.y = 24
+			room_name.max_lines_visible = 2
 		text_col.add_child(room_name)
 		text_col.add_child(_label("%d зол.   ·   запас %d" % [definition.cost, stock], 12, GOLD))
 		text_col.add_child(_label(str(faction.get("name", "")), 10, faction_color))
@@ -438,7 +723,21 @@ func _shop_panel() -> void:
 		if str(definition.kind) in ["shackles", "silence", "rust"]:
 			detail = "Контроль · %d боевых т." % int(definition.get("effect_turns", 0))
 		text_col.add_child(_label(detail, 10, MUTED))
+		if compact_ui:
+			var stats_line: String = "HP %d · Урон %d · Броня %d" % [int(definition.hp), int(definition.damage), int(definition.armor)] if str(definition.kind) == "monster" else "Урон %d" % int(definition.damage)
+			if str(definition.kind) in ["shackles", "silence", "rust"]:
+				stats_line = "Действует %d т." % int(definition.get("effect_turns", 0))
+			text_col.add_child(_label(stats_line + " · " + Content.room_traits_text(definition), 13, PAPER, true))
+			var description = _label(str(definition.description), 13, MUTED, true)
+			description.max_lines_visible = 3
+			description.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			text_col.add_child(description)
+			if stock <= 0 or game.gold < int(definition.cost):
+				text_col.add_child(_label("Раскуплено" if stock <= 0 else "Нужно ещё %d зол." % (int(definition.cost) - game.gold), 13, RED, true))
 		_ignore_mouse(margin)
+		if compact_ui:
+			margin.minimum_size_changed.connect(_fit_card_button.bind(button, margin))
+			_fit_card_button.call_deferred(button, margin)
 		_tutorial_mark(button, "shop:" + str(id))
 		# Tutorial focus retains faction identity; selection uses a check and fill.
 		if tutorial.active() and tutorial.target() == "shop:" + str(id) and not button.disabled:
@@ -474,6 +773,11 @@ func _footer() -> void:
 		row.add_child(_button("Показать результат", _show_phase_modal))
 
 func _process(delta: float) -> void:
+	layout_poll += delta
+	if layout_poll >= 0.5:
+		layout_poll = 0.0
+		if _screen_css_size() != layout_size:
+			_request_screen_layout()
 	if menu_open or game.phase != "raid" or paused or is_instance_valid(modal):
 		return
 	accumulator += delta * speed
@@ -486,6 +790,13 @@ func _process(delta: float) -> void:
 		_refresh()
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			touch_points[event.index] = true
+		else:
+			touch_points.erase(event.index)
+			if touch_points.is_empty() and refresh_after_touch:
+				_flush_touch_refresh.call_deferred()
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_F11:
 			_toggle_fullscreen()
@@ -513,6 +824,12 @@ func _input(event: InputEvent) -> void:
 			else:
 				_open_menu()
 
+func _flush_touch_refresh() -> void:
+	if refresh_after_touch and touch_points.is_empty():
+		var keep_modal: bool = refresh_keeps_modal
+		refresh_keeps_modal = false
+		_refresh(keep_modal)
+
 func _toggle_fullscreen() -> void:
 	var window: Window = get_window()
 	if window.mode in [Window.MODE_FULLSCREEN, Window.MODE_EXCLUSIVE_FULLSCREEN]:
@@ -528,6 +845,7 @@ func _slot_clicked(index: int) -> void:
 		if error.is_empty():
 			selecting_deal = false
 			selected_slot = index
+			mobile_tab = "room"
 		_action(error)
 	elif not selected_room.is_empty():
 		var error: String = game.buy_room(index, selected_room)
@@ -542,6 +860,7 @@ func _slot_clicked(index: int) -> void:
 		if error.is_empty() and not tutorial.active() and not game.room_evolution_options(index).is_empty():
 			selected_room = ""
 			selected_slot = index
+			mobile_tab = "room"
 			_refresh()
 	elif selected_slot >= 0:
 		if selected_slot == index:
@@ -552,10 +871,13 @@ func _slot_clicked(index: int) -> void:
 			_refresh()
 	elif not game.rooms[index].is_empty():
 		selected_slot = index
+		mobile_tab = "room"
 		tutorial.accepted("slot:" + str(index))
 		_refresh()
 	else:
-		message = "Сначала выберите тип комнаты в магазине внизу."
+		message = "Сначала выберите карту во вкладке «Магазин»." if compact_ui else "Сначала выберите тип комнаты в магазине внизу."
+		if compact_ui:
+			mobile_tab = "shop"
 		_refresh()
 
 func _select_shop(id: String) -> void:
@@ -564,6 +886,7 @@ func _select_shop(id: String) -> void:
 	selected_slot = -1
 	selecting_deal = false
 	selected_room = id if tutorial.active() else ("" if selected_room == id else id)
+	mobile_tab = "dungeon"
 	tutorial.accepted("shop:" + id)
 	_sound("click")
 	_refresh()
@@ -574,6 +897,7 @@ func _cancel_selection() -> void:
 	selected_slot = -1
 	selected_room = ""
 	selecting_deal = false
+	mobile_tab = "dungeon"
 	message = "Выберите комнату в магазине или улучшите построенную."
 	_refresh()
 
@@ -632,6 +956,7 @@ func _start() -> void:
 	selected_slot = -1
 	selected_room = ""
 	selecting_deal = false
+	mobile_tab = "dungeon"
 	active_floor = -1
 	paused = false
 	accumulator = 0.0
@@ -704,7 +1029,7 @@ func _show_phase_modal() -> void:
 		content.add_child(_eyebrow("ВЛАДЫКА · УРОВЕНЬ %d" % game.lord.level))
 		content.add_child(_label("Какой будет ваша власть?", 28, GOLD))
 		content.add_child(_label("Один талант из трёх. Осталось выборов: %d. Эффекты действуют до конца забега." % game.pending_upgrades, 14, MUTED, true))
-		var choices = HBoxContainer.new()
+		var choices = _responsive_box()
 		choices.add_theme_constant_override("separation", 12)
 		content.add_child(choices)
 		for option in game.talent_options():
@@ -836,7 +1161,7 @@ func _talent_choice_card(parent: Control, option: Dictionary) -> void:
 	preview.custom_minimum_size.y = 36
 	body.add_child(preview)
 	var choose = _button("ВЫБРАТЬ  →", _choose_talent.bind(id))
-	choose.custom_minimum_size.y = 40
+	choose.custom_minimum_size.y = 48 if compact_ui else 40
 	choose.add_theme_color_override("font_color", tint)
 	body.add_child(choose)
 	_tutorial_mark(choose, "choice")
@@ -877,7 +1202,8 @@ func _talent_summary(parent: Control) -> void:
 	var modifiers: Dictionary = game.talent_modifiers()
 	var passive: Dictionary = game.lord_passive_modifiers()
 	var grid = GridContainer.new()
-	grid.columns = 2
+	grid.columns = 1 if compact_ui else 2
+	grid.set_meta("responsive_columns", 2)
 	grid.add_theme_constant_override("h_separation", 10)
 	grid.add_theme_constant_override("v_separation", 10)
 	parent.add_child(grid)
@@ -942,6 +1268,8 @@ func _back_from_talents() -> void:
 	_show_phase_modal()
 
 func _new_modal(width: int = 560, compact: bool = false) -> VBoxContainer:
+	modal_width = width
+	modal_is_compact = compact
 	modal_shade = ColorRect.new()
 	modal_shade.color = Color(0.025, 0.035, 0.05, 0.88)
 	modal_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -950,30 +1278,71 @@ func _new_modal(width: int = 560, compact: bool = false) -> VBoxContainer:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	modal_shade.add_child(center)
 	modal = PanelContainer.new()
-	modal.custom_minimum_size.x = width
-	modal.add_theme_stylebox_override("panel", _style(PANEL, Color("#756143"), 16, 28))
 	center.add_child(modal)
-	var frame = _vbox(modal, 12)
+	modal_frame = _vbox(modal, 12)
+	modal_scroll = ScrollContainer.new()
+	modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	modal_scroll.scroll_deadzone = 12
+	modal_frame.add_child(modal_scroll)
+	modal_content = _vbox(modal_scroll, 14)
+	modal_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if tutorial.active() and not menu_open:
-		_tutorial_banner(frame)
+		_tutorial_banner(modal_content)
 	elif tutorial.active():
-		frame.add_child(_button("Пропустить обучение", _skip_tutorial))
-	var scroll = ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size = Vector2(width - 56, minf(460.0 if tutorial.active() else 520.0, get_viewport_rect().size.y - (240.0 if tutorial.active() else 142.0)))
-	frame.add_child(scroll)
-	var content = _vbox(scroll, 14)
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if compact:
-		scroll.custom_minimum_size.y = 120
-		content.minimum_size_changed.connect(_fit_compact_modal.bind(scroll, content))
-		_fit_compact_modal.call_deferred(scroll, content)
-	return content
+		modal_content.add_child(_button("Пропустить обучение", _skip_tutorial))
+	modal_content.minimum_size_changed.connect(_resize_modal)
+	_resize_modal()
+	_resize_modal.call_deferred()
+	return modal_content
+
+func _resize_modal() -> void:
+	if not is_instance_valid(modal) or not is_instance_valid(modal_content):
+		return
+	var available: Vector2 = get_viewport_rect().size
+	# Fullscreen puts the canvas outside the HTML safe-area frame. Modal windows
+	# use the same extra insets as the main page, including on a rotated phone.
+	var base_margin: int = 6 if compact_ui else 20
+	var safe_left: int = maxi(0, shell_margin.get_theme_constant("margin_left") - base_margin)
+	var safe_right: int = maxi(0, shell_margin.get_theme_constant("margin_right") - base_margin)
+	var safe_top: int = maxi(0, shell_margin.get_theme_constant("margin_top") - base_margin)
+	var safe_bottom: int = maxi(0, shell_margin.get_theme_constant("margin_bottom") - base_margin)
+	var center: Control = modal.get_parent()
+	center.offset_left = safe_left
+	center.offset_right = -safe_right
+	center.offset_top = safe_top
+	center.offset_bottom = -safe_bottom
+	available -= Vector2(safe_left + safe_right, safe_top + safe_bottom)
+	var padding: int = 12 if compact_ui else 28
+	var width: float = minf(float(modal_width), available.x - 16.0)
+	modal.custom_minimum_size.x = width
+	if int(modal.get_meta("layout_padding", -1)) != padding:
+		modal.set_meta("layout_padding", padding)
+		modal.add_theme_stylebox_override("panel", _style(PANEL, Color("#756143"), 12 if compact_ui else 16, padding))
+	var height_limit: float = maxf(80.0, minf(520.0, available.y - padding * 2 - (20.0 if compact_ui else 80.0)))
+	var content_height: float = modal_content.get_combined_minimum_size().y
+	modal_scroll.custom_minimum_size = Vector2(maxf(0.0, width - padding * 2), clampf(content_height, 80.0, height_limit) if modal_is_compact else height_limit)
+
+func _adapt_modal_controls(node: Node) -> void:
+	if node is BoxContainer and node.has_meta("responsive_box"):
+		node.vertical = compact_ui
+	if node is GridContainer and node.has_meta("responsive_columns"):
+		node.columns = 1 if compact_ui else int(node.get_meta("responsive_columns"))
+	if node is Label and node.has_meta("original_font_size"):
+		var original: int = int(node.get_meta("original_font_size"))
+		node.add_theme_font_size_override("font_size", clampi(original, 13, 24) if compact_ui else original)
+		node.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if compact_ui or bool(node.get_meta("original_wrap", false)) else TextServer.AUTOWRAP_OFF
+		if compact_ui:
+			node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if node is Button:
+		node.custom_minimum_size.y = maxf(node.custom_minimum_size.y, 44.0 if compact_ui else 0.0)
+		node.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if compact_ui else TextServer.AUTOWRAP_OFF
+	for child in node.get_children():
+		_adapt_modal_controls(child)
 
 func _fit_compact_modal(scroll: ScrollContainer, content: VBoxContainer) -> void:
 	if not is_instance_valid(scroll) or not is_instance_valid(content):
 		return
-	var height_limit: float = minf(520.0, get_viewport_rect().size.y - (250.0 if tutorial.active() else 160.0))
+	var height_limit: float = minf(520.0, get_viewport_rect().size.y - (44.0 if compact_ui else 160.0))
 	scroll.custom_minimum_size.y = clampf(content.get_combined_minimum_size().y, 80.0, maxf(80.0, height_limit))
 
 func _close_modal() -> void:
@@ -982,6 +1351,9 @@ func _close_modal() -> void:
 		modal_shade.queue_free()
 	modal = null
 	modal_shade = null
+	modal_scroll = null
+	modal_content = null
+	modal_frame = null
 	viewing_talents = false
 
 func _next_wave() -> void:
@@ -1127,8 +1499,8 @@ func _style(bg: Color, border: Color, radius: int = 8, padding: int = 12) -> Sty
 
 func _panel(parent: Control, min_width: int = 0) -> PanelContainer:
 	var panel = PanelContainer.new()
-	panel.custom_minimum_size.x = min_width
-	panel.add_theme_stylebox_override("panel", _style(PANEL, LINE, 10, 14))
+	panel.custom_minimum_size.x = 0 if compact_ui else min_width
+	panel.add_theme_stylebox_override("panel", _style(PANEL, LINE, 10, 8 if compact_ui else 14))
 	parent.add_child(panel)
 	return panel
 
@@ -1141,11 +1513,15 @@ func _vbox(parent: Control, spacing: int = 8) -> VBoxContainer:
 func _label(text: String, font_size: int = 15, color: Color = PAPER, wrap: bool = false) -> Label:
 	var label = Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", font_size)
+	label.set_meta("original_font_size", font_size)
+	label.set_meta("original_wrap", wrap)
+	label.add_theme_font_size_override("font_size", clampi(font_size, 13, 24) if compact_ui else font_size)
 	label.add_theme_color_override("font_color", color)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if wrap:
+	if wrap or compact_ui:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if compact_ui:
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return label
 
 func _eyebrow(text: String) -> Label:
@@ -1155,10 +1531,18 @@ func _button(text: String, callback: Callable, disabled: bool = false) -> Button
 	var button = Button.new()
 	button.text = text
 	button.disabled = disabled
+	if compact_ui:
+		button.custom_minimum_size = Vector2(44, 44)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", 14)
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	if callback.is_valid():
 		button.pressed.connect(callback)
 	return button
+
+func _fit_card_button(button: Button, contents: Control) -> void:
+	if is_instance_valid(button) and is_instance_valid(contents):
+		button.custom_minimum_size.y = maxf(170.0, contents.get_combined_minimum_size().y)
 
 func _icon(path: String, dimension: int) -> TextureRect:
 	var icon = TextureRect.new()
@@ -1212,6 +1596,109 @@ func _capture() -> void:
 	var output = get_viewport().get_texture().get_image()
 	output.save_png(screenshot_path)
 	get_tree().quit()
+func _build_mobile_menu() -> void:
+	var header = HBoxContainer.new()
+	page.add_child(header)
+	var brand = _label("NO HERO RETURNS", 20, GOLD)
+	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(brand)
+	var record = _label("Рекорд %d" % int(profile.get("wave", 0)), 13, MUTED)
+	record.custom_minimum_size.x = 80
+	header.add_child(record)
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+	_track_scroll(scroll, "menu")
+	var columns = BoxContainer.new()
+	columns.vertical = not short_ui
+	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_theme_constant_override("separation", 14)
+	scroll.add_child(columns)
+	var selected: Dictionary = Lords.get_lord(str(lords_profile.selected))
+	var introduction = _panel(columns)
+	introduction.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if short_ui:
+		introduction.size_flags_stretch_ratio = 0.7
+	var intro = _vbox(introduction, 8)
+	var identity = HBoxContainer.new()
+	intro.add_child(identity)
+	identity.add_child(_icon(str(selected.icon), 58))
+	var motto = _label("Ваш трон.\nИх последний рейд.", 23, PAPER, true)
+	motto.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	identity.add_child(motto)
+	intro.add_child(_label(str(selected.name) + " · мастерство %d/5" % LordProgression.mastery(lords_profile, str(selected.id)), 15, GOLD, true))
+	intro.add_child(_label("Стройте защиту. В бой вступайте силой Лорда.", 14, MUTED, true))
+	intro.add_child(_label("Осколки душ: %d" % int(lords_profile.souls), 14, VIOLET))
+	var actions = _vbox(columns, 8)
+	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if has_run and game.phase != "defeat":
+		actions.add_child(_button("ПРОДОЛЖИТЬ · ВОЛНА %d" % game.wave, _resume_run))
+	var first_lesson: bool = not bool(profile.get("tutorial_completed", false)) and not bool(profile.get("tutorial_skipped", false))
+	var lesson = _button("НАУЧИТЬСЯ ИГРАЯ" if first_lesson else "Обучение · сыграть с подсказками", _request_tutorial)
+	var start = _button("НОВОЕ ПОДЗЕМЕЛЬЕ", _request_new_run)
+	var primary: Button = lesson if first_lesson else start
+	primary.custom_minimum_size.y = 50
+	primary.add_theme_stylebox_override("normal", _style(GOLD, GOLD, 8, 10))
+	primary.add_theme_color_override("font_color", INK)
+	if first_lesson:
+		actions.add_child(lesson)
+	actions.add_child(start)
+	if not first_lesson:
+		actions.add_child(lesson)
+	if tutorial.active():
+		actions.add_child(_button("Пропустить обучение", _skip_tutorial))
+	var links = GridContainer.new()
+	links.columns = 2
+	links.add_theme_constant_override("h_separation", 8)
+	links.add_theme_constant_override("v_separation", 8)
+	actions.add_child(links)
+	for item in [["Лорды", _open_lords], ["Коллекция", _show_collection], ["Как играть", _show_help], ["Настройки", _show_settings]]:
+		var button = _button(str(item[0]), item[1])
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		links.add_child(button)
+	if not OS.has_feature("web"):
+		actions.add_child(_button("Выйти из игры", _quit_game))
+	actions.add_child(_label("Покупайте этажи, собирайте комбо и переживите следующую волну.", 13, MUTED, true))
+
+func _build_mobile_lords() -> void:
+	var header = HBoxContainer.new()
+	page.add_child(header)
+	var title = _label("Лорды · %d душ" % int(lords_profile.souls), 22, GOLD)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var back = _button("Назад", _leave_lords)
+	back.custom_minimum_size.x = 72
+	header.add_child(back)
+	var roster = GridContainer.new()
+	roster.columns = 3
+	roster.add_theme_constant_override("h_separation", 5)
+	page.add_child(roster)
+	for id in Lords.ids():
+		var definition: Dictionary = Lords.get_lord(id)
+		var label: String = str(definition.name)
+		if str(lords_profile.selected) == id:
+			label += " ✓"
+		var button = _button(label, _inspect_lord.bind(id))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.custom_minimum_size.y = 54
+		button.add_theme_font_size_override("font_size", 13)
+		button.add_theme_stylebox_override("normal", _style(TILE, Color(str(definition.color)) if inspected_lord == id else LINE, 8, 6))
+		roster.add_child(button)
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+	_track_scroll(scroll, "lords")
+	var details = _vbox(scroll, 12)
+	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if not lord_message.is_empty():
+		details.add_child(_label(lord_message, 14, VIOLET, true))
+	_lord_details(details, inspected_lord)
+	details.add_child(_label("Души за завершённые забеги открывают Лордов и мастерство. Изменения применятся в новом забеге.", 13, MUTED, true))
+	var selected: Dictionary = Lords.get_lord(str(lords_profile.selected))
+	page.add_child(_button("В БОЙ · %s" % str(selected.name), _request_new_run))
+
 func _build_menu() -> void:
 	var topline = HBoxContainer.new()
 	page.add_child(topline)
@@ -1287,6 +1774,7 @@ func _build_menu() -> void:
 	var showcase = Game.new()
 	_fill_showcase(showcase)
 	menu_preview = DungeonView.new()
+	menu_preview.compact = false
 	menu_preview.cinematic = true
 	menu_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview_scroll.add_child(menu_preview)
@@ -1316,6 +1804,8 @@ func _leave_lords() -> void:
 func _inspect_lord(id: String) -> void:
 	inspected_lord = id
 	lord_message = ""
+	if compact_ui and live_scrolls.has("lords") and is_instance_valid(live_scrolls["lords"]):
+		live_scrolls["lords"].scroll_vertical = 0
 	_refresh()
 
 func _build_lords_page() -> void:
@@ -1394,7 +1884,7 @@ func _lord_details(parent: Control, id: String) -> void:
 	var tint = Color(str(definition.color))
 	var identity = HBoxContainer.new()
 	parent.add_child(identity)
-	identity.add_child(_icon(str(definition.icon), 80))
+	identity.add_child(_icon(str(definition.icon), 54 if compact_ui else 80))
 	var names = _vbox(identity, 4)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names.add_child(_label(str(definition.title).to_upper(), 10, tint, true))
@@ -1421,7 +1911,9 @@ func _lord_details(parent: Control, id: String) -> void:
 	mastery_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mastery_row.add_child(mastery_title)
 	for rank in range(1, 6):
-		mastery_row.add_child(_label("●" if owned and rank <= mastery else "○", 18, tint if owned and rank <= mastery else MUTED))
+		var dot = _label("●" if owned and rank <= mastery else "○", 18, tint if owned and rank <= mastery else MUTED)
+		dot.custom_minimum_size.x = 13
+		mastery_row.add_child(dot)
 	if owned and mastery < Lords.MAX_MASTERY:
 		var price: int = Lords.upgrade_cost(mastery)
 		parent.add_child(_label("Следующий уровень: " + _mastery_change_text(id, mastery, selected_variant), 13, GREEN, true))
@@ -1429,7 +1921,7 @@ func _lord_details(parent: Control, id: String) -> void:
 	elif owned:
 		parent.add_child(_label("Мастерство полностью развито.", 13, GREEN))
 	parent.add_child(_label("ВАРИАНТ СПОСОБНОСТИ · второй открывается на мастерстве 3", 11, MUTED, true))
-	var variants = HBoxContainer.new()
+	var variants = _responsive_box()
 	parent.add_child(variants)
 	for option in definition.variants:
 		var available: bool = owned and mastery >= int(option.min_mastery)
@@ -1519,6 +2011,9 @@ func _request_new_run() -> void:
 
 func _begin_run() -> void:
 	_close_modal()
+	mobile_tab = "dungeon"
+	remembered_scrolls.clear()
+	live_scrolls.clear()
 	selecting_deal = false
 	if tutorial.active():
 		_end_tutorial(false)
@@ -1582,6 +2077,8 @@ func _show_settings() -> void:
 	body.add_child(_button("Звук: " + ("включён" if sound_on else "выключен"), _settings_toggle_sound))
 	body.add_child(_label("Громкость", 15, MUTED))
 	var slider = HSlider.new()
+	if compact_ui:
+		slider.custom_minimum_size.y = 44
 	slider.min_value = 0.0
 	slider.max_value = 1.0
 	slider.step = 0.05
@@ -1623,6 +2120,11 @@ func _quit_game() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_quit_game()
+	elif what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		# Mobile browsers may swallow the final touch event during app switching.
+		touch_points.clear()
+		if refresh_after_touch:
+			_flush_touch_refresh.call_deferred()
 
 func _fill_showcase(target) -> void:
 	target.restart(2042)
@@ -1819,8 +2321,8 @@ func _faction_counters(parent: Control) -> void:
 		var count_text: String = "%d/%d" % [faction.count, next_threshold] if int(faction.count) < next_threshold else "%d ✓" % int(faction.count)
 		var button = _button("%s %s" % [faction.name, count_text], _show_factions)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", 11)
-		button.custom_minimum_size.y = 30
+		button.add_theme_font_size_override("font_size", 13 if compact_ui else 11)
+		button.custom_minimum_size.y = 44 if compact_ui else 30
 		var tint: Color = faction.color
 		button.add_theme_stylebox_override("normal", _style(TILE, tint, 6, 6))
 		button.add_theme_color_override("font_color", tint)
@@ -1897,6 +2399,7 @@ func _select_deal() -> void:
 	if offer.is_empty() or not bool(offer.get("available", false)) or bool(offer.get("accepted", false)):
 		return
 	selecting_deal = not selecting_deal
+	mobile_tab = "dungeon"
 	selected_room = ""
 	selected_slot = -1
 	message = "Выберите свободное место для комнаты по сделке." if selecting_deal else "Размещение сделки отменено."
@@ -2009,12 +2512,36 @@ func _tutorial_banner(parent: Control) -> void:
 	parent.add_child(panel)
 	var row = HBoxContainer.new()
 	panel.add_child(row)
-	var caption = _label("ОБУЧЕНИЕ  ·  " + tutorial.prompt(str(game.phase)), 14, GOLD, true)
+	var caption = _label(("УЧИМСЯ · " + _mobile_tutorial_prompt()) if compact_ui else "ОБУЧЕНИЕ  ·  " + tutorial.prompt(str(game.phase)), 13 if compact_ui else 14, GOLD, true)
 	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(caption)
 	if tutorial.step == "finish":
-		row.add_child(_button("МОЙ ЗАБЕГ →", _complete_tutorial))
-	row.add_child(_button("Пропустить", _skip_tutorial))
+		var finish = _button("Мой забег", _complete_tutorial)
+		finish.custom_minimum_size.x = 88 if compact_ui else 0
+		row.add_child(finish)
+	var skip = _button("Пропуск" if compact_ui else "Пропустить", _skip_tutorial)
+	skip.custom_minimum_size.x = 88 if compact_ui else 0
+	row.add_child(skip)
+
+func _mobile_tutorial_prompt() -> String:
+	var prompts: Dictionary = {
+		"select_goblin": "Нажмите золотую карту гоблинов в магазине.",
+		"place_goblin": "Нажмите первое место на поле. Героев встретят гоблины.",
+		"select_executioner": "Выберите палача: он дополнит гоблинов.",
+		"place_executioner": "Поставьте палача справа от гоблинов для комбо.",
+		"start": "Комбо готово: метка гоблинов усиливает палача. Начните волну.",
+		"ability_wait": "Бой идёт сам. Сейчас попробуем силу Лорда.",
+		"ability": "Бой на паузе. Нажмите золотую силу Лорда внизу: защитник получит щит.",
+		"watch": "Сила применена! Кнопки внизу: пауза и скорость ×1 / ×2 / ×4.",
+		"reward": "Победа! Нажмите «Продолжить» для награды.",
+		"select_upgrade": "Нажмите гоблинов в первом месте на поле.",
+		"evolution": "В «Комнате» выберите ветку. Новые выборы — на рангах 5 и 15.",
+		"upgrade": "Нажмите «Улучшить»: за золото вырастет ранг комнаты.",
+		"floor": "Нажмите «+ Этаж» под вкладками: ещё пять мест перед троном." if short_ui and layout_size.y < 380 else "Нажмите «+ Этаж» над полем: ещё пять мест перед троном.",
+		"floor_choice": "Выберите свойство: оно усиливает пять комнат нового этажа.",
+		"finish": "Готово! На втором этаже путь справа налево. Начните свой забег.",
+	}
+	return str(prompts.get(tutorial.step, tutorial.prompt(str(game.phase))))
 
 
 func _request_tutorial() -> void:
@@ -2031,6 +2558,10 @@ func _request_tutorial() -> void:
 
 func _begin_tutorial() -> void:
 	_close_modal()
+	mobile_tab = "shop"
+	last_tutorial_step = ""
+	remembered_scrolls.clear()
+	live_scrolls.clear()
 	selecting_deal = false
 	if has_run:
 		_settle_run()
