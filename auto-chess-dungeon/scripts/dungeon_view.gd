@@ -223,14 +223,11 @@ func _draw_floor(floor_index: int) -> void:
 	var floor_colors: Dictionary = {"plain": MUTED, "laboratory": TEAL, "barracks": CORAL, "workshop": GOLD}
 	_text(label_text, Vector2(8 if compact else 17, top + 19), 11 if compact else 12, GOLD)
 	_text(str(floor_names.get(floor_kind, "КАЗЕМАТЫ")), Vector2(83 if compact else 102, top + 19), 9 if compact else 10, floor_colors.get(floor_kind, MUTED))
-	var route_text: String = "01 → 02 → 03 → 04 → 05" if floor_index % 2 == 0 else "01 ← 02 ← 03 ← 04 ← 05"
-	if compact:
-		var route_direction: float = _floor_direction(floor_index)
-		var arrow_tip: Vector2 = Vector2(size.x - (12 if route_direction > 0 else 37), top + 15)
-		draw_line(arrow_tip - Vector2(25 * route_direction, 0), arrow_tip, MUTED, 1.5, true)
-		draw_polyline(PackedVector2Array([arrow_tip + Vector2(-5 * route_direction, -4), arrow_tip, arrow_tip + Vector2(-5 * route_direction, 4)]), MUTED, 1.5, true)
-	else:
-		_text(route_text, Vector2(size.x - 207, top + 19), 10, Color("697672"))
+	var route_direction: float = _floor_direction(floor_index)
+	var route_length: float = 25.0 if compact else 48.0
+	var route_inset: float = 12.0 if compact else 18.0
+	var arrow_tip: Vector2 = Vector2(size.x - route_inset - (route_length if route_direction < 0 else 0.0), top + 15)
+	_draw_direction_arrow(arrow_tip - Vector2(route_length * route_direction, 0), arrow_tip, MUTED)
 	for column in range(5):
 		var index: int = floor_index * 5 + column
 		var rect: Rect2 = _slot_rect(index)
@@ -294,8 +291,6 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	var rank: int = int(room.get("rank", 1))
 	draw_rect(Rect2(rect.end.x - 30, ceiling + 13, 19, 13), Color("242e2b"))
 	_center_text("I".repeat(mini(rank, 3)) if rank <= 3 else "R%d" % rank, Vector2(rect.end.x - 20.5, ceiling + 23), 9, GOLD)
-	if str(game.phase) == "prepare" and not game.room_evolution_options(index).is_empty():
-		_text("◇", Vector2(rect.position.x + 29, ceiling + 22), 14, GOLD)
 	var branch_name: String = str(stats.get("branch", ""))
 	if not branch_name.is_empty():
 		_center_text(branch_name.to_upper(), Vector2(center.x, ceiling + 38), 8, TEAL)
@@ -306,7 +301,7 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 			current_hp = int(game.defender.get("hp", current_hp))
 		_bar(Rect2(center.x - 21, ground - 3, 42, 3), float(current_hp) / maxf(1, max_hp), CORAL, 0.4 if cleared else 1.0)
 	if cleared:
-		_text("×", Vector2(rect.position.x + 11, ground - 6), 20, Color("656966"))
+		_draw_cleared_mark(Vector2(rect.position.x + 18, ground - 12), Color("656966"))
 	elif active:
 		_draw_combat_sparks(Vector2(center.x - 7 * _floor_direction(index / 5), ground - 36))
 
@@ -363,11 +358,20 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 		var bar_width: float = minf(34.0, rect.size.x - 14.0)
 		_bar(Rect2(center_x - bar_width / 2, top + 84, bar_width, 4), float(current_hp) / maxf(1, max_hp), CORAL, 0.4 if cleared else 1.0)
 	if cleared:
-		_center_text("×", Vector2(center_x, top + 108), 17, MUTED)
-	elif str(game.phase) == "prepare" and not game.room_evolution_options(index).is_empty():
-		_center_text_fitted("РАЗВИТИЕ", Vector2(center_x, top + 109), 8, GOLD, rect.size.x - 8)
-	elif not str(stats.get("branch", "")).is_empty() and str(game.phase) == "prepare":
-		_center_text_fitted("УСИЛЕНА", Vector2(center_x, top + 109), 8, TEAL, rect.size.x - 8)
+		_draw_cleared_mark(Vector2(center_x, top + 102), MUTED)
+
+
+func _draw_direction_arrow(origin: Vector2, tip: Vector2, color: Color) -> void:
+	# Draw navigation symbols directly so every export uses the same clear shape.
+	var direction: Vector2 = (tip - origin).normalized()
+	var side: Vector2 = Vector2(-direction.y, direction.x)
+	draw_line(origin, tip, color, 1.5, true)
+	draw_polyline(PackedVector2Array([tip - direction * 5 + side * 4, tip, tip - direction * 5 - side * 4]), color, 1.5, true)
+
+
+func _draw_cleared_mark(at: Vector2, color: Color) -> void:
+	draw_line(at + Vector2(-4, -4), at + Vector2(4, 4), color, 1.5, true)
+	draw_line(at + Vector2(-4, 4), at + Vector2(4, -4), color, 1.5, true)
 
 
 func _draw_masonry(rect: Rect2) -> void:
@@ -422,7 +426,7 @@ func _draw_stairway(floor_index: int) -> void:
 	draw_line(Vector2(x - rail, top - 5), Vector2(x - rail, top + FLOOR_HEIGHT + 5), Color("343e3d"), 1 if compact else 2)
 	draw_line(Vector2(x + rail, top - 5), Vector2(x + rail, top + FLOOR_HEIGHT + 5), Color("343e3d"), 1 if compact else 2)
 	if not compact:
-		_text("↓", Vector2(x - 6, top - 16), 16, GOLD.darkened(0.25))
+		_draw_direction_arrow(Vector2(x, top - 30), Vector2(x, top - 17), GOLD.darkened(0.25))
 
 
 func _draw_empty_room(rect: Rect2, hovered: bool) -> void:
@@ -648,7 +652,8 @@ func _draw_party() -> void:
 		if int(hero.get("shackles_ticks", 0)) > 0 or int(hero.get("pending_shackles", 0)) > 0:
 			draw_arc(hero_at + Vector2(0, 3), 7, 0, PI, 12, MUTED, 2)
 		if int(hero.get("goblin_mark_slot", -1)) >= 0:
-			_center_text("◆", hero_at + Vector2(0, -43), 12, GOLD)
+			var mark: Vector2 = hero_at + Vector2(0, -47)
+			draw_colored_polygon(PackedVector2Array([mark + Vector2(0, -4), mark + Vector2(4, 0), mark + Vector2(0, 4), mark + Vector2(-4, 0)]), GOLD)
 		if str(game.get("active_target_id")) == str(hero.get("instance_id", "")) and str(game.phase) == "raid":
 			var marker: Vector2 = hero_at + Vector2(0, -45 - bob)
 			draw_colored_polygon(PackedVector2Array([marker + Vector2(-3, -4), marker + Vector2(3, -4), marker]), CORAL)
@@ -953,8 +958,6 @@ func _get_tooltip(at_position: Vector2) -> String:
 	for stage in progression.get("stages", []):
 		if int(stage.get("tier", 1)) > 1 and bool(stage.get("chosen", false)):
 			result += "\nРанг %d: %s" % [int(stage.tier), str(stage.get("name", ""))]
-	if not game.room_evolution_options(index).is_empty():
-		result += "\n◇ Доступен выбор развития — нажмите комнату."
 	var combo: Dictionary = game.room_combo(index)
 	if not combo.is_empty():
 		result += "\nСВЯЗКА · %s\n%s" % [combo.name, combo.description]

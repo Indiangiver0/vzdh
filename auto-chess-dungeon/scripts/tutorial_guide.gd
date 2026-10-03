@@ -30,9 +30,10 @@ func allows(action: String) -> bool:
 		"select_upgrade":
 			return action == "slot:0"
 		"evolution":
-			return action in ["evolution", "evolution_choice"]
+			return action in ["slot:0", "upgrade", "evolution", "evolution_choice"]
 		"upgrade":
-			return action == "upgrade"
+			# The first tap selects the room; the second can open its mobile popup.
+			return action in ["slot:0", "upgrade"]
 		"floor":
 			return action == "floor"
 	return false
@@ -46,9 +47,9 @@ func accepted(action: String) -> void:
 		"start": ["start", "ability_wait"],
 		"ability": ["ability", "watch"],
 		"reward": ["continue", "choices"],
-		"select_upgrade": ["slot:0", "evolution"],
-		"evolution": ["evolution_choice", "upgrade"],
-		"upgrade": ["upgrade", "floor"],
+		"select_upgrade": ["slot:0", "upgrade"],
+		"upgrade": ["upgrade", "evolution"],
+		"evolution": ["evolution_choice", "floor"],
 		"floor": ["floor", "floor_choice"],
 		"floor_choice": ["floor_choice", "finish"],
 	}
@@ -81,8 +82,10 @@ func target() -> String:
 			return "slot:0"
 		"place_executioner":
 			return "slot:1"
-		"start", "ability", "upgrade", "floor", "evolution":
+		"start", "ability", "upgrade", "floor":
 			return step
+		"evolution":
+			return "evolution_choice"
 		"reward":
 			return "continue"
 		"choices", "floor_choice":
@@ -99,7 +102,7 @@ func prompt(phase: String) -> String:
 			"relic":
 				return "Выберите реликвию: её правило действует на всё подземелье до конца забега."
 	var prompts: Dictionary = {
-		"select_goblin": "Начнём с защиты. Нажмите подсвеченную карточку гоблинов в магазине внизу.",
+		"select_goblin": "Откройте магазин и выберите подсвеченную карточку гоблинов.",
 		"place_goblin": "Поставьте гоблинов в первое место: герои идут слева направо и сначала встретят их.",
 		"select_executioner": "Теперь выберите палача: вместе с гоблинами он образует боевую связку.",
 		"place_executioner": "Поставьте палача сразу после гоблинов. Для комбо нужны соседние места в этом порядке.",
@@ -108,10 +111,10 @@ func prompt(phase: String) -> String:
 		"ability": "Бой на паузе. Нажмите Q или золотую кнопку: щит защитит текущего бойца. Зарядов всего два на волну.",
 		"watch": "Сила применена! Наблюдайте за боем. Пробел ставит паузу, ×2 / ×4 ускоряют время.",
 		"reward": "Первая победа! Золото идёт на комнаты, опыт — на таланты. Нажмите «Продолжить», чтобы выбрать награды.",
-		"select_upgrade": "Награды выбраны. Нажмите на гоблинов в первом месте, чтобы улучшить уже построенную комнату.",
-		"evolution": "Выберите ветку гоблинов. Первая доступна на ранге 1; на рангах 5 и 15 появятся следующие решения.",
-		"upgrade": "Нажмите «Улучшить»: вы покупаете следующий ранг этой комнаты. Точные цена и характеристики — справа.",
-		"floor": "Расширим защиту: нажмите «Углубить подземелье». Получите пять новых мест перед троном.",
+		"select_upgrade": "Выберите гоблинов в первом месте. На телефоне нажмите дважды, чтобы открыть окно комнаты.",
+		"upgrade": "Нажмите «Улучшить»: ранг вырастет, затем сразу появится выбор ветки. На телефоне повторное нажатие на комнату открывает её окно.",
+		"evolution": "Выберите ветку гоблинов. На рангах 5 и 15 появятся следующие решения.",
+		"floor": "Купите следующий этаж: ещё пять мест перед троном.",
 		"floor_choice": "Выберите свойство нового этажа. Оно усиливает все пять мест — планируйте, что поставить на них.",
 		"finish": "Готово! На втором этаже путь идёт справа налево. Трон всегда последний; комбо считайте по стрелкам пути.",
 		"defeat": "Учебный трон пал. Можно повторить обучение или сразу начать своё подземелье.",
@@ -129,5 +132,5 @@ func context_hint(area: String) -> Dictionary:
 	if area == "planning" and step in ["select_executioner", "place_executioner", "start"]:
 		return {"title": "Цвет — это фракция", "text": "Гоблины и палач относятся к Орде. Два разных типа включают бонус; копии одного типа не увеличивают счётчик над полем."}
 	if area == "planning" and step == "finish":
-		return {"title": "Смотрите результат", "text": "После боя отчёт покажет урон, убийства, контроль и комбо каждой комнаты. Развивайте тех, кто работает на вашу сборку."}
+		return {"title": "Стройте глубже", "text": "Новый этаж добавляет пять мест. На втором этаже герои идут справа налево, трон остаётся последним."}
 	return {}
