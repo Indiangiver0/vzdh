@@ -1,5 +1,5 @@
 extends RefCounted
-## Run-only talent definitions. The simulation owns ranks, offers and modifiers.
+## Run-only talent definitions. The simulation owns ranks, points and modifiers.
 ## max_rank = 0 means unlimited; all lookups return independent dictionaries.
 
 const TALENTS: Dictionary = {
@@ -78,6 +78,21 @@ const TALENTS: Dictionary = {
 	},
 }
 
+const TREE_ORDER: Array[String] = [
+	"iron_throne", "thick_armor", "overlord_might", "battle_lord", "opening_wrath",
+	"sturdy_minions", "minion_fury", "trap_mastery", "lasting_poison",
+	"blood_income", "greed", "expansion",
+]
+const TREE_PARENTS: Dictionary = {
+	"thick_armor": ["iron_throne"],
+	"battle_lord": ["overlord_might"],
+	"opening_wrath": ["battle_lord"],
+	"minion_fury": ["sturdy_minions"],
+	"lasting_poison": ["trap_mastery"],
+	"greed": ["blood_income"],
+	"expansion": ["blood_income"],
+}
+
 
 static func ids() -> Array[String]:
 	return [
@@ -89,7 +104,16 @@ static func ids() -> Array[String]:
 static func get_talent(id: String) -> Dictionary:
 	if not TALENTS.has(id):
 		return {}
-	return TALENTS[id].duplicate(true)
+	var definition: Dictionary = TALENTS[id].duplicate(true)
+	var parents: Array[String] = []
+	parents.assign(TREE_PARENTS.get(id, []))
+	definition.parents = parents
+	definition.depth = 2 if id == "opening_wrath" else (1 if not parents.is_empty() else 0)
+	return definition
+
+
+static func tree_ids() -> Array[String]:
+	return TREE_ORDER.duplicate()
 
 
 static func all() -> Array[Dictionary]:

@@ -22,6 +22,8 @@ var heroes: Array[Dictionary] = []
 var lord: Dictionary = {}
 var upgrades: Dictionary = {"hp": 0, "damage": 0, "trap": 0}
 var selected_talents: Dictionary = {}
+# Legacy pending_upgrades/talent_offers are kept only for in-memory migration.
+var skill_points: int = 0
 var talent_offers: Array[String] = []
 var lord_strikes: int = 0
 var lord_archetype: String = ""
@@ -62,14 +64,17 @@ var _has_started_raid: bool = false
 var _lord_ability_values: Dictionary = {}
 var _pending_blueprint: bool = false
 var _pending_relic: bool = false
+var _talent_reward_pending: bool = false
 var _echo_floors: Array[int] = []
 var _deal_state: Dictionary = {}
 var _battle_rooms: Array[Dictionary] = []
 var _battle_room_indices: Dictionary = {}
 
 
-func _init() -> void:
-	restart()
+func _init(initialize_run: bool = true) -> void:
+	# Read-only progression previews create an unstarted calculation snapshot.
+	if initialize_run:
+		restart()
 
 
 func restart(new_seed: int = 0) -> void:
@@ -79,7 +84,7 @@ func restart(new_seed: int = 0) -> void:
 	else:
 		seed_value = new_seed
 		rng.seed = new_seed
-	# Talent draws must never consume the party/shop random sequence.
+	# Keep the legacy stream isolated; tree choices no longer draw random offers.
 	talent_rng.seed = seed_value ^ 0x54A1E17
 	expedition_rng.seed = seed_value ^ 0x73D19A2
 	deal_rng.seed = seed_value ^ 0x4D3A115
@@ -93,6 +98,7 @@ func restart(new_seed: int = 0) -> void:
 	relic_offers.clear()
 	_pending_blueprint = false
 	_pending_relic = false
+	_talent_reward_pending = false
 	_echo_floors.clear()
 	phase = "prepare"
 	wave = 1
@@ -110,6 +116,7 @@ func restart(new_seed: int = 0) -> void:
 	}
 	upgrades = {"hp": 0, "damage": 0, "trap": 0}
 	selected_talents.clear()
+	skill_points = 0
 	talent_offers.clear()
 	lord_strikes = 0
 	lord_archetype = ""
@@ -463,21 +470,21 @@ func specialization_options(index: int) -> Array[Dictionary]:
 	if not _valid_slot(index) or rooms[index].is_empty():
 		return options
 	var state: Dictionary = rooms[index]
-	if int(state.rank) < 1 or not str(state.get("specialization", "")).is_empty():
+	if int(state.rank) < 2 or not str(state.get("specialization", "")).is_empty():
 		return options
 	var id: String = str(state.id)
 	return _specialization_definitions(id)
 
 
-func _specialization_definitions(id: String) -> Array[Dictionary]:
+func _specialization_definitions(id: String, include_locked: bool = false) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
 	if id == "poison":
 		options.assign([
 			{"id": "virulent", "name": "Едкий яд", "description": "+1 урон каждого тика яда."},
 			{"id": "lingering", "name": "Долгий яд", "description": "Яд действует на 3 тика дольше."},
 		])
-		if unlocked_paths.has("plague"):
-			options.append({"id": "plague", "name": "Чума", "description": "Отравленные получают на 50% меньше лечения."})
+		if include_locked or unlocked_paths.has("plague"):
+			options.append({"id": "plague", "name": "Чума", "description": "Отравленные получают на 50% меньше лечения.", "unlock_id": "plague", "unlock_wave": 10})
 	elif id == "blade_floor":
 		options.assign([
 			{"id": "volley", "name": "Круговой рез", "description": "+20% урона каждому живому герою."},
@@ -498,8 +505,8 @@ func _specialization_definitions(id: String) -> Array[Dictionary]:
 			{"id": "fury", "name": "Ярость", "description": "+30% урона, −10% HP существа."},
 			{"id": "bulwark", "name": "Бастион", "description": "+40% HP, −10% урона существа."},
 		])
-		if id == "mimic" and unlocked_paths.has("ambush"):
-			options.append({"id": "ambush", "name": "Засада", "description": "Первый удар мимика по тылу наносит +75% урона."})
+		if id == "mimic" and (include_locked or unlocked_paths.has("ambush")):
+			options.append({"id": "ambush", "name": "Засада", "description": "Первый удар мимика по тылу наносит +75% урона.", "unlock_id": "ambush", "unlock_wave": 5})
 	return options
 
 
@@ -511,7 +518,7 @@ func specialize_room(index: int, id: String) -> String:
 			rooms[index].specialization = id
 			_log("%s: выбрана ветка «%s»." % [Content.room(str(rooms[index].id)).name, option.name])
 			return ""
-	return "Ветка недоступна: нужен ранг 1 и ещё не выбранная специализация."
+	return "Ветка недоступна: нужен ранг 2 и ещё не выбранная специализация."
 
 
 static func room_faction(id: String) -> Dictionary:
@@ -603,22 +610,128 @@ func room_progression(index: int) -> Dictionary:
 	var specialization: String = str(state.get("specialization", ""))
 	var evolutions: Dictionary = state.get("evolutions", {})
 	for tier in [1, 5, 15]:
+		var display_rank: int = 2 if tier == 1 else tier
 		var id: String = specialization if tier == 1 else str(evolutions.get(str(tier), ""))
 		var chosen: bool = not id.is_empty()
 		if not chosen and next_tier == 0:
-			next_tier = tier
+			next_tier = display_rank
 		var title: String = "Выбор ветки" if tier == 1 else "Развитие комнаты"
 		var description: String = ""
 		if chosen:
 			title = str(room_stats(index).branch) if tier == 1 else str(Realm.evolution(id).get("name", id))
 			if tier == 1:
-				for option in _specialization_definitions(str(state.id)):
+				for option in _specialization_definitions(str(state.id), true):
 					if str(option.id) == id:
 						description = str(option.description)
 			else:
 				description = str(Realm.evolution(id).get("description", ""))
-		stages.append({"tier": tier, "name": title, "description": description, "chosen": chosen, "id": id, "available": not chosen and next_tier == tier and int(state.rank) >= tier})
+		stages.append({"tier": tier, "rank_required": display_rank, "name": title, "description": description, "chosen": chosen, "id": id, "available": not chosen and next_tier == display_rank and int(state.rank) >= display_rank})
 	return {"rank": int(state.rank), "specialization": specialization, "stages": stages, "next_tier": next_tier}
+
+
+func room_tree(index: int) -> Array[Dictionary]:
+	# Occurrence IDs include ancestors: a shared terminal effect can be displayed
+	# below two different paths without suggesting that both parents are required.
+	var nodes: Array[Dictionary] = []
+	if not _valid_slot(index) or rooms[index].is_empty():
+		return nodes
+	var state: Dictionary = rooms[index]
+	var definition: Dictionary = Content.room(str(state.id))
+	var root_id: String = "room:%s" % str(state.get("instance_id", 0))
+	var stats: Dictionary = room_stats(index)
+	nodes.append({
+		"id": root_id, "effect_id": "", "instance_id": state.get("instance_id", 0),
+		"parents": [], "path": [], "depth": 0, "tier": 0, "rank_required": 1,
+		"name": str(definition.name), "description": "Построена. Ранг %d." % int(state.rank),
+		"icon": str(definition.get("icon", "")), "state": "acquired",
+		"status": "Ранг %d" % int(state.rank), "can_buy": false,
+		"preview": {"before": stats.duplicate(true), "after": stats.duplicate(true), "rank": int(state.rank), "projected": false},
+	})
+	for first in _specialization_definitions(str(state.id), true):
+		var first_path: Array[String] = [str(first.id)]
+		var first_node: Dictionary = _room_tree_node(index, first, first_path, root_id, first)
+		nodes.append(first_node)
+		for middle in Realm.evolution_options(str(definition.kind), str(first.id), 5):
+			var middle_path: Array[String] = [str(first.id), str(middle.id)]
+			var middle_node: Dictionary = _room_tree_node(index, middle, middle_path, str(first_node.id), first)
+			nodes.append(middle_node)
+			for last in Realm.evolution_options(str(definition.kind), str(first.id), 15, str(middle.id)):
+				var last_path: Array[String] = [str(first.id), str(middle.id), str(last.id)]
+				nodes.append(_room_tree_node(index, last, last_path, str(middle_node.id), first))
+	return nodes
+
+
+func _room_tree_node(index: int, definition: Dictionary, path: Array[String], parent_id: String, first: Dictionary) -> Dictionary:
+	var room: Dictionary = rooms[index]
+	var evolutions: Dictionary = room.get("evolutions", {})
+	var selected_path: Array[String] = [
+		str(room.get("specialization", "")), str(evolutions.get("5", "")), str(evolutions.get("15", "")),
+	]
+	var tier: int = int(definition.get("tier", 1))
+	var rank_required: int = 2 if tier == 1 else tier
+	var acquired: bool = true
+	var parents_chosen: bool = true
+	var other_branch: bool = false
+	for step_index in range(path.size()):
+		if selected_path[step_index] != path[step_index]:
+			acquired = false
+			if step_index < path.size() - 1:
+				parents_chosen = false
+		if not selected_path[step_index].is_empty() and selected_path[step_index] != path[step_index]:
+			other_branch = true
+	var unlock_id: String = str(first.get("unlock_id", ""))
+	# Existing choices remain valid even if an older profile lacks their unlock.
+	var unlocked: bool = unlock_id.is_empty() or unlocked_paths.has(unlock_id) or selected_path[0] == path[0]
+	var node_state: String = "locked"
+	var status: String = ""
+	var can_buy: bool = false
+	if acquired:
+		node_state = "acquired"
+		status = "Выбрано"
+	elif not unlocked:
+		status = "Победите волну %d" % int(first.get("unlock_wave", 0))
+	elif other_branch:
+		node_state = "other_branch"
+		status = "Другая ветвь"
+	elif int(room.rank) < rank_required:
+		status = "Нужен ранг %d" % rank_required
+	elif not parents_chosen:
+		status = "Сначала выберите предыдущую ступень"
+	elif phase != "prepare":
+		status = "Выбор между волнами"
+	else:
+		node_state = "available"
+		status = "Бесплатный выбор"
+		can_buy = true
+	var projected_rank: int = maxi(int(room.rank), rank_required)
+	var before_room: Dictionary = room.duplicate(true)
+	before_room.rank = projected_rank
+	before_room.specialization = ""
+	before_room.evolutions = {}
+	for step_index in range(path.size() - 1):
+		_set_room_path_step(before_room, step_index, path[step_index])
+	var after_room: Dictionary = before_room.duplicate(true)
+	_set_room_path_step(after_room, path.size() - 1, path[path.size() - 1])
+	var node_id: String = "room:%s/%s" % [str(room.get("instance_id", 0)), "/".join(path)]
+	return {
+		"id": node_id, "effect_id": str(definition.id), "instance_id": room.get("instance_id", 0),
+		"parents": [parent_id], "path": path.duplicate(), "depth": path.size(),
+		"tier": tier, "rank_required": rank_required, "name": str(definition.name),
+		"description": str(definition.description), "icon": str(Content.room(str(room.id)).get("icon", "")),
+		"state": node_state, "status": status, "can_buy": can_buy,
+		"unlock_id": unlock_id, "unlock_wave": int(first.get("unlock_wave", 0)),
+		"preview": {
+			"before": _room_stats_for_state(index, before_room), "after": _room_stats_for_state(index, after_room),
+			"rank": projected_rank, "projected": projected_rank != int(room.rank) or not parents_chosen or other_branch,
+		},
+	}
+
+
+func _set_room_path_step(state: Dictionary, step_index: int, id: String) -> void:
+	if step_index == 0:
+		state.specialization = id
+	else:
+		state.evolutions["5" if step_index == 1 else "15"] = id
 
 
 func _evolution_modifiers(state: Dictionary) -> Dictionary:
@@ -719,6 +832,9 @@ func start_raid() -> String:
 		return "Сначала завершите текущую волну и выберите усиления."
 	if int(lord.hp) <= 0:
 		return "Лорд погиб. Начните новый забег."
+	migrate_legacy_talents()
+	# Unspent points are banked; they are not a pending reward on the next wave.
+	_talent_reward_pending = false
 	_has_started_raid = true
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
@@ -791,36 +907,62 @@ func next_wave() -> String:
 
 
 func choose_upgrade(id: String) -> String:
-	# Compatibility entry point: only the current offered talent IDs are accepted.
+	# Compatibility entry point: the model validates the same tree prerequisites.
 	return choose_talent(id)
 
 
+func migrate_legacy_talents() -> void:
+	# No active run is persisted today. This converts an older in-memory state
+	# once: consumed legacy counters cannot grant the same points twice.
+	if pending_upgrades > 0:
+		skill_points += pending_upgrades
+		pending_upgrades = 0
+		_talent_reward_pending = true
+	talent_offers.clear()
+
+
 func choose_talent(id: String) -> String:
-	if phase != "level_up" or pending_upgrades <= 0:
-		return "Сейчас нет доступного выбора таланта."
-	if not talent_offers.has(id):
-		return "Выберите один из трёх предложенных талантов."
+	migrate_legacy_talents()
+	if phase not in ["prepare", "level_up"]:
+		return "Таланты изучают между волнами."
+	if skill_points <= 0:
+		return "Нужно 1 очко таланта. Новый уровень даёт одно очко."
 	var definition: Dictionary = Talents.get_talent(id)
-	if definition.is_empty() or not _talent_is_eligible(definition):
-		return "Этот талант сейчас недоступен."
+	if definition.is_empty():
+		return "Неизвестный талант."
+	var reason: String = _talent_requirement_error(definition)
+	if not reason.is_empty():
+		return reason
 	selected_talents[id] = int(selected_talents.get(id, 0)) + 1
 	_recalculate_lord()
-	pending_upgrades -= 1
+	skill_points -= 1
 	var drawback_text: String = ""
 	if not str(definition.drawback).is_empty():
 		drawback_text = " Цена: %s" % definition.drawback
 	_log("Талант «%s» · ранг %d. %s%s" % [definition.name, selected_talents[id], definition.bonus, drawback_text])
-	talent_offers.clear()
-	_advance_reward_choice()
+	if skill_points == 0:
+		_talent_reward_pending = false
+		if phase == "level_up":
+			_advance_reward_choice()
+	return ""
+
+
+func defer_talents() -> String:
+	migrate_legacy_talents()
+	if phase not in ["prepare", "level_up"]:
+		return "Сейчас дерево талантов не ожидает решения."
+	_talent_reward_pending = false
+	if phase == "level_up":
+		_advance_reward_choice()
 	return ""
 
 
 func talent_options() -> Array[Dictionary]:
-	# A read-only view: repainting the UI cannot reroll choices or change health.
+	# Legacy read API now exposes all eligible nodes, never a second random reward.
 	var options: Array[Dictionary] = []
-	for id in talent_offers:
-		var definition: Dictionary = Talents.get_talent(id).duplicate(true)
-		if definition.is_empty():
+	for id in Talents.tree_ids():
+		var definition: Dictionary = Talents.get_talent(id)
+		if not _talent_is_eligible(definition):
 			continue
 		definition.current_rank = int(selected_talents.get(id, 0))
 		definition.rank = int(definition.current_rank) + 1
@@ -828,14 +970,106 @@ func talent_options() -> Array[Dictionary]:
 	return options
 
 
+func talent_tree() -> Array[Dictionary]:
+	var nodes: Array[Dictionary] = []
+	var points: int = maxi(0, skill_points) + maxi(0, pending_upgrades)
+	for id in Talents.tree_ids():
+		var node: Dictionary = Talents.get_talent(id)
+		var rank: int = maxi(0, int(selected_talents.get(id, 0)))
+		var maximum: int = int(node.max_rank)
+		var reason: String = _talent_requirement_error(node)
+		var may_spend: bool = phase in ["prepare", "level_up"]
+		node.rank = rank
+		node.can_buy = reason.is_empty() and may_spend and points > 0
+		node.state = "available"
+		node.status = "1 очко"
+		if maximum > 0 and rank >= maximum:
+			node.state = "maxed"
+			node.status = "Изучено" if maximum == 1 else "Предел: %d/%d" % [rank, maximum]
+		elif rank > 0:
+			# A legacy chosen node remains acquired despite new prerequisites.
+			node.state = "acquired"
+			node.status = "Взято: %d" % rank
+			if not may_spend:
+				node.status += " · Между волнами"
+			elif points == 0:
+				node.status += " · Нужно 1 очко"
+			else:
+				node.status += " · Ещё ранг за 1 очко"
+		elif not reason.is_empty():
+			node.state = "locked"
+			node.status = reason
+		elif not may_spend:
+			node.state = "locked"
+			node.status = "Изучение между волнами"
+		elif points == 0:
+			node.state = "unaffordable"
+			node.status = "Нужно 1 очко"
+		nodes.append(node)
+	return nodes
+
+
+func talent_preview(id: String) -> Dictionary:
+	var definition: Dictionary = Talents.get_talent(id)
+	if definition.is_empty():
+		return {}
+	var snapshot: Variant = _progression_snapshot()
+	var before: Dictionary = snapshot._progression_metrics()
+	var rank: int = int(selected_talents.get(id, 0))
+	var maximum: int = int(definition.max_rank)
+	# Locked prerequisites can be inspected, but a capped node has no next rank.
+	if maximum == 0 or rank < maximum:
+		snapshot.selected_talents[id] = rank + 1
+		snapshot._recalculate_lord()
+	return {"before": before, "after": snapshot._progression_metrics()}
+
+
+func _progression_snapshot() -> Variant:
+	# No restart, random draw, save operation or reference to live mutable data.
+	var snapshot: Variant = get_script().new(false)
+	snapshot.phase = phase
+	snapshot.wave = wave
+	snapshot.floor_count = floor_count
+	snapshot.floor_traits.assign(floor_traits)
+	snapshot.rooms.assign(rooms.duplicate(true))
+	snapshot.lord = lord.duplicate(true)
+	snapshot.upgrades = upgrades.duplicate(true)
+	snapshot.selected_talents = selected_talents.duplicate(true)
+	snapshot.selected_relics.assign(selected_relics)
+	snapshot._lord_ability_values = _lord_ability_values.duplicate(true)
+	return snapshot
+
+
+func _progression_metrics() -> Dictionary:
+	var modifiers: Dictionary = talent_modifiers()
+	var room_values: Array[Dictionary] = []
+	for index in range(rooms.size()):
+		if rooms[index].is_empty():
+			continue
+		var stats: Dictionary = room_stats(index)
+		stats.slot = index
+		room_values.append(stats)
+	var base_coins: int = 3 + floori(float(wave - 1) / 3.0)
+	var opening_multiplier: float = float(modifiers.opening_multiplier) if int(modifiers.opening_strikes) > 0 else 1.0
+	return {
+		"lord_hp": int(lord.hp), "lord_max_hp": int(lord.max_hp),
+		"lord_damage": int(lord.damage), "lord_armor": int(lord.armor),
+		"floor_cost": floor_cost(), "heal_cost": heal_cost(),
+		"kill_gold": maxi(0, ceili(float(base_coins) * (1.0 + float(modifiers.kill_gold)))),
+		"poison_ticks": _scaled_poison_duration(6),
+		"opening_strikes": int(modifiers.opening_strikes),
+		"opening_damage": ceili(float(lord.damage) * opening_multiplier),
+		"modifiers": modifiers, "rooms": room_values,
+	}
+
+
 func _advance_reward_choice() -> void:
-	# Every earned reward is mandatory, with one shared continuation point.
-	if pending_upgrades > 0:
+	migrate_legacy_talents()
+	# Only newly earned points request a tree once; deferred points stay banked.
+	if _talent_reward_pending and skill_points > 0:
 		phase = "level_up"
-		if talent_offers.is_empty():
-			_generate_talent_offers()
 		return
-	talent_offers.clear()
+	_talent_reward_pending = false
 	if _pending_blueprint:
 		var available: Array[String] = _available_blueprint_ids()
 		for index in range(blueprint_offers.size() - 1, -1, -1):
@@ -1024,26 +1258,24 @@ func opening_strikes_remaining() -> int:
 
 
 func _talent_is_eligible(definition: Dictionary) -> bool:
+	return _talent_requirement_error(definition).is_empty()
+
+
+func _talent_requirement_error(definition: Dictionary) -> String:
+	if definition.is_empty():
+		return "Неизвестный талант."
 	if int(lord.level) < int(definition.get("min_level", 1)):
-		return false
+		return "Нужен уровень Лорда %d" % int(definition.min_level)
 	var rank: int = int(selected_talents.get(str(definition.id), 0))
 	var maximum: int = int(definition.get("max_rank", 0))
-	return maximum == 0 or rank < maximum
-
-
-func _generate_talent_offers() -> void:
-	talent_offers.clear()
-	if phase != "level_up" or pending_upgrades <= 0:
-		return
-	var eligible: Array[String] = []
-	for id in Talents.ids():
-		var definition: Dictionary = Talents.get_talent(id)
-		if not definition.is_empty() and _talent_is_eligible(definition):
-			eligible.append(id)
-	for _offer in range(mini(3, eligible.size())):
-		var index: int = talent_rng.randi_range(0, eligible.size() - 1)
-		talent_offers.append(eligible[index])
-		eligible.remove_at(index)
+	if maximum > 0 and rank >= maximum:
+		return "Талант достиг предела."
+	# Purchased legacy ranks are never revoked by the new prerequisite graph.
+	if rank == 0:
+		for parent in definition.get("parents", []):
+			if int(selected_talents.get(str(parent), 0)) == 0:
+				return "Сначала %s" % str(Talents.get_talent(str(parent)).name)
+	return ""
 
 
 func _recalculate_lord() -> void:
@@ -1062,7 +1294,10 @@ func _recalculate_lord() -> void:
 func room_stats(index: int) -> Dictionary:
 	if not _valid_slot(index) or rooms[index].is_empty():
 		return {}
-	var state: Dictionary = rooms[index]
+	return _room_stats_for_state(index, rooms[index])
+
+
+func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	var result: Dictionary = Content.room(str(state.id)).duplicate(true)
 	var rank: int = int(state.rank)
 	var rank_factor: float = 1.0 + 0.25 * float(rank - 1)
@@ -1886,15 +2121,20 @@ func _finish_wave() -> void:
 		var previous_damage: int = int(lord.damage)
 		lord.level = int(lord.level) + 1
 		_recalculate_lord()
-		pending_upgrades += 1
-		_log("Лорд достиг уровня %d! +%d HP, +%d урона и выбор таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
+		skill_points += 1
+		report.skill_points = int(report.get("skill_points", 0)) + 1
+		_talent_reward_pending = true
+		_log("Лорд достиг уровня %d! +%d HP, +%d урона и 1 очко таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
 	_pending_blueprint = wave % BLUEPRINT_WAVE_INTERVAL == 0 and not _available_blueprint_ids().is_empty()
 	_pending_relic = wave % RELIC_WAVE_INTERVAL == 0 and not _available_relic_ids().is_empty()
 	if tutorial_run and wave == 1:
 		if int(lord.level) < 2:
 			lord.level = 2
 			_recalculate_lord()
-		pending_upgrades = maxi(1, pending_upgrades)
+		if skill_points == 0:
+			skill_points = 1
+			report.skill_points = int(report.get("skill_points", 0)) + 1
+		_talent_reward_pending = true
 		_pending_blueprint = true
 		_pending_relic = true
 		_log("Учебные награды: талант, чертёж и реликвия. Они действуют только в тренировке.")
@@ -1999,7 +2239,7 @@ func _apply_hero_poison(hero: Dictionary, damage: int, duration: int, source: St
 
 
 func _reset_report() -> void:
-	report = {"killed": 0, "gold": 0, "xp": 0, "lord_damage": 0, "hero_levels": 0, "items": 0, "unlock": ""}
+	report = {"killed": 0, "gold": 0, "xp": 0, "lord_damage": 0, "hero_levels": 0, "items": 0, "unlock": "", "skill_points": 0}
 
 
 func _log(message: String) -> void:

@@ -7,6 +7,7 @@ const Lords = preload("res://scripts/lord_catalog.gd")
 const LordProgression = preload("res://scripts/lord_progression.gd")
 const DungeonView = preload("res://scripts/dungeon_view.gd")
 const TutorialGuide = preload("res://scripts/tutorial_guide.gd")
+const ProgressionTree = preload("res://scripts/progression_tree.gd")
 const INK = Color("#0e1118")
 const PANEL = Color("#181e28")
 const TILE = Color("#212938")
@@ -75,6 +76,12 @@ var refresh_after_touch: bool = false
 var refresh_keeps_modal: bool = false
 var modal_kind: String = ""
 var phase_modal_dismissed: bool = false
+var modal_footer: VBoxContainer
+var tree_room_index: int = -1
+var room_tree_focus: String = ""
+var talent_tree_focus: String = ""
+var talent_tree_category: String = "lord"
+var mastery_tree_focus: String = ""
 
 func _ready() -> void:
 	_apply_screen_layout()
@@ -141,8 +148,16 @@ func _apply_screen_layout() -> void:
 	_apply_shell_spacing()
 	_refresh(true)
 	if is_instance_valid(modal):
-		_adapt_modal_controls(modal)
-		_resize_modal.call_deferred()
+		match modal_kind:
+			"room_tree":
+				_show_room_tree(tree_room_index, room_tree_focus)
+			"talents":
+				_show_talents(talent_tree_focus)
+			"mastery":
+				_show_mastery_tree(inspected_lord, mastery_tree_focus)
+			_:
+				_adapt_modal_controls(modal)
+				_resize_modal.call_deferred()
 
 func _apply_shell_spacing() -> void:
 	var insets: Dictionary = {}
@@ -274,6 +289,11 @@ func _build_mobile_game() -> void:
 	numbers.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	numbers.add_child(_label("Волна %d  ·  %d зол." % [game.wave, game.gold], 16, GOLD))
 	numbers.add_child(_label("Лорд %d/%d HP" % [maxi(0, game.lord.hp), game.lord.max_hp], 13, PAPER))
+	var talents = _icon_button("res://assets/icons/lord.svg", "Таланты забега · очков: %d" % game.skill_points, _show_talents)
+	if game.skill_points > 0:
+		talents.text = str(game.skill_points)
+		talents.add_theme_stylebox_override("normal", _style(Color("#353025"), GOLD, 8, 6))
+	header.add_child(talents)
 	var tools = header if short_ui else HBoxContainer.new()
 	if not short_ui:
 		var menu_button = _button("Меню", _open_menu)
@@ -481,7 +501,7 @@ func _lord_status(parent: Control) -> void:
 	parent.add_child(_bar(float(game.lord.hp), float(game.lord.max_hp), GOLD))
 	parent.add_child(_label("%d/%d HP · Урон %d · Броня %d" % [maxi(0, game.lord.hp), game.lord.max_hp, game.lord.damage, game.lord.armor], 11, MUTED, true))
 	parent.add_child(_label("До таланта: XP %d / %d" % [game.lord.xp, 10 + 6 * (int(game.lord.level) - 1)], 11, VIOLET))
-	parent.add_child(_button("Таланты Владыки · %d" % _talent_count(), _show_talents))
+	parent.add_child(_button("Таланты · очков: %d" % game.skill_points, _show_talents))
 
 func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
 	var box = _panel(parent)
@@ -577,6 +597,20 @@ func _room_details(parent: Control, index: int) -> void:
 	parent.add_child(_label(values, 13, PAPER, true))
 	var description = _label(str(stats.get("role", stats.get("description", ""))), 13, MUTED, true)
 	parent.add_child(description)
+	var progression: Dictionary = game.room_progression(index)
+	var path_names: PackedStringArray = []
+	for stage in progression.get("stages", []):
+		if bool(stage.get("chosen", false)):
+			path_names.append(str(stage.get("name", stage.get("title", ""))))
+	var path_text: String = "Ранги 2 / 5 / 15" if path_names.is_empty() else " / ".join(path_names)
+	var next_tier: int = int(progression.get("next_tier", 0))
+	if next_tier > 0 and not path_names.is_empty():
+		path_text += "\nСледующий выбор: ранг %d" % next_tier
+	var path = _button(path_text, _show_room_tree.bind(index, ""))
+	path.add_theme_font_size_override("font_size", 12)
+	path.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	path.tooltip_text = "Посмотреть путь и будущие развилки"
+	parent.add_child(path)
 	_room_combo_details(parent, index)
 	var pending: bool = _has_pending_evolution(index)
 	var rank_limit: int = int(stats.get("max_rank", 0))
@@ -816,6 +850,7 @@ func _upgrade() -> void:
 	if not _tutorial_allow("upgrade"):
 		return
 	var index: int = selected_slot
+	var from_tree: bool = modal_kind == "room_tree"
 	if _has_pending_evolution(index):
 		_show_specializations(index)
 		return
@@ -826,6 +861,8 @@ func _upgrade() -> void:
 	_action(error)
 	if error.is_empty() and not game.room_evolution_options(index).is_empty():
 		_show_specializations(index)
+	elif from_tree:
+		_show_room_tree(index)
 	elif compact_ui and selected_slot >= 0:
 		_show_room_details()
 
@@ -914,6 +951,9 @@ func _show_phase_modal() -> void:
 	if menu_open or game.phase not in ["result", "level_up", "floor_choice", "defeat", "blueprint", "relic"]:
 		return
 	phase_modal_dismissed = false
+	if game.phase == "level_up":
+		_show_talents()
+		return
 	_close_modal()
 	var content = _new_modal(940 if game.phase == "level_up" else 640)
 	modal_kind = "reward"
@@ -947,17 +987,6 @@ func _show_phase_modal() -> void:
 			content.add_child(floor_choice)
 			_tutorial_mark(floor_choice, "choice")
 			content.add_child(_label(str(option.description), 13, MUTED, true))
-	elif game.phase == "level_up":
-		content.add_theme_constant_override("separation", 14)
-		content.add_child(_eyebrow("ВЛАДЫКА · УРОВЕНЬ %d" % game.lord.level))
-		content.add_child(_label("Какой будет ваша власть?", 28, GOLD))
-		content.add_child(_label("Один талант из трёх. Осталось выборов: %d. Эффекты действуют до конца забега." % game.pending_upgrades, 14, MUTED, true))
-		var choices = _responsive_box()
-		choices.add_theme_constant_override("separation", 12)
-		content.add_child(choices)
-		for option in game.talent_options():
-			_talent_choice_card(choices, option)
-		content.add_child(_button("Мои таланты и итоговые бонусы", _show_talents))
 	elif game.phase == "result":
 		content.add_child(_eyebrow("ПОДЗЕМЕЛЬЕ УСТОЯЛО"))
 		content.add_child(_label("Волна %d отражена" % game.wave, 30, GOLD))
@@ -966,14 +995,15 @@ func _show_phase_modal() -> void:
 		content.add_child(_label("Здоровье Лорда: %d / %d" % [game.lord.hp, game.lord.max_hp], 15, GOLD))
 		content.add_child(_label("Урон Лорду: %d HP\nГерои получили: %d уровней и %d предметов" % [game.report.get("lord_damage", 0), game.report.get("hero_levels", 0), game.report.get("items", 0)], 14, MUTED, true))
 		content.add_child(_label("Комнаты восстановлены. Золото и этажи остаются с вами.", 14, MUTED, true))
-		if game.pending_upgrades > 0:
-			content.add_child(_label("НОВЫЕ ТАЛАНТЫ: %d · выбор после продолжения" % game.pending_upgrades, 15, VIOLET, true))
+		if game.skill_points > 0:
+			content.add_child(_label("Очки талантов: %d · распределите после продолжения или сохраните" % game.skill_points, 15, VIOLET, true))
 		var unlock: String = str(game.report.get("unlock", ""))
 		if not unlock.is_empty():
 			for entry in game.unlock_catalog():
 				if str(entry.id) == unlock:
-					content.add_child(_label("НОВЫЙ ЧЕРТЁЖ: " + str(entry.name), 19, GREEN, true))
+					content.add_child(_label("ОТКРЫТА ВЕТКА: " + str(entry.name), 19, GREEN, true))
 					content.add_child(_label(str(entry.description), 14, MUTED, true))
+					content.add_child(_label("Сохраняется между забегами", 12, VIOLET))
 		var continue_button = _button("ПРОДОЛЖИТЬ", _next_wave)
 		content.add_child(continue_button)
 		_tutorial_mark(continue_button, "continue")
@@ -990,7 +1020,7 @@ func _show_phase_modal() -> void:
 		content.add_child(_label("Пережито волн: %d\nУбито героев: %d\nЭтажей: %d  ·  Уровень Лорда: %d" % [game.cleared_waves, game.total_kills, game.floor_count, game.lord.level], 18, PAPER))
 		content.add_child(_label("Рекорд: %d волн. Следующая крепость будет сильнее." % int(profile.get("wave", 0)), 14, MUTED, true))
 		var reward: Dictionary = last_run_reward if run_reward_claimed else _pending_run_reward()
-		content.add_child(_label("+%d ОСКОЛКОВ ДУШ" % int(reward.get("total", 0)), 23, VIOLET))
+		content.add_child(_label("+%d ДУШ" % int(reward.get("total", 0)), 23, VIOLET))
 		content.add_child(_label(_reward_details(reward), 12, MUTED, true))
 		content.add_child(_button("Лорды · открыть и улучшить", _open_lords))
 		content.add_child(_button("Таланты этого забега", _show_talents))
@@ -1021,10 +1051,10 @@ func _percent(value: float) -> String:
 
 func _talent_category(id: String) -> String:
 	match id:
-		"lord": return "ВЛАДЫКА"
+		"lord": return "ТРОН"
 		"creatures": return "СУЩЕСТВА"
 		"traps": return "ЛОВУШКИ"
-		"economy": return "ЭКОНОМИКА"
+		"economy": return "ВЛАДЕНИЯ"
 	return "ТАЛАНТ"
 
 func _talent_color(category: String) -> Color:
@@ -1041,144 +1071,175 @@ func _talent_icon(category: String) -> String:
 		"economy": return "res://assets/icons/mimic.svg"
 	return "res://assets/icons/lord.svg"
 
-func _talent_choice_card(parent: Control, option: Dictionary) -> void:
-	var id: String = str(option.id)
-	var category: String = str(option.category)
-	var tint: Color = VIOLET if str(option.rarity) == "rare" else _talent_color(category)
-	var card = PanelContainer.new()
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.add_theme_stylebox_override("panel", _style(TILE, tint.darkened(0.4), 10, 14))
-	parent.add_child(card)
-	var body = _vbox(card, 8)
-	var heading = HBoxContainer.new()
-	body.add_child(heading)
-	heading.add_child(_icon(_talent_icon(category), 28))
-	var tag: String = _talent_category(category)
-	if str(option.rarity) == "rare":
-		tag += " · РЕДКИЙ"
-	heading.add_child(_label(tag, 10, tint))
-	var title = _label(str(option.name), 20, PAPER, true)
-	title.custom_minimum_size.y = 48
-	body.add_child(title)
-	var rank: int = int(game.selected_talents.get(id, 0))
-	var limit: int = int(option.max_rank)
-	var rank_text: String = "Ранг %d > %d" % [rank, rank + 1] if rank > 0 else ("Можно брать повторно" if limit != 1 else "Уникальный талант")
-	if limit > 1:
-		rank_text += " · максимум %d" % limit
-	body.add_child(_label(rank_text, 11, tint, true))
-	var bonus = _label(str(option.bonus), 14, GREEN, true)
-	bonus.custom_minimum_size.y = 54
-	body.add_child(bonus)
-	var drawback: String = str(option.drawback)
-	var penalty = _label(drawback if not drawback.is_empty() else "Без штрафа", 13, RED if not drawback.is_empty() else MUTED, true)
-	penalty.custom_minimum_size.y = 44
-	body.add_child(penalty)
-	var spacer = Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(spacer)
-	var preview = _label(_talent_preview(option), 12, tint, true)
-	preview.custom_minimum_size.y = 36
-	body.add_child(preview)
-	var choose = _button("ВЫБРАТЬ", _choose_talent.bind(id))
-	choose.custom_minimum_size.y = 48 if compact_ui else 40
-	choose.add_theme_color_override("font_color", tint)
-	body.add_child(choose)
-	_tutorial_mark(choose, "choice")
+func _tree_footer() -> VBoxContainer:
+	modal_footer = _vbox(modal_frame, 6)
+	modal_footer.minimum_size_changed.connect(_resize_modal)
+	modal_footer.add_child(HSeparator.new())
+	return modal_footer
 
-func _talent_preview(option: Dictionary) -> String:
-	var added: Dictionary = option.modifiers
-	var current: Dictionary = game.talent_modifiers()
-	var level: int = int(game.lord.level)
+func _tree_badge(text: String) -> void:
+	var badge = _label(text, 13, GOLD, true)
+	badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	modal_frame.get_child(0).add_child(badge)
+
+func _restore_tree_position(scroll: ScrollContainer, offset: int, tree: Control, focused_id: String) -> void:
+	# Card heights settle after their container has assigned the available width.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_instance_valid(scroll) or scroll != modal_scroll:
+		return
+	if is_instance_valid(tree):
+		tree.focus_node(focused_id)
+	if offset >= 0:
+		scroll.set_deferred("scroll_vertical", offset)
+
+func _tree_details(body: Control, footer: Control, title: String, description: String, detail: String = "", warning: String = "") -> void:
+	# On short screens only the action stays fixed; all explanatory text scrolls.
+	var host: Control = body if get_viewport_rect().size.y < 500.0 else footer
+	var panel = _panel(host)
+	var info = _vbox(panel, 4)
+	info.add_child(_label(title, 18, GOLD, true))
+	if not description.is_empty():
+		info.add_child(_label(description, 13, PAPER, true))
+	if not warning.is_empty():
+		info.add_child(_label(warning, 12, RED, true))
+	if not detail.is_empty():
+		info.add_child(_label(detail, 12, GREEN, true))
+
+func _tree_action(parent: Control, title: String, callback: Callable, disabled: bool = false) -> Button:
+	var button = _button(title, callback, disabled)
+	button.custom_minimum_size.y = 46
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button.add_theme_stylebox_override("normal", _style(GOLD, GOLD, 8, 9))
+	button.add_theme_color_override("font_color", INK)
+	button.add_theme_color_override("font_hover_color", PAPER)
+	parent.add_child(button)
+	return button
+
+func _find_tree_node(nodes: Array[Dictionary], id: String) -> Dictionary:
+	for node in nodes:
+		if str(node.id) == id:
+			return node
+	return {}
+
+func _talent_preview_text(id: String) -> String:
+	var preview: Dictionary = game.talent_preview(id)
+	var before: Dictionary = preview.get("before", {})
+	var after: Dictionary = preview.get("after", {})
+	if before.is_empty() or after.is_empty():
+		return ""
 	var details: PackedStringArray = []
-	if added.has("lord_damage"):
-		var damage: int = maxi(1, ceili(float(10 + level - 1) * (1.0 + float(current.get("lord_damage", 0.0)) + float(added.lord_damage))))
-		details.append("Урон: %d > %d" % [game.lord.damage, damage])
-	if added.has("lord_hp"):
-		var hp: int = maxi(1, ceili(float(120 + 10 * (level - 1)) * (1.0 + float(current.get("lord_hp", 0.0)) + float(added.lord_hp))))
-		details.append("Макс. HP: %d > %d" % [game.lord.max_hp, hp])
-	if added.has("lord_armor"):
-		details.append("Броня: %d > %d" % [game.lord.armor, int(game.lord.armor) + int(added.lord_armor)])
-	if added.has("floor_cost"):
-		var base_cost: int = 5 * (game.floor_count + 1) * (game.floor_count + 1)
-		var price: int = maxi(1, ceili(float(base_cost) * (1.0 + float(current.get("floor_cost", 0.0)) + float(added.floor_cost))))
-		details.append("Следующий этаж: %d > %d зол." % [game.floor_cost(), price])
-	if added.has("kill_gold"):
-		var base_gold: int = 3 + floori(float(game.wave - 1) / 3.0)
-		var old_gold: int = ceili(float(base_gold) * (1.0 + float(current.get("kill_gold", 0.0))))
-		var new_gold: int = ceili(float(base_gold) * (1.0 + float(current.get("kill_gold", 0.0)) + float(added.kill_gold)))
-		details.append("За героя сейчас: %d > %d зол." % [old_gold, new_gold])
-	if not details.is_empty():
-		return "\n".join(details)
-	if added.has("opening_strikes"):
-		return "Заряды обновляются перед каждой волной."
-	if added.has("poison_duration"):
-		return "Продлевает яд с учётом этажа и ветки."
-	if added.has("monster_damage") or added.has("monster_hp"):
-		return "Действует на существ всех этажей."
-	return "Усиливает шипы и каждый тик яда."
+	var labels: Dictionary = {"lord_max_hp": "HP Лорда", "lord_damage": "Урон Лорда", "lord_armor": "Броня", "floor_cost": "Этаж", "heal_cost": "Лечение", "kill_gold": "Золото за героя", "poison_ticks": "Базовый яд", "opening_damage": "Первый удар"}
+	for key in labels:
+		if before.get(key) != after.get(key):
+			details.append("%s: %s > %s" % [labels[key], before.get(key, 0), after.get(key, 0)])
+	# One real room example keeps the preview short without inventing base stats.
+	var old_rooms: Array = before.get("rooms", [])
+	var new_rooms: Array = after.get("rooms", [])
+	for i in range(mini(old_rooms.size(), new_rooms.size())):
+		var changes: String = _room_stat_changes(old_rooms[i], new_rooms[i])
+		if not changes.is_empty():
+			details.append(str(new_rooms[i].get("name", "Комната")) + ": " + changes)
+			break
+	if details.is_empty():
+		var old_mods: Dictionary = before.get("modifiers", {})
+		var new_mods: Dictionary = after.get("modifiers", {})
+		var names: Dictionary = {"monster_hp": "HP существ", "monster_damage": "Урон существ", "trap_damage": "Урон ловушек", "hero_room_xp": "Опыт героев", "kill_gold": "Доход"}
+		for key in names:
+			if old_mods.get(key, 0.0) != new_mods.get(key, 0.0):
+				details.append("%s: %s > %s" % [names[key], _percent(float(old_mods.get(key, 0.0))), _percent(float(new_mods.get(key, 0.0)))])
+	return " · ".join(details)
 
-func _talent_summary(parent: Control) -> void:
-	var modifiers: Dictionary = game.talent_modifiers()
-	var passive: Dictionary = game.lord_passive_modifiers()
-	var grid = GridContainer.new()
-	grid.columns = 1 if compact_ui else 2
-	grid.set_meta("responsive_columns", 2)
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 10)
-	parent.add_child(grid)
-	var lord_text: String = "%d / %d HP · Урон %d · Броня %d\nОт талантов: HP %s · урон %s" % [maxi(0, int(game.lord.hp)), game.lord.max_hp, game.lord.damage, game.lord.armor, _percent(float(modifiers.get("lord_hp", 0.0))), _percent(float(modifiers.get("lord_damage", 0.0)))]
-	if game.selected_talents.has("opening_wrath"):
-		lord_text += "\nПервые 3 удара x2" + (" · осталось %d" % maxi(0, 3 - int(game.lord_strikes)) if game.phase == "raid" else " в каждой волне")
-	var creatures_text: String = "HP %s · Урон %s\nОпыт героям за существ %s" % [_percent(float(modifiers.get("monster_hp", 0.0)) + float(passive.get("monster_hp", 0.0))), _percent(float(modifiers.get("monster_damage", 0.0))), _percent(float(modifiers.get("hero_room_xp", 0.0)) + float(passive.get("hero_room_xp", 0.0)))]
-	var traps_text: String = "Урон яда %s · Длительность %s\nУрон шипов %s" % [_percent(float(modifiers.get("trap_damage", 0.0))), _percent(float(modifiers.get("poison_duration", 0.0)) + float(passive.get("poison_duration", 0.0))), _percent(float(modifiers.get("trap_damage", 0.0)) + float(modifiers.get("spike_damage", 0.0)))]
-	var economy_text: String = "Золото за героев %s\nЭтаж: %d зол. (%s) · Лечение: %d зол. (%s)" % [_percent(float(modifiers.get("kill_gold", 0.0))), game.floor_cost(), _percent(float(modifiers.get("floor_cost", 0.0))), game.heal_cost(), _percent(float(modifiers.get("heal_cost", 0.0)))]
-	var summaries: Array[Dictionary] = [
-		{"category": "lord", "text": lord_text},
-		{"category": "creatures", "text": creatures_text},
-		{"category": "traps", "text": traps_text},
-		{"category": "economy", "text": economy_text},
-	]
-	for summary in summaries:
-		var panel = PanelContainer.new()
-		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		panel.add_theme_stylebox_override("panel", _style(TILE, LINE, 8, 10))
-		grid.add_child(panel)
-		var body = _vbox(panel, 5)
-		body.add_child(_label(_talent_category(str(summary.category)), 10, _talent_color(str(summary.category))))
-		body.add_child(_label(str(summary.text), 12, PAPER, true))
+func _select_talent_category(category: String) -> void:
+	talent_tree_category = category
+	talent_tree_focus = ""
+	if is_instance_valid(modal_scroll):
+		modal_scroll.scroll_vertical = 0
+	_show_talents()
 
-func _show_talents() -> void:
+func _show_talents(focused_id: String = "") -> void:
+	game.migrate_legacy_talents()
+	var previous_scroll: int = modal_scroll.scroll_vertical if modal_kind == "talents" and is_instance_valid(modal_scroll) else -1
+	if not focused_id.is_empty():
+		talent_tree_focus = focused_id
+	var nodes: Array[Dictionary] = game.talent_tree()
+	var selected: Dictionary = _find_tree_node(nodes, talent_tree_focus)
+	if not selected.is_empty():
+		talent_tree_category = str(selected.category)
+	else:
+		for node in nodes:
+			if str(node.category) == talent_tree_category:
+				selected = node
+				break
+	if selected.is_empty():
+		return
+	talent_tree_focus = str(selected.id)
 	_close_modal()
-	var body = _new_modal(900)
-	body.add_theme_constant_override("separation", 12)
-	body.add_child(_label("Таланты Владыки", 28, GOLD))
-	body.add_child(_label("Уровень %d · взято %d талантов. Учтена пассивная сила Лорда; этажи и ветки комнат учитываются отдельно." % [game.lord.level, _talent_count()], 13, MUTED, true))
-	_talent_summary(body)
-	body.add_child(_eyebrow("ВЫБРАНО В ЭТОМ ЗАБЕГЕ"))
-	var scroll = ScrollContainer.new()
-	scroll.custom_minimum_size.y = 156
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	body.add_child(scroll)
-	var entries = _vbox(scroll, 10)
-	entries.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if game.selected_talents.is_empty():
-		entries.add_child(_label("Первый талант появится на уровне 2. Убивайте героев, чтобы получать опыт, и выбирайте усиления после победы в волне.", 15, MUTED, true))
-	for id in Talents.ids():
-		var rank: int = int(game.selected_talents.get(id, 0))
-		if rank <= 0:
+	var body = _new_modal(1100)
+	modal_kind = "talents"
+	_tree_badge("Очков: %d · до конца забега" % game.skill_points)
+	body.add_child(_eyebrow("ДО КОНЦА ЗАБЕГА"))
+	body.add_child(_label("Таланты Лорда", 28, GOLD))
+	body.add_child(_label("Уровень %d · очков: %d" % [game.lord.level, game.skill_points], 17, PAPER, true))
+	if game.skill_points == 0 and _talent_count() == 0:
+		body.add_child(_label("Новый уровень после победы даёт одно очко.", 13, MUTED, true))
+	if compact_ui:
+		var categories = GridContainer.new()
+		categories.columns = 2
+		body.add_child(categories)
+		for category in ["lord", "creatures", "traps", "economy"]:
+			var invested: int = 0
+			for node in nodes:
+				if str(node.category) == category:
+					invested += int(node.get("rank", 0))
+			var tab = _button("%s · %d" % [_talent_category(category), invested], _select_talent_category.bind(category))
+			tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			tab.add_theme_font_size_override("font_size", 12)
+			if category == talent_tree_category:
+				tab.add_theme_stylebox_override("normal", _style(TILE, GOLD, 8, 8))
+			categories.add_child(tab)
+	var columns = HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 12)
+	body.add_child(columns)
+	var selected_tree: Control
+	for category in ["lord", "creatures", "traps", "economy"]:
+		if compact_ui and category != talent_tree_category:
 			continue
-		var definition: Dictionary = Talents.get_talent(id)
-		var panel = PanelContainer.new()
-		panel.add_theme_stylebox_override("panel", _style(TILE, LINE, 8, 12))
-		entries.add_child(panel)
-		var entry = _vbox(panel, 5)
-		var title: String = str(definition.name)
-		if int(definition.max_rank) != 1:
-			title += " · ранг %d" % rank
-		entry.add_child(_label(title, 16, _talent_color(str(definition.category)), true))
-		entry.add_child(_label(str(definition.bonus) + (" за ранг" if int(definition.max_rank) != 1 else ""), 13, GREEN, true))
-		if not str(definition.drawback).is_empty():
-			entry.add_child(_label(str(definition.drawback), 12, RED, true))
+		var column = _vbox(columns, 10)
+		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		column.size_flags_stretch_ratio = 1.7 if category == "lord" and not compact_ui else 1.0
+		if not compact_ui:
+			column.add_child(_label(_talent_category(category), 13, _talent_color(category)))
+		var branch: Array[Dictionary] = []
+		for node in nodes:
+			if str(node.category) == category:
+				var copy: Dictionary = node.duplicate(true)
+				copy.icon = _talent_icon(category)
+				branch.append(copy)
+		var tree = ProgressionTree.new()
+		column.add_child(tree)
+		tree.configure(branch, talent_tree_focus, compact_ui)
+		tree.node_selected.connect(_show_talents)
+		if category == talent_tree_category:
+			selected_tree = tree
+	var footer = _tree_footer()
+	var details: String = _talent_preview_text(talent_tree_focus)
+	if not bool(selected.get("can_buy", false)):
+		details = str(selected.get("status", "")) + (". При изучении: " + details if not details.is_empty() else "")
+	var rank: int = int(selected.get("rank", 0))
+	var limit: int = int(selected.get("max_rank", 1))
+	if rank > 0:
+		details = "Вложено: %d%s. %s" % [rank, " / %d" % limit if limit > 0 else "", details]
+	_tree_details(body, footer, str(selected.name), str(selected.get("bonus", "")), details, str(selected.get("drawback", "")))
+	var can_buy: bool = bool(selected.get("can_buy", false)) and game.phase in ["prepare", "level_up"]
+	var action_text: String = "Изучить · 1 очко" if can_buy else str(selected.get("status", "Недоступно"))
+	if game.phase not in ["prepare", "level_up"]:
+		action_text = "Распределение между волнами"
+	var buy = _tree_action(footer, action_text, _choose_talent.bind(talent_tree_focus), not can_buy)
+	_tutorial_mark(buy, "choice")
+	_restore_tree_position(modal_scroll, previous_scroll, selected_tree, talent_tree_focus)
+	_resize_modal.call_deferred()
 
 func _new_modal(width: int = 560, compact: bool = false) -> VBoxContainer:
 	modal_width = width
@@ -1199,6 +1260,7 @@ func _new_modal(width: int = 560, compact: bool = false) -> VBoxContainer:
 	back.custom_minimum_size.x = 76
 	navigation.add_child(back)
 	modal_scroll = ScrollContainer.new()
+	modal_scroll.follow_focus = true
 	modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	modal_scroll.scroll_deadzone = 12
 	modal_frame.add_child(modal_scroll)
@@ -1236,11 +1298,18 @@ func _resize_modal() -> void:
 	if int(modal.get_meta("layout_padding", -1)) != padding:
 		modal.set_meta("layout_padding", padding)
 		modal.add_theme_stylebox_override("panel", _style(PANEL, Color("#756143"), 12 if compact_ui else 16, padding))
-	var height_limit: float = maxf(80.0, minf(520.0, available.y - padding * 2 - (72.0 if compact_ui else 124.0)))
+	var fixed_height: float = 0.0
+	for child in modal_frame.get_children():
+		if child != modal_scroll and child is Control and child.visible:
+			fixed_height += child.get_combined_minimum_size().y
+	fixed_height += modal_frame.get_theme_constant("separation") * maxi(0, modal_frame.get_child_count() - 1)
+	var height_limit: float = maxf(32.0, minf(560.0, available.y - padding * 2 - fixed_height - 20.0))
 	var content_height: float = modal_content.get_combined_minimum_size().y
-	modal_scroll.custom_minimum_size = Vector2(maxf(0.0, width - padding * 2), clampf(content_height, 80.0, height_limit) if modal_is_compact else height_limit)
+	modal_scroll.custom_minimum_size = Vector2(maxf(0.0, width - padding * 2), clampf(content_height, minf(80.0, height_limit), height_limit) if modal_is_compact else height_limit)
 
 func _adapt_modal_controls(node: Node) -> void:
+	if node.has_meta("progression_tree"):
+		return
 	if node is BoxContainer and node.has_meta("responsive_box"):
 		node.vertical = compact_ui
 	if node is GridContainer and node.has_meta("responsive_columns"):
@@ -1272,9 +1341,19 @@ func _close_modal() -> void:
 	modal_scroll = null
 	modal_content = null
 	modal_frame = null
+	modal_footer = null
 	modal_kind = ""
 
 func _modal_back() -> void:
+	if modal_kind == "talents" and game.phase == "level_up":
+		var error: String = game.defer_talents()
+		if not error.is_empty():
+			message = error
+			return
+		phase_modal_dismissed = false
+		_close_modal()
+		_refresh()
+		return
 	if game.phase in ["result", "level_up", "floor_choice", "defeat", "blueprint", "relic"]:
 		phase_modal_dismissed = true
 	_close_modal()
@@ -1288,6 +1367,8 @@ func _phase_action_text() -> String:
 			return "Итоги забега"
 		"floor_choice":
 			return "Выбрать свойство этажа"
+		"level_up":
+			return "Таланты · очков: %d" % game.skill_points
 		_:
 			return "Выбрать награду"
 
@@ -1303,12 +1384,19 @@ func _choose_upgrade(id: String) -> void:
 	_choose_talent(id)
 
 func _choose_talent(id: String) -> void:
+	var old_phase: String = game.phase
+	var old_scroll: int = modal_scroll.scroll_vertical if is_instance_valid(modal_scroll) else 0
 	phase_modal_dismissed = false
-	_close_modal()
 	var error: String = game.choose_talent(id)
 	message = error if not error.is_empty() else "Получен талант: %s. Бонусы уже действуют." % str(Talents.get_talent(id).get("name", id))
 	_sound("click")
-	_refresh()
+	if old_phase == "level_up" and game.phase != "level_up":
+		_close_modal()
+		_refresh()
+	else:
+		_refresh(true)
+		_show_talents(id)
+		modal_scroll.set_deferred("scroll_vertical", old_scroll)
 
 func _restart() -> void:
 	_begin_run()
@@ -1653,7 +1741,7 @@ func _build_menu() -> void:
 	var edition = _eyebrow("NO HERO RETURNS     /     БЕСКОНЕЧНАЯ ОСАДА")
 	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	topline.add_child(edition)
-	topline.add_child(_label("ОСКОЛКИ ДУШ  %d" % int(lords_profile.souls), 12, VIOLET))
+	topline.add_child(_label("ДУШИ  %d" % int(lords_profile.souls), 12, VIOLET))
 	topline.add_child(_label("РЕКОРД  %d ВОЛН" % int(profile.get("wave", 0)), 12, GOLD))
 	var main_row = HBoxContainer.new()
 	main_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1763,7 +1851,7 @@ func _build_lords_page() -> void:
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_child(_eyebrow("КОРОНА ПЕРЕХОДИТ К СЛЕДУЮЩЕМУ"))
 	titles.add_child(_label("Лорды подземелья", 30, GOLD))
-	_stat(heading, "ОСКОЛКИ ДУШ", str(lords_profile.souls), VIOLET)
+	_stat(heading, "ДУШИ", str(lords_profile.souls), VIOLET)
 	if tutorial.active():
 		heading.add_child(_button("Пропустить обучение", _skip_tutorial))
 	heading.add_child(_button("Назад", _leave_lords))
@@ -1776,9 +1864,9 @@ func _build_lords_page() -> void:
 	for id in Lords.ids():
 		_lord_roster_card(roster, id)
 	roster.add_child(HSeparator.new())
-	roster.add_child(_label("Осколки выдаются за волны, поверженных героев, особые отряды и новые рубежи. Их можно потратить на открытие Лордов или мастерство.", 13, MUTED, true))
+	roster.add_child(_label("Души выдаются за волны, поверженных героев, особые отряды и новые рубежи. Их можно потратить на открытие Лордов или мастерство.", 13, MUTED, true))
 	if not last_run_reward.is_empty():
-		roster.add_child(_label("Последний забег: +%d осколков" % int(last_run_reward.total), 14, VIOLET, true))
+		roster.add_child(_label("Последний забег: +%d душ" % int(last_run_reward.total), 14, VIOLET, true))
 	if has_run and not run_reward_claimed:
 		roster.add_child(_label("В текущем забеге заработано: %d. Получите после его завершения." % int(_pending_run_reward().total), 12, MUTED, true))
 	var panel = _panel(columns)
@@ -1821,7 +1909,7 @@ func _lord_roster_card(parent: Control, id: String) -> void:
 	var names = _vbox(row, 6)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names.add_child(_label(str(definition.name), 17, tint, true))
-	names.add_child(_label("%sМастерство %d / 5" % ["Выбран · " if chosen else "", LordProgression.mastery(lords_profile, id)] if owned else "Открыть: %d осколков" % int(definition.unlock_cost), 11, MUTED, true))
+	names.add_child(_label("%sМастерство %d / 5" % ["Выбран · " if chosen else "", LordProgression.mastery(lords_profile, id)] if owned else "Открыть: %d душ" % int(definition.unlock_cost), 11, MUTED, true))
 	_ignore_mouse(margin)
 
 func _lord_details(parent: Control, id: String) -> void:
@@ -1837,56 +1925,103 @@ func _lord_details(parent: Control, id: String) -> void:
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names.add_child(_label(str(definition.title).to_upper(), 10, tint, true))
 	names.add_child(_label(str(definition.name), 29, PAPER, true))
-	names.add_child(_label(str(definition.description), 13, MUTED, true))
-	parent.add_child(_label("ПАССИВНАЯ СИЛА · " + str(definition.passive_description), 13, tint, true))
+	parent.add_child(_label(str(definition.passive_description), 14, tint, true))
 	var ability_panel = _panel(parent)
 	var ability = _vbox(ability_panel, 6)
-	ability.add_child(_label("Q · " + str(definition.ability_name), 21, tint))
-	ability.add_child(_label(str(definition.ability_description), 14, PAPER, true))
-	ability.add_child(_label(_lord_ability_text(id, mastery, selected_variant), 13, GREEN, true))
-	ability.add_child(_label("Два заряда на волну · применяется в текущем бою · работает на паузе", 11, MUTED, true))
+	ability.add_child(_label("Q · " + str(definition.ability_name), 21, tint, true))
+	ability.add_child(_label(_lord_ability_text(id, mastery, selected_variant), 13, PAPER, true))
+	ability.add_child(_label("Два заряда на волну", 12, MUTED))
 	if not owned:
 		var price: int = int(definition.unlock_cost)
-		parent.add_child(_button("ОТКРЫТЬ И ВЫБРАТЬ · %d ОСКОЛКОВ" % price, _purchase_lord.bind(id), int(lords_profile.souls) < price))
-		if int(lords_profile.souls) < price:
-			parent.add_child(_label("Нужно ещё %d осколков. Мастерство при открытии: 1." % (price - int(lords_profile.souls)), 12, MUTED, true))
+		parent.add_child(_button("Открыть и выбрать · %d душ" % price, _purchase_lord.bind(id), int(lords_profile.souls) < price))
 	else:
-		parent.add_child(_button("ВЫБРАН ДЛЯ НОВОГО ЗАБЕГА" if str(lords_profile.selected) == id else "ВЫБРАТЬ ЭТОГО ЛОРДА", _select_lord.bind(id), str(lords_profile.selected) == id))
-	parent.add_child(HSeparator.new())
-	var mastery_row = HBoxContainer.new()
-	parent.add_child(mastery_row)
-	var mastery_title = _label("МАСТЕРСТВО · %d / 5" % mastery if owned else "МАСТЕРСТВО · ОТКРОЙТЕ ЛОРДА", 12, tint)
-	mastery_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mastery_row.add_child(mastery_title)
-	for rank in range(1, 6):
-		var dot = _label("●" if owned and rank <= mastery else "○", 18, tint if owned and rank <= mastery else MUTED)
-		dot.custom_minimum_size.x = 13
-		mastery_row.add_child(dot)
-	if owned and mastery < Lords.MAX_MASTERY:
-		var price: int = Lords.upgrade_cost(mastery)
-		parent.add_child(_label("Следующий уровень: " + _mastery_change_text(id, mastery, selected_variant), 13, GREEN, true))
-		parent.add_child(_button("ПОВЫСИТЬ МАСТЕРСТВО · %d ОСКОЛКОВ" % price, _upgrade_lord.bind(id), int(lords_profile.souls) < price))
-	elif owned:
-		parent.add_child(_label("Мастерство полностью развито.", 13, GREEN))
-	parent.add_child(_label("ВАРИАНТ СПОСОБНОСТИ · второй открывается на мастерстве 3", 11, MUTED, true))
-	var variants = _responsive_box()
-	parent.add_child(variants)
-	for option in definition.variants:
-		var available: bool = owned and mastery >= int(option.min_mastery)
-		var is_selected: bool = owned and str(option.id) == selected_variant
-		var option_label: String = str(option.name)
-		if is_selected:
-			option_label += " *"
-		elif not available:
-			option_label += " · ур. %d" % int(option.min_mastery)
-		var choose = _button(option_label, _select_lord_variant.bind(id, str(option.id)), not available or is_selected)
-		choose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		choose.tooltip_text = _ui_text(str(option.description))
-		variants.add_child(choose)
-		if str(option.id) == selected_variant:
-			# The description is placed after the buttons, outside their row.
-			variants.tooltip_text = _ui_text(str(option.description))
-	parent.add_child(_label(variants.tooltip_text, 12, MUTED, true))
+		parent.add_child(_button("Выбран для нового забега" if str(lords_profile.selected) == id else "Выбрать Лорда", _select_lord.bind(id), str(lords_profile.selected) == id))
+	var path_button = _button("Мастерство %d / 5 · посмотреть дерево" % mastery if owned else "Посмотреть дерево мастерства", _show_mastery_tree.bind(id, ""))
+	path_button.custom_minimum_size.y = 56
+	path_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	path_button.add_theme_stylebox_override("normal", _style(TILE, tint.darkened(0.25), 8, 10))
+	parent.add_child(path_button)
+	parent.add_child(_label("Сохраняется между забегами. Второй вариант силы — на мастерстве 3.", 12, MUTED, true))
+
+func _mastery_nodes(id: String) -> Array[Dictionary]:
+	var definition: Dictionary = Lords.get_lord(id)
+	var owned: bool = lords_profile.unlocked.has(id)
+	var mastery: int = LordProgression.mastery(lords_profile, id)
+	var selected_variant: String = LordProgression.variant(lords_profile, id)
+	var nodes: Array[Dictionary] = []
+	for rank in range(1, Lords.MAX_MASTERY + 1):
+		var acquired: bool = owned and rank <= mastery
+		var available: bool = owned and rank == mastery + 1
+		var price: int = Lords.upgrade_cost(rank - 1) if rank > 1 else int(definition.unlock_cost)
+		var parents: Array[String] = []
+		if rank > 1:
+			parents.append("mastery:%d" % (rank - 1))
+		nodes.append({"id": "mastery:%d" % rank, "name": "Мастерство %d" % rank, "depth": rank - 1, "parents": parents, "state": "acquired" if acquired else "available" if available else "locked", "status": "Получено" if acquired else "%d душ" % price if available else "После мастерства %d" % (rank - 1) if rank > 1 else "Откройте Лорда", "rank": rank, "icon": str(definition.icon)})
+		for variant in definition.variants:
+			if int(variant.min_mastery) != rank:
+				continue
+			var is_selected: bool = owned and str(variant.id) == selected_variant
+			var unlocked: bool = owned and mastery >= rank
+			nodes.append({"id": "variant:" + str(variant.id), "name": str(variant.name), "depth": rank, "parents": ["mastery:%d" % rank], "state": "acquired" if is_selected else "available" if unlocked else "locked", "status": "Выбрано" if is_selected else "Сменить бесплатно" if unlocked else "Мастерство %d" % rank, "variant": str(variant.id), "rank": rank, "description": str(variant.description), "icon": str(definition.icon)})
+	return nodes
+
+func _show_mastery_tree(id: String, focused_id: String = "") -> void:
+	var previous_scroll: int = modal_scroll.scroll_vertical if modal_kind == "mastery" and is_instance_valid(modal_scroll) else -1
+	var definition: Dictionary = Lords.get_lord(id)
+	if definition.is_empty():
+		return
+	inspected_lord = id
+	var owned: bool = lords_profile.unlocked.has(id)
+	var mastery: int = LordProgression.mastery(lords_profile, id)
+	var selected_variant: String = LordProgression.variant(lords_profile, id)
+	var nodes: Array[Dictionary] = _mastery_nodes(id)
+	var selected: Dictionary = _find_tree_node(nodes, focused_id)
+	if selected.is_empty():
+		selected = _find_tree_node(nodes, "mastery:%d" % mini(5, mastery + 1) if owned else "mastery:1")
+	mastery_tree_focus = str(selected.id)
+	_close_modal()
+	var body = _new_modal(760)
+	modal_kind = "mastery"
+	_tree_badge("%d душ · навсегда" % int(lords_profile.souls))
+	body.add_child(_eyebrow("СОХРАНЯЕТСЯ МЕЖДУ ЗАБЕГАМИ"))
+	body.add_child(_label("Мастерство Лорда", 27, GOLD, true))
+	body.add_child(_label("%s · %d душ" % [definition.name, int(lords_profile.souls)], 17, PAPER, true))
+	var tree = ProgressionTree.new()
+	body.add_child(tree)
+	tree.configure(nodes, mastery_tree_focus, compact_ui)
+	tree.node_selected.connect(func(node_id: String): _show_mastery_tree(id, node_id))
+	var footer = _tree_footer()
+	var rank: int = int(selected.rank)
+	var is_variant: bool = selected.has("variant")
+	var preview_variant: String = str(selected.variant) if is_variant else selected_variant
+	var preview_rank: int = maxi(rank, mastery) if is_variant else rank
+	var description: String = str(selected.get("description", ""))
+	var details: String = _lord_ability_text(id, preview_rank, preview_variant)
+	if not is_variant:
+		description = "Усиление способности · мастерство %d" % rank
+		if owned and rank == mastery + 1:
+			details = _mastery_change_text(id, mastery, selected_variant)
+	_tree_details(body, footer, str(selected.name), description, details)
+	if not owned:
+		var price: int = int(definition.unlock_cost)
+		var title: String = "Открыть Лорда · %d душ" % price
+		if int(lords_profile.souls) < price:
+			title = "Не хватает %d душ" % (price - int(lords_profile.souls))
+		_tree_action(footer, title, _purchase_lord.bind(id), int(lords_profile.souls) < price)
+	elif is_variant and mastery >= rank:
+		var chosen: bool = str(selected.variant) == selected_variant
+		_tree_action(footer, "Выбрано" if chosen else "Выбрать бесплатно", _select_lord_variant.bind(id, str(selected.variant)), chosen)
+	elif mastery < Lords.MAX_MASTERY:
+		var cost: int = Lords.upgrade_cost(mastery)
+		var title: String = "Мастерство %d · %d душ" % [mastery + 1, cost]
+		if int(lords_profile.souls) < cost:
+			title = "Не хватает %d душ" % (cost - int(lords_profile.souls))
+		_tree_action(footer, title, _upgrade_lord.bind(id), int(lords_profile.souls) < cost)
+	else:
+		_tree_action(footer, "Мастерство полностью развито", Callable(), true)
+	body.add_child(_label("Выбранная сила и мастерство применятся в новом забеге.", 12, MUTED, true))
+	_restore_tree_position(modal_scroll, previous_scroll, tree, mastery_tree_focus)
+	_resize_modal.call_deferred()
 
 func _lord_ability_text(id: String, mastery: int, variant_id: String) -> String:
 	var values: Dictionary = Lords.ability_values(id, mastery, variant_id)
@@ -1929,6 +2064,8 @@ func _lord_purchase_result(error: String, success: String) -> void:
 		_save_profile()
 		_sound("click")
 	_refresh()
+	if modal_kind == "mastery":
+		_show_mastery_tree(inspected_lord)
 
 func _purchase_lord(id: String) -> void:
 	var error: String = LordProgression.purchase(lords_profile, id)
@@ -1951,7 +2088,7 @@ func _request_new_run() -> void:
 		_close_modal()
 		var body = _new_modal()
 		body.add_child(_label("Начать новое подземелье?", 26, GOLD))
-		body.add_child(_label("Текущий забег закончится. Получите %d осколков душ за достигнутые результаты. Новый Лорд: %s." % [int(_pending_run_reward().total), str(Lords.get_lord(str(lords_profile.selected)).name)], 16, MUTED, true))
+		body.add_child(_label("Текущий забег закончится. Получите %d душ за достигнутые результаты. Новый Лорд: %s." % [int(_pending_run_reward().total), str(Lords.get_lord(str(lords_profile.selected)).name)], 16, MUTED, true))
 		body.add_child(_button("НАЧАТЬ НОВЫЙ ЗАБЕГ", _begin_run))
 	else:
 		_begin_run()
@@ -2126,24 +2263,119 @@ func _matchup_text(stats: Dictionary) -> String:
 			return "Рыцарь и варвар сильны против телесных существ. Ловушки, духи и нападение на поддержку ослабят их группу."
 
 func _show_specializations(index: int) -> void:
-	if not _tutorial_allow("evolution"):
+	if _tutorial_allow("evolution"):
+		_show_room_tree(index)
+
+func _room_stat_changes(before: Dictionary, after: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	var fields: Dictionary = {"hp": "HP", "damage": "урон", "armor": "броня", "effect_turns": "контроль", "impact_damage": "удар печати"}
+	if str(after.get("kind", "")) == "poison":
+		fields.poison_ticks = "тики яда"
+	for key in fields:
+		if before.has(key) and after.has(key) and before[key] != after[key]:
+			parts.append("%s %s > %s" % [fields[key], before[key], after[key]])
+	return " · ".join(parts)
+
+func _visible_room_tree(nodes: Array[Dictionary], focus: Dictionary) -> Array[Dictionary]:
+	# Keep every immediate choice readable, expanding one first-tier path at a time.
+	var first_id: String = ""
+	var cursor: Dictionary = focus
+	while not cursor.is_empty() and int(cursor.get("depth", 0)) > 0:
+		if int(cursor.depth) == 1:
+			first_id = str(cursor.id)
+			break
+		var parents: Array = cursor.get("parents", [])
+		cursor = _find_tree_node(nodes, str(parents[0])) if not parents.is_empty() else {}
+	if first_id.is_empty():
+		for node in nodes:
+			if int(node.get("depth", 0)) == 1 and str(node.get("state", "")) == "acquired":
+				first_id = str(node.id)
+				break
+	if first_id.is_empty():
+		for node in nodes:
+			if int(node.get("depth", 0)) == 1:
+				first_id = str(node.id)
+				break
+	var visible: Array[Dictionary] = []
+	var ids: Array[String] = []
+	for node in nodes:
+		var depth: int = int(node.get("depth", 0))
+		var include: bool = depth <= 1
+		for parent_id in node.get("parents", []):
+			if (depth == 2 and str(parent_id) == first_id) or (depth > 2 and ids.has(str(parent_id))):
+				include = true
+		if include:
+			var copy: Dictionary = node.duplicate(true)
+			if str(copy.get("state", "")) == "other_branch":
+				copy.state = "other"
+			visible.append(copy)
+			ids.append(str(copy.id))
+	return visible
+
+func _show_room_tree(index: int, focused_id: String = "") -> void:
+	if index < 0 or index >= game.rooms.size() or game.rooms[index].is_empty():
 		return
-	var options: Array = game.room_evolution_options(index)
-	if options.is_empty():
+	var previous_scroll: int = modal_scroll.scroll_vertical if modal_kind == "room_tree" and is_instance_valid(modal_scroll) else -1
+	var nodes: Array[Dictionary] = game.room_tree(index)
+	if nodes.is_empty():
 		return
+	var selected: Dictionary = _find_tree_node(nodes, focused_id)
+	if selected.is_empty():
+		for node in nodes:
+			if bool(node.get("can_buy", false)):
+				selected = node
+				break
+	if selected.is_empty():
+		selected = nodes[0]
+		for node in nodes:
+			if str(node.get("state", "")) == "acquired":
+				selected = node
+	tree_room_index = index
+	room_tree_focus = str(selected.id)
+	var stats: Dictionary = game.room_stats(index)
 	_close_modal()
-	modal_kind = "evolution"
-	var content = _new_modal(620, true)
-	content.add_child(_eyebrow("РАЗВИТИЕ · РАНГ %d" % int(options[0].get("tier", 1))))
-	content.add_child(_label(str(game.room_stats(index).name), 26, GOLD, true))
-	for option in options:
-		var card = _panel(content)
-		var details = _vbox(card, 6)
-		details.add_child(_label(str(option.name), 18, PAPER, true))
-		details.add_child(_label(str(option.description), 13, MUTED, true))
-		var choose = _button("Выбрать", _specialize.bind(index, str(option.id)))
-		details.add_child(choose)
-		_tutorial_mark(choose, "evolution_choice")
+	var body = _new_modal(940)
+	modal_kind = "room_tree"
+	_tree_badge("Ранг %d · %d зол." % [int(stats.get("rank", 1)), game.gold])
+	body.add_child(_eyebrow("КОМНАТА · ДО КОНЦА ЗАБЕГА"))
+	body.add_child(_label(str(stats.name), 27, GOLD, true))
+	body.add_child(_label("Ранг %d · развилки 2 / 5 / 15" % int(stats.get("rank", 1)), 14, PAPER, true))
+	var tree = ProgressionTree.new()
+	body.add_child(tree)
+	tree.configure(_visible_room_tree(nodes, selected), room_tree_focus, compact_ui)
+	tree.node_selected.connect(func(id: String): _show_room_tree(index, id))
+	var footer = _tree_footer()
+	var preview: Dictionary = selected.get("preview", {})
+	var before: Dictionary = preview.get("before", {})
+	var after: Dictionary = preview.get("after", {})
+	var change: String = _room_stat_changes(before, after)
+	if bool(preview.get("projected", false)) and not change.is_empty():
+		change = "На ранге %d: %s" % [int(preview.get("rank", 1)), change]
+	var description: String = str(selected.get("description", ""))
+	var status: String = str(selected.get("status", ""))
+	var selected_title: String = str(selected.name)
+	if not status.is_empty():
+		selected_title += " · " + status
+	_tree_details(body, footer, selected_title, description, change)
+	var matchups = _label(_matchup_text(after if not after.is_empty() else stats).get_slice(". ", 0), 12, MUTED, true)
+	body.add_child(matchups)
+	var pending: bool = _has_pending_evolution(index)
+	if pending:
+		var can_choose: bool = bool(selected.get("can_buy", false)) and game.phase == "prepare"
+		var confirm = _tree_action(footer, "Выбрать" if can_choose else "Выберите доступный узел", _specialize.bind(index, str(selected.get("effect_id", ""))), not can_choose)
+		_tutorial_mark(confirm, "evolution_choice")
+	else:
+		var rank: int = int(stats.get("rank", 1))
+		var cap: int = int(stats.get("max_rank", 0))
+		var cost: int = game.upgrade_cost(index)
+		var capped: bool = cap > 0 and rank >= cap
+		var label: String = "Максимальный ранг" if capped else "Ранг %d · улучшить за %d зол." % [rank + 1, cost]
+		if not capped and game.gold < cost:
+			label = "Не хватает %d зол." % (cost - game.gold)
+		var upgrade = _tree_action(footer, label, _upgrade, game.phase != "prepare" or capped or game.gold < cost)
+		_tutorial_mark(upgrade, "upgrade")
+	_restore_tree_position(modal_scroll, previous_scroll, tree, room_tree_focus)
+	_resize_modal.call_deferred()
 
 func _specialize(index: int, id: String) -> void:
 	if not _tutorial_allow("evolution_choice"):
