@@ -406,7 +406,11 @@ func _header() -> void:
 	var head = HBoxContainer.new()
 	head.add_theme_constant_override("separation", 18)
 	page.add_child(head)
-	var mark = _icon("res://assets/icons/lord.svg", 52)
+	var mark = _icon_button("res://assets/icons/lord.svg", "Дерево талантов · очков: %d" % game.skill_points, _show_talents)
+	mark.custom_minimum_size = Vector2(56, 56)
+	if game.skill_points > 0:
+		mark.text = str(game.skill_points)
+		mark.add_theme_stylebox_override("normal", _style(Color("#353025"), GOLD, 8, 6))
 	head.add_child(mark)
 	var brand = VBoxContainer.new()
 	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1738,7 +1742,7 @@ func _build_mobile_lords() -> void:
 func _build_menu() -> void:
 	var topline = HBoxContainer.new()
 	page.add_child(topline)
-	var edition = _eyebrow("NO HERO RETURNS     /     БЕСКОНЕЧНАЯ ОСАДА")
+	var edition = _eyebrow("NO HERO RETURNS     /     ДЕРЕВЬЯ РАЗВИТИЯ")
 	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	topline.add_child(edition)
 	topline.add_child(_label("ДУШИ  %d" % int(lords_profile.souls), 12, VIOLET))
