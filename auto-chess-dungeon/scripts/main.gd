@@ -8,6 +8,9 @@ const LordProgression = preload("res://scripts/lord_progression.gd")
 const DungeonView = preload("res://scripts/dungeon_view.gd")
 const TutorialGuide = preload("res://scripts/tutorial_guide.gd")
 const ProgressionTree = preload("res://scripts/progression_tree.gd")
+const EvolutionPreview = preload("res://scripts/evolution_preview.gd")
+const RoomEvolutions = preload("res://scripts/room_evolution_catalog.gd")
+const HeroRules = preload("res://scripts/hero_rules.gd")
 const INK = Color("#0e1118")
 const PANEL = Color("#181e28")
 const TILE = Color("#212938")
@@ -82,6 +85,7 @@ var room_tree_focus: String = ""
 var talent_tree_focus: String = ""
 var talent_tree_category: String = "lord"
 var mastery_tree_focus: String = ""
+var _live_ui: Array[Dictionary] = []
 
 func _ready() -> void:
 	_apply_screen_layout()
@@ -232,6 +236,7 @@ func _refresh(keep_modal: bool = false) -> void:
 		refresh_keeps_modal = refresh_keeps_modal or keep_modal
 		return
 	refresh_after_touch = false
+	_live_ui.clear()
 	if is_instance_valid(floor_scroll):
 		scroll_position = floor_scroll.scroll_vertical
 	floor_scroll = null
@@ -280,6 +285,53 @@ func _refresh(keep_modal: bool = false) -> void:
 				floor_scroll.set_deferred("scroll_vertical", scroll_position)
 	if not keep_modal and not phase_modal_dismissed:
 		_show_phase_modal()
+	_refresh_live_values()
+
+
+func _bind_live(node: Object, property: String, read: Callable) -> void:
+	_live_ui.append({"node": node, "property": property, "read": read})
+	node.set(property, read.call())
+
+
+func _live_label(read: Callable, font_size: int = 15, color: Color = PAPER, wrap: bool = false) -> Label:
+	var label := _label(str(read.call()), font_size, color, wrap)
+	_bind_live(label, "text", func(): return _ui_text(str(read.call())))
+	return label
+
+
+func _live_bar(hp: Callable, maximum: Callable, tint: Color) -> ProgressBar:
+	var bar := _bar(float(hp.call()), float(maximum.call()), tint)
+	_bind_live(bar, "max_value", func(): return maxf(1, float(maximum.call())))
+	_bind_live(bar, "value", func(): return maxf(0, float(hp.call())))
+	return bar
+
+
+func _refresh_live_values() -> void:
+	for binding in _live_ui:
+		if is_instance_valid(binding.node):
+			binding.node.set(str(binding.property), binding.read.call())
+	if is_instance_valid(dungeon_view):
+		dungeon_view.animation_paused = paused or is_instance_valid(modal) or menu_open
+		dungeon_view.animation_speed = float(speed)
+
+
+func _refresh_raid() -> void:
+	# Actor numbers change every step; layout, scroll and buttons stay alive.
+	# This also keeps touch targets stable on mobile during fast combat.
+	if tutorial.observe(game):
+		paused = true
+		accumulator = 0.0
+		_refresh()
+		return
+	_refresh_live_values()
+	if is_instance_valid(dungeon_view):
+		dungeon_view.refresh_runtime()
+	var target_floor: int = mini(game.current_slot / 5, game.floor_count)
+	if target_floor != active_floor and game.current_slot >= 0:
+		active_floor = target_floor
+		scroll_position = target_floor * 160
+		if is_instance_valid(floor_scroll):
+			floor_scroll.set_deferred("scroll_vertical", scroll_position)
 
 func _build_mobile_game() -> void:
 	var header = HBoxContainer.new()
@@ -287,8 +339,8 @@ func _build_mobile_game() -> void:
 	page.add_child(header)
 	var numbers = _vbox(header, 1)
 	numbers.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	numbers.add_child(_label("Волна %d  ·  %d зол." % [game.wave, game.gold], 16, GOLD))
-	numbers.add_child(_label("Лорд %d/%d HP" % [maxi(0, game.lord.hp), game.lord.max_hp], 13, PAPER))
+	numbers.add_child(_live_label(func(): return "Волна %d  ·  %d зол." % [game.wave, game.gold], 16, GOLD))
+	numbers.add_child(_live_label(func(): return "Лорд %d/%d HP" % [maxi(0, game.lord.hp), game.lord.max_hp], 13, PAPER))
 	var talents = _icon_button("res://assets/icons/lord.svg", "Таланты забега · очков: %d" % game.skill_points, _show_talents)
 	if game.skill_points > 0:
 		talents.text = str(game.skill_points)
@@ -388,6 +440,7 @@ func _mobile_actions() -> void:
 		row.add_child(speed_button)
 		var ability: Dictionary = game.ability_status()
 		var cast = _button("%s · %d/%d" % [ability.name, ability.charges, ability.max_charges], _cast_lord_ability, not bool(ability.can_cast))
+		_bind_ability_button(cast, false)
 		cast.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cast.add_theme_color_override("font_color", GREEN)
 		cast.add_theme_font_size_override("font_size", 13)
@@ -401,6 +454,60 @@ func _mobile_actions() -> void:
 
 func _cycle_speed() -> void:
 	_set_speed(2 if speed == 1 else 4 if speed == 2 else 1)
+
+
+func _bind_ability_button(button: Button, keyboard: bool) -> void:
+	_bind_live(button, "disabled", func(): return not bool(game.ability_status().can_cast))
+	_bind_live(button, "text", func():
+		var state: Dictionary = game.ability_status()
+		return ("Q · " if keyboard else "") + "%s · %d/%d" % [state.name, state.charges, state.max_charges])
+	_bind_live(button, "tooltip_text", func():
+		var state: Dictionary = game.ability_status()
+		return _ui_text(str(state.description) + "\n" + str(state.reason)))
+
+
+func _hero_item(hero: Dictionary, slot: String) -> Dictionary:
+	for item in HeroRules.equipment_summary(hero):
+		if str(item.slot) == slot:
+			return item
+	return {}
+
+
+func _equipment_row(parent: Control, hero: Dictionary) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	parent.add_child(row)
+	for slot in ["weapon", "protection"]:
+		var label: String = "Оружие" if slot == "weapon" else "Защита"
+		var button := _button(label, _show_equipment_details.bind(hero, slot))
+		button.custom_minimum_size = Vector2(0, 30)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.add_theme_font_size_override("font_size", 10)
+		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		_bind_live(button, "text", func():
+			var item: Dictionary = _hero_item(hero, slot)
+			return ("• " if bool(item.get("special", false)) else "") + str(item.get("name", label)))
+		_bind_live(button, "tooltip_text", func():
+			var item: Dictionary = _hero_item(hero, slot)
+			return _ui_text(str(item.get("name", label)) + "\n" + str(item.get("description", "")) + ("\nВременно отключено" if not bool(item.get("active", true)) else "")))
+		_bind_live(button, "modulate", func():
+			var item: Dictionary = _hero_item(hero, slot)
+			return Color(1, 1, 1, 0.45) if not bool(item.get("active", true)) else (GOLD if bool(item.get("special", false)) else Color.WHITE))
+		row.add_child(button)
+
+
+func _show_equipment_details(hero: Dictionary, slot: String) -> void:
+	var item: Dictionary = _hero_item(hero, slot)
+	_close_modal()
+	modal_kind = "equipment"
+	var body := _new_modal(460, true)
+	body.add_child(_eyebrow("ОРУЖИЕ" if slot == "weapon" else "ЗАЩИТА"))
+	body.add_child(_label(str(item.get("name", "Пустой слот")), 24, GOLD, true))
+	body.add_child(_label(str(item.get("description", "")), 15, PAPER, true))
+	if not bool(item.get("active", true)):
+		body.add_child(_label("Временно отключено эффектом комнаты", 13, RED, true))
+	if slot == "weapon" and bool(hero.get("effects", {}).get("weapon_swap", false)):
+		body.add_child(_label("Оружие подменено мимиком до конца волны", 13, RED, true))
 
 func _header() -> void:
 	var head = HBoxContainer.new()
@@ -418,7 +525,7 @@ func _header() -> void:
 	head.add_child(brand)
 	brand.add_child(_label("NO HERO RETURNS", 25, PAPER))
 	_stat(head, "ВОЛНА", str(game.wave), PAPER)
-	_stat(head, "ЗОЛОТО", str(game.gold), GOLD)
+	_stat(head, "ЗОЛОТО", str(game.gold), GOLD, func(): return str(game.gold))
 	_stat(head, "РЕКОРД", str(int(profile.get("wave", 0))), VIOLET)
 	var small = VBoxContainer.new()
 	head.add_child(small)
@@ -470,18 +577,13 @@ func _party_contents(side: Control, show_lord: bool = true) -> void:
 		names.add_theme_constant_override("separation", 1)
 		row.add_child(names)
 		names.add_child(_label(str(definition.get("name", hero.id)), 14 if compact else 16, PAPER if hero.hp > 0 else MUTED))
-		names.add_child(_label("Уровень %d" % hero.level, 11, VIOLET))
-		inner.add_child(_bar(float(hero.hp), float(hero.max_hp), RED if hero.hp > 0 else MUTED))
-		inner.add_child(_label("%d/%d HP    Урон %d  ·  Броня %d" % [maxi(0, hero.hp), hero.max_hp, hero.damage, hero.armor], 11, MUTED))
-		var status: String = _hero_status(hero, definition)
-		var items: Array = hero.get("items", [])
-		if not items.is_empty():
-			var names_list: PackedStringArray = []
-			for id in items:
-				names_list.append(str(Content.item(str(id)).get("name", id)))
-			status += " · " + ", ".join(names_list)
-		card.tooltip_text = _ui_text(str(definition.get("trait", "")) + "\n" + status)
-		var status_label = _label(status, 10 if compact else 11, GREEN if int(hero.get("poison_ticks", 0)) > 0 else MUTED, true)
+		names.add_child(_live_label(func(): return "Уровень %d" % hero.level, 11, VIOLET))
+		_bind_live(portrait, "modulate", func(): return Color(1, 1, 1, 1.0 if hero.hp > 0 else 0.3))
+		inner.add_child(_live_bar(func(): return hero.hp, func(): return hero.max_hp, RED))
+		inner.add_child(_live_label(func(): return "%d/%d HP    Урон %d  ·  Броня %d" % [maxi(0, hero.hp), hero.max_hp, hero.damage, hero.armor], 11, MUTED))
+		_equipment_row(inner, hero)
+		_bind_live(card, "tooltip_text", func(): return _ui_text(str(definition.get("trait", "")) + "\n" + _hero_status(hero, definition)))
+		var status_label = _live_label(func(): return _hero_status(hero, definition), 10 if compact else 11, MUTED, true)
 		status_label.max_lines_visible = 2 if show_lord else -1
 		status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		inner.add_child(status_label)
@@ -501,10 +603,10 @@ func _lord_status(parent: Control) -> void:
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.tooltip_text = _ui_text(str(identity.get("passive_description", "")))
 	row.add_child(name_label)
-	parent.add_child(_label("Уровень %d · мастерство %d / 5" % [game.lord.level, game.lord_mastery], 11, VIOLET))
-	parent.add_child(_bar(float(game.lord.hp), float(game.lord.max_hp), GOLD))
-	parent.add_child(_label("%d/%d HP · Урон %d · Броня %d" % [maxi(0, game.lord.hp), game.lord.max_hp, game.lord.damage, game.lord.armor], 11, MUTED, true))
-	parent.add_child(_label("До таланта: XP %d / %d" % [game.lord.xp, 10 + 6 * (int(game.lord.level) - 1)], 11, VIOLET))
+	parent.add_child(_live_label(func(): return "Уровень %d · мастерство %d / 5" % [game.lord.level, game.lord_mastery], 11, VIOLET))
+	parent.add_child(_live_bar(func(): return game.lord.hp, func(): return game.lord.max_hp, GOLD))
+	parent.add_child(_live_label(func(): return "%d/%d HP · Урон %d · Броня %d" % [maxi(0, game.lord.hp), game.lord.max_hp, game.lord.damage, game.lord.armor], 11, MUTED, true))
+	parent.add_child(_live_label(func(): return "До таланта: XP %d / %d" % [game.lord.xp, 10 + 6 * (int(game.lord.level) - 1)], 11, VIOLET))
 	parent.add_child(_button("Таланты · очков: %d" % game.skill_points, _show_talents))
 
 func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
@@ -540,8 +642,10 @@ func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
 		title.max_lines_visible = 2
 		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var caption = _label(guidance, 12, GOLD if game.phase == "raid" else MUTED, true)
+	if game.phase == "raid":
+		_bind_live(title if short_ui else caption, "text", func(): return _ui_text(str(game.last_action.get("text", "Группа спускается в подземелье."))))
 	caption.custom_minimum_size.y = 0
-	if not short_ui and not guidance.is_empty():
+	if not short_ui and (not guidance.is_empty() or game.phase == "raid"):
 		caption.max_lines_visible = 2 if compact_ui else -1
 		caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		center.add_child(caption)
@@ -601,6 +705,8 @@ func _room_details(parent: Control, index: int) -> void:
 	parent.add_child(_label(values, 13, PAPER, true))
 	var description = _label(str(stats.get("role", stats.get("description", ""))), 13, MUTED, true)
 	parent.add_child(description)
+	if str(stats.get("evolution_path", "")) == "wraith_throne_guardian":
+		parent.add_child(_label("У трона действует один самый сильный страж", 12, MUTED, true))
 	var progression: Dictionary = game.room_progression(index)
 	var path_names: PackedStringArray = []
 	for stage in progression.get("stages", []):
@@ -615,6 +721,7 @@ func _room_details(parent: Control, index: int) -> void:
 	path.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	path.tooltip_text = "Посмотреть путь и будущие развилки"
 	parent.add_child(path)
+	_room_evolution_controls(parent, index)
 	_room_combo_details(parent, index)
 	var pending: bool = _has_pending_evolution(index)
 	var rank_limit: int = int(stats.get("max_rank", 0))
@@ -629,6 +736,28 @@ func _room_details(parent: Control, index: int) -> void:
 
 func _has_pending_evolution(index: int) -> bool:
 	return index >= 0 and index < game.rooms.size() and not game.rooms[index].is_empty() and int(game.rooms[index].get("rank", 1)) >= 2 and not game.room_evolution_options(index).is_empty()
+
+
+func _room_evolution_controls(parent: Control, index: int) -> void:
+	if not game.has_method("room_evolution_controls"):
+		return
+	for control in game.room_evolution_controls(index):
+		parent.add_child(_label(str(control.get("label", "")), 12, MUTED, true))
+		var choice := OptionButton.new()
+		choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		choice.custom_minimum_size.y = 36
+		choice.disabled = game.phase != "prepare"
+		var options: Array = control.get("options", [])
+		for option in options:
+			choice.add_item(str(option.get("name", option.get("id", ""))))
+			if str(option.get("id", "")) == str(control.get("selected", "")):
+				choice.select(choice.item_count - 1)
+		choice.item_selected.connect(func(option_index: int):
+			var error: String = game.set_room_evolution_control(index, str(control.id), str(options[option_index].id))
+			_action(error)
+			if compact_ui and error.is_empty():
+				_show_room_details())
+		parent.add_child(choice)
 
 func _shop_panel(parent: Control = null) -> void:
 	var shop_area = _vbox(page if parent == null else parent, 7)
@@ -718,6 +847,7 @@ func _footer() -> void:
 		var ability: Dictionary = game.ability_status()
 		desc.text = _ui_text("Пробел — пауза · Q — сила Лорда" if bool(ability.can_cast) else str(ability.reason))
 		var cast = _button("Q · %s · %d/%d" % [ability.name, ability.charges, ability.max_charges], _cast_lord_ability, not bool(ability.can_cast))
+		_bind_ability_button(cast, true)
 		cast.custom_minimum_size = Vector2(300, 42)
 		cast.tooltip_text = _ui_text(str(ability.description) + "\n" + str(ability.reason))
 		cast.add_theme_color_override("font_color", GREEN)
@@ -733,7 +863,11 @@ func _process(delta: float) -> void:
 		if _screen_css_size() != layout_size:
 			_request_screen_layout()
 	if menu_open or game.phase != "raid" or paused or is_instance_valid(modal):
+		if is_instance_valid(dungeon_view):
+			dungeon_view.animation_paused = paused or is_instance_valid(modal) or menu_open
 		return
+	if is_instance_valid(dungeon_view):
+		dungeon_view.animation_paused = false
 	accumulator += delta * speed
 	if accumulator >= 0.5:
 		accumulator -= 0.5
@@ -741,7 +875,9 @@ func _process(delta: float) -> void:
 		_sound("hit" if game.phase == "raid" else ("lose" if game.phase == "defeat" else "win"))
 		if game.phase != "raid":
 			_update_record()
-		_refresh()
+			_refresh()
+		else:
+			_refresh_raid()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
@@ -1605,13 +1741,13 @@ func _bar(value: float, max_value: float, tint: Color, height: int = 7) -> Progr
 	bar.add_theme_stylebox_override("fill", _style(tint, Color.TRANSPARENT, 3, 0))
 	return bar
 
-func _stat(parent: Control, title: String, value: String, tint: Color) -> void:
+func _stat(parent: Control, title: String, value: String, tint: Color, read: Callable = Callable()) -> void:
 	var box = VBoxContainer.new()
 	box.custom_minimum_size.x = 78
 	box.add_theme_constant_override("separation", 1)
 	parent.add_child(box)
 	box.add_child(_label(title, 10, MUTED))
-	box.add_child(_label(value, 27, tint))
+	box.add_child(_label(value, 27, tint) if not read.is_valid() else _live_label(read, 27, tint))
 
 func _ignore_mouse(node: Node) -> void:
 	if node is Control:
@@ -1645,6 +1781,7 @@ func _build_mobile_menu() -> void:
 	var record = _label("Рекорд %d" % int(profile.get("wave", 0)), 13, MUTED)
 	record.custom_minimum_size.x = 80
 	header.add_child(record)
+	page.add_child(_label("ЭВОЛЮЦИИ · В РАЗРАБОТКЕ", 10, MUTED))
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1742,7 +1879,7 @@ func _build_mobile_lords() -> void:
 func _build_menu() -> void:
 	var topline = HBoxContainer.new()
 	page.add_child(topline)
-	var edition = _eyebrow("NO HERO RETURNS v1.0.5     /     ДЕРЕВЬЯ РАЗВИТИЯ")
+	var edition = _eyebrow("NO HERO RETURNS     /     ЭВОЛЮЦИИ · В РАЗРАБОТКЕ")
 	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	topline.add_child(edition)
 	topline.add_child(_label("ДУШИ  %d" % int(lords_profile.souls), 12, VIOLET))
@@ -2236,6 +2373,9 @@ func _fill_showcase(target) -> void:
 	target._generate_shop()
 	target.gold = 27
 func _matchup_text(stats: Dictionary) -> String:
+	var path: Dictionary = RoomEvolutions.path(str(stats.get("evolution_path", "")))
+	if not path.is_empty():
+		return str(path.get("counter", ""))
 	match str(stats.get("id", "")):
 		"mimic":
 			return "Цель: бард, жрица, чародей — поддержка за передним бойцом. Живой следопыт ослабляет первый удар засады на 35%."
@@ -2246,7 +2386,7 @@ func _matchup_text(stats: Dictionary) -> String:
 		"war_hound":
 			return "Охотится на слабейшего; +30% урона целям с HP <= 40%."
 		"wraith":
-			return "Игнорирует 2 брони. Рыцарь и варвар наносят духам на 20% меньше урона; чародей — на 25% больше без безмолвия."
+			return "Дух получает 20% физического и 150% магического урона. Чародей особенно опасен."
 		"vampire":
 			return "Если пережил ответ, лечится на 25% реально нанесённого урона."
 		"ballista", "blade_floor":
@@ -2352,6 +2492,7 @@ func _show_room_tree(index: int, focused_id: String = "") -> void:
 	var preview: Dictionary = selected.get("preview", {})
 	var before: Dictionary = preview.get("before", {})
 	var after: Dictionary = preview.get("after", {})
+	_evolution_previews(body if get_viewport_rect().size.y < 500.0 else footer, selected, stats, after)
 	var change: String = _room_stat_changes(before, after)
 	if bool(preview.get("projected", false)) and not change.is_empty():
 		change = "На ранге %d: %s" % [int(preview.get("rank", 1)), change]
@@ -2380,6 +2521,29 @@ func _show_room_tree(index: int, focused_id: String = "") -> void:
 		_tutorial_mark(upgrade, "upgrade")
 	_restore_tree_position(modal_scroll, previous_scroll, tree, room_tree_focus)
 	_resize_modal.call_deferred()
+
+
+func _evolution_previews(parent: Control, selected: Dictionary, stats: Dictionary, after: Dictionary) -> void:
+	var candidate: String = str(after.get("evolution_path", selected.get("effect_id", ""))).get_slice(":", 0)
+	var path: Dictionary = RoomEvolutions.path(candidate)
+	if path.is_empty():
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	var tiers: Array = [int(selected.get("tier", selected.get("required_rank", 2)))] if compact_ui else [2, 5, 15]
+	for rank in tiers:
+		var stage: Dictionary = RoomEvolutions.stage(candidate, int(rank))
+		var col := _vbox(row, 3)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var art := EvolutionPreview.new()
+		art.configure(candidate, str(stats.id), int(stage.get("tier", rank)))
+		art.custom_minimum_size.y = 72 if compact_ui else 76
+		col.add_child(art)
+		var label := _label("%d · %s" % [int(stage.get("tier", rank)), str(stage.get("name", ""))], 11, GOLD, true)
+		label.max_lines_visible = 1
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		col.add_child(label)
 
 func _specialize(index: int, id: String) -> void:
 	if not _tutorial_allow("evolution_choice"):
@@ -2420,9 +2584,9 @@ func _hero_status(hero: Dictionary, definition: Dictionary) -> String:
 		"priest":
 			parts.append("Лечение · защита группы от яда -25%" if int(hero.get("silence_ticks", 0)) <= 0 else "Лечение и защита от яда заглушены")
 		"mage":
-			parts.append("Против духов +25% · заклинание каждый 3-й тик" if int(hero.get("silence_ticks", 0)) <= 0 else "Магия заглушена")
+			parts.append("Магия особенно опасна духам · заряжает заклинание" if int(hero.get("silence_ticks", 0)) <= 0 else "Магия заглушена")
 		"barbarian":
-			parts.append("Телесные +20% · духи -20%")
+			parts.append("Силен против телесных · духи почти неуязвимы к топору")
 			parts.append("ЯРОСТЬ +25%" if int(hero.hp) <= float(hero.max_hp) * 0.4 else "Ярость при HP <= 40%")
 		"bard":
 			parts.append("Песня: +15% урона всему отряду" if int(hero.get("silence_ticks", 0)) <= 0 else "Песня заглушена")
@@ -2440,6 +2604,21 @@ func _hero_status(hero: Dictionary, definition: Dictionary) -> String:
 			parts.append("%s > следующий бой" % names[effect])
 	if int(hero.get("goblin_mark_slot", -1)) >= 0:
 		parts.append("Метка засады")
+	var effects: Dictionary = hero.get("effects", {})
+	if int(effects.get("cocoon_ticks", 0)) > 0:
+		parts.insert(0, "В коконе")
+	if bool(effects.get("retreating", false)):
+		parts.insert(0, "Отходит под прикрытием")
+	if bool(effects.get("forced_front", false)):
+		parts.insert(0, "Вытащен вперёд")
+	if not str(effects.get("hypnotized_by", "")).is_empty():
+		parts.insert(0, "Под гипнозом")
+	if bool(effects.get("weapon_swap", false)):
+		parts.append("Оружие подменено")
+	if int(effects.get("spore_attacks", 0)) > 0:
+		parts.append("Спора")
+	if hero.has("cursed_cup"):
+		parts.append("Кубок: %d/%d" % [int(hero.cursed_cup.get("uses", 0)), int(hero.cursed_cup.get("uses_to_bite", 3))])
 	return " · ".join(parts)
 
 

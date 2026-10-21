@@ -3,6 +3,7 @@ extends SceneTree
 
 const Game = preload("res://scripts/dungeon_game.gd")
 const MainScene = preload("res://scenes/main.tscn")
+const DungeonView = preload("res://scripts/dungeon_view.gd")
 
 class IsolatedMain:
 	extends "res://scripts/main.gd"
@@ -69,20 +70,20 @@ func _check_room_model() -> void:
 	_expect(_available(game.room_tree(0)).is_empty(), "Rank 1 has no selectable specialization")
 	_expect(game.upgrade_room(0).is_empty(), "First paid rank upgrade succeeds")
 	var first: Array[Dictionary] = _available(game.room_tree(0))
-	_expect(first.size() == 2 and int(first[0].rank_required) == 2, "Rank 2 exposes the two first branches")
+	_expect(first.size() == 3 and int(first[0].rank_required) == 2, "Rank 2 exposes all three approved paths")
 	var gold: int = game.gold
-	_expect(game.choose_room_evolution(0, "fury").is_empty(), "Choose the first branch")
+	_expect(game.choose_room_evolution(0, "war_banner").is_empty(), "Choose the first branch")
 	_expect(game.gold == gold, "Branch choice itself does not charge gold")
-	_expect(not game.choose_room_evolution(0, "bulwark").is_empty(), "A chosen branch cannot be replaced")
+	_expect(not game.choose_room_evolution(0, "saboteurs").is_empty(), "A chosen branch cannot be replaced")
 	for _rank in range(3):
 		game.upgrade_room(0)
 	var middle: Array[Dictionary] = _available(game.room_tree(0))
-	_expect(middle.size() == 2 and int(middle[0].rank_required) == 5, "Rank 5 exposes only children of the chosen path")
+	_expect(middle.size() == 1 and str(middle[0].effect_id) == "war_banner:5", "Rank 5 exposes only the chosen path's second form")
 	_expect(game.choose_room_evolution(0, str(middle[0].effect_id)).is_empty(), "Choose a rank 5 continuation")
 	for _rank in range(10):
 		game.upgrade_room(0)
 	var last: Array[Dictionary] = _available(game.room_tree(0))
-	_expect(last.size() == 2 and int(last[0].rank_required) == 15, "Rank 15 exposes only the selected continuation's terminal nodes")
+	_expect(last.size() == 1 and str(last[0].effect_id) == "war_banner:15", "Rank 15 exposes only the chosen path's terminal form")
 	_expect(game.choose_room_evolution(0, str(last[0].effect_id)).is_empty(), "Choose the final branch")
 	var selected: Dictionary = game.rooms[0].duplicate(true)
 	var tree: Array[Dictionary] = game.room_tree(0)
@@ -94,14 +95,20 @@ func _check_room_model() -> void:
 	poison.upgrade_room(0)
 	var prior: Array = _snapshot(poison)
 	var poison_tree: Array[Dictionary] = poison.room_tree(0)
-	var lingering: Dictionary = _node(poison_tree, "lingering")
-	_expect(int(lingering.preview.after.poison_ticks) == int(lingering.preview.before.poison_ticks) + 3, "Poison preview includes the actual extra duration")
-	_expect(str(_node(poison_tree, "plague").state) == "locked", "Permanent poison branch shows its unlock requirement")
+	var spores: Dictionary = _node(poison_tree, "poison_spore_garden")
+	_expect(int(spores.preview.after.evolution_params.attacks_to_burst) == 3 and str(spores.preview.after.visual_key) == "poison_spore_garden", "Spore preview includes its actual trigger and changed visual form")
+	_expect(str(_node(poison_tree, "poison_spore_garden:5").state) == "locked", "Later form remains locked before its rank and prerequisite")
 	poison.talent_preview("lasting_poison")
 	poison.room_tree(0)
 	_expect(_snapshot(poison) == prior, "Tree and talent previews do not mutate gameplay state or any random stream")
-	poison.choose_room_evolution(0, "lingering")
-	_expect(poison.room_stats(0) == lingering.preview.after, "Poison preview matches the selected room's actual resulting stats")
+	poison.choose_room_evolution(0, "poison_spore_garden")
+	_expect(poison.room_stats(0) == spores.preview.after, "Poison preview matches the selected room's actual resulting stats")
+	var legacy = _model()
+	legacy.buy_room(0, "goblin")
+	legacy.rooms[0].rank = 5
+	legacy.rooms[0].specialization = "fury"
+	_expect(_node(legacy.room_tree(0), "fury").state == "acquired", "Existing legacy specialization remains visible without random conversion")
+	_expect(legacy.rooms[0].get("evolution_path", "") == "", "Reading a legacy tree never changes the saved room path")
 
 func _check_talent_model() -> void:
 	var game = _model()
@@ -202,7 +209,7 @@ func _check_ui() -> void:
 	ui._upgrade()
 	await _settle()
 	_expect(ui.game.gold == paid and int(ui.game.rooms[0].rank) == 2, "Reopening an unresolved room branch does not buy another rank")
-	ui._specialize(0, "fury")
+	ui._specialize(0, "war_banner")
 	ui.game.skill_points = 2
 	ui._show_talents()
 	await _settle()
@@ -235,10 +242,45 @@ func _check_ui() -> void:
 	ui.queue_free()
 	await _settle()
 
+func _check_view_lifecycle() -> void:
+	var game = Game.new()
+	var view = DungeonView.new()
+	root.add_child(view)
+	view.set_process(false)
+	game.restart(771)
+	view.configure(game)
+	game.start_raid()
+	for _step in range(4):
+		game.step()
+		view.refresh_runtime()
+	var previous_seq: int = view._last_event_seq
+	_expect(previous_seq > 0, "View observes real encounter events before restart")
+	view._hero_positions["previous_run_hero"] = Vector2.ONE
+	# Reuse both objects as Main does; a new object would hide this regression.
+	game.restart(771)
+	view.configure(game)
+	_expect(view._last_event_seq == -1, "Restart resets the view's old event threshold")
+	_expect(view._hero_positions.is_empty(), "Restart releases old hero coordinates")
+	game.start_raid()
+	game.step()
+	view.refresh_runtime()
+	_expect(not view._events.is_empty(), "A restarted run immediately displays its first new events")
+	_expect(view._last_event_seq < previous_seq, "The new event sequence can be smaller than the previous run")
+	view._last_wave = game.wave
+	view._hero_positions["previous_wave_hero"] = Vector2.ONE
+	view._actor_positions["previous_wave_actor"] = Vector2.ONE
+	game.wave += 1
+	view._update_party(0)
+	_expect(view._hero_positions.is_empty(), "Wave transitions do not accumulate old hero positions")
+	_expect(view._actor_positions.is_empty(), "Wave transitions do not accumulate old defender positions")
+	view.queue_free()
+	await _settle()
+
 func _run() -> void:
 	_check_room_model()
 	_check_talent_model()
 	await _check_ui()
+	await _check_view_lifecycle()
 	print("PROGRESSION TREE: %d checks, %d failures" % [checks, failures.size()])
 	for failure in failures:
 		print("FAIL: " + failure)

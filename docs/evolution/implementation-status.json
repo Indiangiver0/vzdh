@@ -1,0 +1,180 @@
+{
+  "feature": "room-evolutions-and-hero-equipment",
+  "branch": "codex/room-evolutions-heroes",
+  "base_release": "v1.0.5",
+  "state": "implemented_verified_local",
+  "quota": {
+    "starting_remaining_percent": 80,
+    "stop_remaining_percent": 10,
+    "scope": "shared weekly Codex allowance",
+    "latest_remaining_percent": 52
+  },
+  "sources": [
+    "room-decisions.json",
+    "hero-decisions.json"
+  ],
+  "decisions": {
+    "simulation_step_seconds": 0.5,
+    "cocoon_seconds": 2,
+    "cocoon_cooldown_seconds": 8,
+    "weapon_swap_duration": "through current wave, as recorded in approved replacement proposal",
+    "werewolf_release": "restore living knight to front immediately on werewolf death",
+    "mimic_paths": [
+      "mimic_weapon_swap",
+      "mimic_false_treasury",
+      "mimic_living_chamber",
+      "mimic_cursed_gift"
+    ],
+    "additional_approved_idea": "mimic_cursed_gift integrated as fourth path; explicitly approved by user in current implementation turn",
+    "hero_armor_limit": 0.5,
+    "spirit_physical_multiplier": 0.2,
+    "spirit_magic_multiplier": 1.5,
+    "unapproved_numeric_details": "tuning defaults, not measured balance"
+  },
+  "owners": {
+    "project_defender": [
+      "scripts/dungeon_game.gd",
+      "scripts/encounter_rules.gd",
+      "scripts/damage_rules.gd"
+    ],
+    "evolution_content": [
+      "scripts/room_evolution_catalog.gd",
+      "scripts/hero_rules.gd",
+      "new equipment data"
+    ],
+    "evolution_ui": [
+      "scripts/main.gd",
+      "scripts/dungeon_view.gd",
+      "scripts/progression_tree.gd",
+      "scripts/*_visuals.gd",
+      "assets"
+    ],
+    "critic": [
+      "read-only review, targeted verification after integration"
+    ],
+    "optimization": [
+      "read-only performance review after integration"
+    ],
+    "coordinator": [
+      "integration, requirements, documentation, Git"
+    ]
+  },
+  "phases": [
+    {
+      "id": "architecture",
+      "state": "complete",
+      "result": "critic and defender agreed on actor identities, batched damage, once-only rewards and bounded events"
+    },
+    {
+      "id": "runtime",
+      "state": "complete"
+    },
+    {
+      "id": "catalogs_and_heroes",
+      "state": "complete"
+    },
+    {
+      "id": "visuals_and_ui",
+      "state": "complete"
+    },
+    {
+      "id": "review_and_verification",
+      "state": "complete"
+    },
+    {
+      "id": "release",
+      "state": "not_requested"
+    }
+  ],
+  "external_references": [
+    "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html",
+    "https://docs.godotengine.org/en/stable/classes/class_randomnumbergenerator.html",
+    "https://docs.godotengine.org/en/stable/classes/class_timer.html"
+  ],
+  "verification": [
+    {
+      "scope": "catalogs_and_hero_rules",
+      "result": "PASS",
+      "engine": "Godot 4.7.2",
+      "log": "auto-chess-dungeon/artifacts/evolution_content_probe.log",
+      "coverage": "48 paths/144 nodes, seeded gear across 60 waves, curves, slots, armor; full game not yet verified"
+    },
+    {
+      "scope": "progression_tree_ui_regression",
+      "result": "PASS",
+      "checks": 73,
+      "failures": 0,
+      "engine": "Godot 4.7.2",
+      "log": "auto-chess-dungeon/artifacts/progression-tree-evolution.log",
+      "coverage": "new paths, pure previews, legacy room state, talents/mastery, desktop1280x800/mobile390x844 geometry"
+    },
+    {
+      "scope": "lord_abilities",
+      "result": "PASS",
+      "checks": 36,
+      "failures": 0,
+      "log": "auto-chess-dungeon/artifacts/lord-abilities-evolution.log",
+      "coverage": "manual shield, revival, charges, poison burst and throne defeat ordering"
+    },
+    {
+      "scope": "runtime_rules_before_final_controls_cases",
+      "result": "PASS",
+      "checks": 2660,
+      "failures": 0,
+      "log": "auto-chess-dungeon/artifacts/evolution-echo-suite.log",
+      "coverage": "49 paths x 3 stages, all six items, state and damage invariants"
+    },
+    {
+      "scope": "cpu_performance_probe",
+      "result": "PASS",
+      "log": "auto-chess-dungeon/artifacts/evolution_performance_probe.log",
+      "model_step_ms": {
+        "rooms50": 0.48,
+        "rooms100": 1.15,
+        "rooms15": 0.44
+      },
+      "note": "1000 finite steps; headless CPU under parallel load, not device FPS or worst multi-actor encounter"
+    },
+    {
+      "scope": "final_runtime_rules",
+      "result": "PASS",
+      "checks": 2903,
+      "failures": 0,
+      "exit_code": 0,
+      "log": "auto-chess-dungeon/artifacts/evolution-final-rules.log",
+      "coverage": "49 paths x 3 stages; all six items; controls; servants; damage and reward invariants"
+    },
+    {
+      "scope": "final_progression_tree_ui",
+      "result": "PASS",
+      "checks": 80,
+      "failures": 0,
+      "exit_code": 0,
+      "log": "auto-chess-dungeon/artifacts/evolution-final-tree.log",
+      "coverage": "desktop/mobile trees, legacy progression, restart lifecycle"
+    },
+    {
+      "scope": "final_lord_abilities",
+      "result": "PASS",
+      "checks": 36,
+      "failures": 0,
+      "exit_code": 0,
+      "log": "auto-chess-dungeon/artifacts/evolution-final-lords.log"
+    },
+    {
+      "scope": "graphical_fixtures",
+      "result": "PASS",
+      "log": "auto-chess-dungeon/artifacts/ui-extensions-angle.log",
+      "coverage": "Main desktop/mobile, cocoon, brood, living mimic appendages and spectral hounds; screenshots inspected",
+      "note": "Final extension fixture passed with CLI ANGLE after native Intel OpenGL driver crash. No machine or project setting changed."
+    }
+  ],
+  "remaining": [
+    "future playtesting and numeric balance",
+    "future additional approved special items"
+  ],
+  "known_limitations": [
+    "Only one approved special item per class currently exists; a second special slot is supported but cannot yet be filled from this catalog. Additional item ideas need user approval.",
+    "Numeric ability parameters and 70% special roll chance are initial tuning, not measured game balance."
+  ]
+}

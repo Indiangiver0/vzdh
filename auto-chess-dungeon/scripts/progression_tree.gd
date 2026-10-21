@@ -15,6 +15,7 @@ const GREEN = Color("#83bfa6")
 const LINE = Color("#333e4e")
 const PANEL = Color("#181e28")
 const TILE = Color("#212938")
+const EvolutionArt = preload("res://scripts/evolution_visuals.gd")
 
 var _nodes: Array[Dictionary] = []
 var _selected_id: String = ""
@@ -32,6 +33,8 @@ class Emblem extends Control:
 	var texture: Texture2D
 	var state: String = "locked"
 	var selected: bool = false
+	var evolution_path: String = ""
+	var evolution_stage: int = 2
 
 	func _draw() -> void:
 		var center: Vector2 = size * 0.5
@@ -41,7 +44,10 @@ class Emblem extends Control:
 			accent = Color("#83bfa6")
 		draw_circle(center, 22.0, ink)
 		draw_arc(center, 21.0, 0.0, TAU, 32, accent, 1.4, true)
-		if texture != null:
+		if not evolution_path.is_empty():
+			EvolutionArt.chamber(self, Rect2(center - Vector2(20, 17), Vector2(40, 31)), evolution_path, evolution_stage, 0.0, state == "other")
+			EvolutionArt.actor(self, center + Vector2(3, 12), 0.4, evolution_path, "base", {}, 0.0)
+		elif texture != null:
 			var tint := Color.WHITE
 			if state in ["locked", "other"]:
 				tint = Color(0.72, 0.76, 0.82)
@@ -81,6 +87,9 @@ func _ready() -> void:
 
 func configure(nodes: Array[Dictionary], selected_id: String = "", compact: bool = false) -> void:
 	_nodes = nodes.duplicate(true)
+	for node in _nodes:
+		if str(node.get("state", "")) == "other_branch":
+			node.state = "other"
 	_selected_id = selected_id
 	_compact = compact
 	_buttons.clear()
@@ -140,6 +149,8 @@ func _create_node(data: Dictionary) -> void:
 	var emblem := Emblem.new()
 	emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	emblem.state = str(data.get("state", "locked"))
+	emblem.evolution_path = str(data.get("evolution_path", ""))
+	emblem.evolution_stage = int(data.get("evolution_stage", 2))
 	var icon_path: String = str(data.get("icon", ""))
 	if not icon_path.is_empty():
 		if not icon_path.begins_with("res://"):

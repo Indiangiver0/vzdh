@@ -6,6 +6,8 @@ signal slot_clicked(index: int)
 
 const Content = preload("res://scripts/content_catalog.gd")
 const Lords = preload("res://scripts/lord_catalog.gd")
+const EvolutionVisuals = preload("res://scripts/evolution_visuals.gd")
+const HeroRules = preload("res://scripts/hero_rules.gd")
 const FLOOR_HEIGHT: float = 160.0
 const THRONE_HEIGHT: float = 170.0
 const INK = Color("101719")
@@ -39,7 +41,25 @@ var _last_slot: int = -2
 var _last_phase: String = ""
 var _last_wave: int = -1
 var _waypoints: Array[Vector2] = []
-var _last_action: String = ""
+var _last_action_seq: int = -1
+var _room_snapshot: Array[Dictionary] = []
+var _combo_snapshot: Array = []
+var _reserved_snapshot: Dictionary = {}
+var _hero_definitions: Dictionary = {}
+var _hero_equipment: Dictionary = {}
+var _hero_effects: Dictionary = {}
+var _slot_actors: Dictionary = {}
+var _room_visual_state: Dictionary = {}
+var _defeated_centers: Dictionary = {}
+var _throne_guard_slot: int = -1
+var _actor_positions: Dictionary = {}
+var _hero_positions: Dictionary = {}
+var _events: Array[Dictionary] = []
+var _last_event_seq: int = -1
+## Set by the host: presentation clocks stop with the combat clock.
+var animation_paused: bool = false
+var animation_speed: float = 1.0
+var _frame_blend: float = 1.0
 var _hit_flash: float = 0.0
 var _pressed_slot: int = -1
 var _press_position: Vector2 = Vector2.ZERO
@@ -61,6 +81,10 @@ func configure(game_ref, slot: int = -1, room_id: String = "") -> void:
 		_last_slot = -2
 		_last_wave = -1
 		_waypoints.clear()
+		_last_action_seq = -1
+		_last_event_seq = -1
+		_events.clear()
+		_hero_positions.clear()
 	game = game_ref
 	selected_slot = slot
 	selected_room = room_id
@@ -72,6 +96,95 @@ func refresh() -> void:
 	# Let the enclosing ScrollContainer receive touch drags before committing a tap.
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	custom_minimum_size = Vector2(280 if compact else 500, (280 if compact else 500) if cinematic else floors * FLOOR_HEIGHT + THRONE_HEIGHT)
+	_room_snapshot.clear()
+	_combo_snapshot.clear()
+	_reserved_snapshot.clear()
+	_throne_guard_slot = -1
+	if game != null:
+		# Catalog/faction calculations happen once per structural UI refresh,
+		# never from _draw or _process. Raid HP/effects remain live actor data.
+		for index in range(game.rooms.size()):
+			_room_snapshot.append({} if game.rooms[index].is_empty() else game.room_stats(index))
+		_combo_snapshot = game.active_combos()
+		if game.has_method("reserved_room_slots"):
+			_reserved_snapshot = game.reserved_room_slots()
+		if game.has_method("throne_guard_room_slot"):
+			_throne_guard_slot = game.throne_guard_room_slot()
+		for hero in game.heroes:
+			_hero_definitions[str(hero.id)] = Content.hero(str(hero.id))
+	refresh_runtime()
+	queue_redraw()
+
+
+func refresh_runtime() -> void:
+	_slot_actors.clear()
+	_hero_equipment.clear()
+	_hero_effects.clear()
+	_room_visual_state.clear()
+	_defeated_centers.clear()
+	if game == null:
+		return
+	var seq_value = game.get("action_seq")
+	var seq: int = int(seq_value) if seq_value != null else int(game.tick)
+	if seq < _last_action_seq:
+		# Game.restart reuses the same object but starts a new event sequence.
+		_last_action_seq = -1
+		_last_event_seq = -1
+		_events.clear()
+		_hero_positions.clear()
+		_actor_positions.clear()
+		_waypoints.clear()
+		_last_wave = -1
+		_last_slot = -2
+	for hero in game.heroes:
+		var gear: Dictionary = {}
+		for item in HeroRules.equipment_summary(hero):
+			if bool(item.get("active", true)):
+				gear[str(item.slot)] = str(item.visual_key)
+		_hero_equipment[str(hero.get("instance_id", hero.id))] = gear
+		var effects: Dictionary = hero.get("effects", {}).duplicate()
+		effects.has_spore = hero.has("spore")
+		if hero.has("cursed_cup"):
+			effects.cursed_cup = hero.cursed_cup
+		effects.stored_spell = bool(hero.get("equipment_state", {}).get("stored_spell", false))
+		effects.cover_active = int(effects.get("cover_until", -1)) >= int(game.combat_tick)
+		_hero_effects[str(hero.get("instance_id", hero.id))] = effects
+	var actors = game.get("defenders")
+	if actors is Array:
+		for actor_data in actors:
+			if int(actor_data.get("hp", 0)) <= 0:
+				if str(actor_data.get("phase_id", "")) == "base":
+					_defeated_centers[int(actor_data.get("source_slot", -1))] = true
+				continue
+			var slot: int = int(actor_data.get("display_slot", actor_data.get("source_slot", game.current_slot)))
+			if str(actor_data.get("phase_id", "")) == "throne_guard" or str(actor_data.get("id", "")) == "lord":
+				slot = game.rooms.size()
+			if not _slot_actors.has(slot):
+				_slot_actors[slot] = []
+			_slot_actors[slot].append(actor_data)
+	elif not game.defender.is_empty():
+		_slot_actors[int(game.current_slot)] = [game.defender]
+	for slot in range(game.rooms.size()):
+		var room: Dictionary = game.rooms[slot]
+		if room.is_empty():
+			continue
+		var actors_here: Array = _slot_actors.get(slot, [])
+		var state: Dictionary = (actors_here[0] if not actors_here.is_empty() else room).duplicate()
+		state.ammo = int(room.get("evolution_memory", {}).get("ammo", 0))
+		_room_visual_state[slot] = state
+	if seq != _last_action_seq:
+		_last_action_seq = seq
+		_hit_flash = 1.0 if str(game.phase) == "raid" else 0.0
+		var combat_events = game.get("combat_events")
+		if combat_events is Array:
+			for event in combat_events:
+				var event_seq: int = int(event.get("seq", 0))
+				if event_seq <= _last_event_seq:
+					continue
+				_last_event_seq = event_seq
+				_events.append({"event": event.duplicate(true), "age": 0.0})
+			while _events.size() > 24:
+				_events.pop_front()
 	queue_redraw()
 
 
@@ -87,16 +200,26 @@ func _on_resized() -> void:
 
 
 func _process(delta: float) -> void:
-	_clock += delta
-	_hit_flash = maxf(0.0, _hit_flash - delta * 3.6)
+	var visual_delta: float = 0.0 if animation_paused else delta * animation_speed
+	_frame_blend = minf(1.0, visual_delta * 12.0)
+	_clock += visual_delta
+	_hit_flash = maxf(0.0, _hit_flash - visual_delta * 3.6)
+	for item in _events:
+		item.age += visual_delta
+	while not _events.is_empty() and float(_events[0].age) > 0.8:
+		_events.pop_front()
 	if game != null and not cinematic:
-		_update_party(delta)
+		_update_party(visual_delta)
 	queue_redraw()
 
 
 func _update_party(delta: float) -> void:
 	var phase: String = str(game.phase)
 	var current: int = int(game.current_slot)
+	if int(game.wave) != _last_wave:
+		_hero_positions.clear()
+		_actor_positions.clear()
+		_events.clear()
 	if int(game.wave) != _last_wave or (phase == "raid" and _last_phase != "raid"):
 		_party_position = Vector2(18, _floor_walk_y(0))
 		_party_direction = 1.0
@@ -137,12 +260,6 @@ func _update_party(delta: float) -> void:
 				_party_position = _party_position.move_toward(target, travel)
 				travel = 0.0
 	_last_phase = phase
-	var action = game.get("last_action")
-	if action is Dictionary:
-		var signature: String = str(action) + ":" + str(game.tick)
-		if signature != _last_action:
-			_last_action = signature
-			_hit_flash = 1.0 if phase == "raid" else 0.0
 
 
 func _position_for_slot(index: int) -> Vector2:
@@ -183,14 +300,23 @@ func _draw() -> void:
 	if game == null:
 		return
 	_hit_rects.clear()
+	_hit_rects.resize(game.rooms.size())
+	_actor_positions.clear()
 	draw_rect(Rect2(Vector2.ZERO, size), Color("171c1d"))
-	_draw_bedrock(Rect2(Vector2.ZERO, size))
-	for floor_index in range(int(game.floor_count)):
+	var visible_start: int = 0
+	var visible_end: int = int(game.floor_count)
+	if get_parent() is ScrollContainer:
+		var scroll := get_parent() as ScrollContainer
+		visible_start = maxi(0, floori(float(scroll.scroll_vertical) / FLOOR_HEIGHT) - 1)
+		visible_end = mini(int(game.floor_count), ceili((scroll.scroll_vertical + scroll.size.y) / FLOOR_HEIGHT) + 1)
+	_draw_bedrock(Rect2(Vector2(0, visible_start * FLOOR_HEIGHT), Vector2(size.x, (visible_end - visible_start) * FLOOR_HEIGHT + THRONE_HEIGHT)))
+	for floor_index in range(visible_start, visible_end):
 		_draw_floor(floor_index)
 	_draw_combos()
 	_draw_throne()
 	if show_party and str(game.phase) in ["raid", "result", "defeat"]:
 		_draw_party()
+	_draw_event_feedback()
 	if tutorial_slot >= 0 and tutorial_slot < game.rooms.size():
 		var target: Rect2 = _slot_rect(tutorial_slot).grow(-3)
 		var glow: Color = GOLD
@@ -231,7 +357,7 @@ func _draw_floor(floor_index: int) -> void:
 	for column in range(5):
 		var index: int = floor_index * 5 + column
 		var rect: Rect2 = _slot_rect(index)
-		_hit_rects.append(rect)
+		_hit_rects[index] = rect
 		_draw_chamber(rect, index)
 	var platform_inset: float = 13.0 if compact else 40.0
 	_draw_platform(Rect2(platform_inset, top + 144, size.x - platform_inset * 2, 15), floor_index)
@@ -264,19 +390,30 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	if index % 2 == 0:
 		_draw_torch(Vector2(rect.end.x - 17, ceiling + 38), float(index))
 	if room.is_empty():
-		_draw_empty_room(rect, hovered)
+		if _reserved_snapshot.has(index):
+			_draw_reserved_growth(rect, index)
+		else:
+			_draw_empty_room(rect, hovered)
 		return
-	var stats: Dictionary = game.room_stats(index)
+	var stats: Dictionary = _room_snapshot[index] if index < _room_snapshot.size() else {}
+	if stats.is_empty():
+		return
 	var id: String = str(stats.id)
 	var tint: Color = Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE
-	_draw_room_props(id, rect, cleared)
+	var path: String = str(stats.get("evolution_path", ""))
+	if path.is_empty():
+		_draw_room_props(id, rect, cleared)
+	else:
+		_draw_evolution_props(rect, index, stats, cleared)
 	var figure_size: float = clampf(rect.size.x * 0.47, 38, 55)
 	if id == "ogre":
 		figure_size *= 1.12
 	var offset: float = 15.0 * _floor_direction(index / 5) if active else 0.0
 	var monster_at: Vector2 = center + Vector2(offset, -8)
 	var idle: float = sin(_clock * 2.1 + index * 1.7) * 1.2
-	if id == "poison":
+	if not path.is_empty() or _slot_actors.has(index):
+		_draw_evolution_actors(rect, index, stats, cleared)
+	elif id == "poison":
 		_icon(id, Rect2(monster_at.x - figure_size / 2, monster_at.y - figure_size - 1, figure_size, figure_size), tint)
 		_draw_poison_motes(monster_at, float(index), cleared)
 	elif str(stats.get("kind", "")) != "monster":
@@ -297,8 +434,9 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	if int(stats.hp) > 0:
 		var max_hp: int = int(stats.hp)
 		var current_hp: int = int(room.get("current_hp", max_hp))
-		if active and not game.defender.is_empty():
-			current_hp = int(game.defender.get("hp", current_hp))
+		if _slot_actors.has(index):
+			current_hp = _actors_health(index, "hp")
+			max_hp = _actors_health(index, "max_hp")
 		_bar(Rect2(center.x - 21, ground - 3, 42, 3), float(current_hp) / maxf(1, max_hp), CORAL, 0.4 if cleared else 1.0)
 	if cleared:
 		_draw_cleared_mark(Vector2(rect.position.x + 18, ground - 12), Color("656966"))
@@ -328,6 +466,9 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 		draw_rect(rect.grow(-3), TEAL, false, 2.0)
 	_text(str(index % 5 + 1), Vector2(rect.position.x + 7, top + 16), 9, MUTED)
 	if room.is_empty():
+		if _reserved_snapshot.has(index):
+			_draw_reserved_growth(rect, index)
+			return
 		var preview_size: float = minf(30.0, rect.size.x - 14.0)
 		if not selected_room.is_empty() and str(game.phase) == "prepare":
 			_icon(selected_room, Rect2(Vector2(center_x - preview_size / 2, top + 43), Vector2.ONE * preview_size), Color(0.66, 0.83, 0.74, 0.4 if hovered else 0.22))
@@ -335,8 +476,11 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 			draw_line(Vector2(center_x - 6, top + 60), Vector2(center_x + 6, top + 60), MUTED, 1.5)
 			draw_line(Vector2(center_x, top + 54), Vector2(center_x, top + 66), MUTED, 1.5)
 		_center_text_fitted("СВОБОДНО", Vector2(center_x, top + 32), 9, MUTED, rect.size.x - 8)
+		_draw_reserved_growth(rect, index)
 		return
-	var stats: Dictionary = game.room_stats(index)
+	var stats: Dictionary = _room_snapshot[index] if index < _room_snapshot.size() else {}
+	if stats.is_empty():
+		return
 	var rank: int = int(room.get("rank", 1))
 	var rank_text: String = str(rank)
 	var rank_width: float = maxf(16.0, _font.get_string_size(rank_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x + 6)
@@ -346,15 +490,20 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 	var figure_size: float = clampf(rect.size.x - 16.0, 28.0, 38.0)
 	var idle: float = sin(_clock * 2.1 + index * 1.7) * 1.0 if not cleared else 0.0
 	var figure: Rect2 = Rect2(center_x - figure_size / 2, top + 44 + idle, figure_size, figure_size)
-	_icon(str(stats.id), figure, Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE)
+	if str(stats.get("evolution_path", "")).is_empty() and not _slot_actors.has(index):
+		_icon(str(stats.id), figure, Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE)
+	else:
+		_draw_evolution_props(Rect2(rect.position + Vector2(0, 26), Vector2(rect.size.x, 65)), index, stats, cleared)
+		_draw_evolution_actors(rect, index, stats, cleared)
 	if active:
 		_draw_defender_wards(figure.get_center(), figure_size / 70.0)
 		_draw_combat_sparks(figure.get_center())
 	if int(stats.hp) > 0:
 		var max_hp: int = int(stats.hp)
 		var current_hp: int = int(room.get("current_hp", max_hp))
-		if active and not game.defender.is_empty():
-			current_hp = int(game.defender.get("hp", current_hp))
+		if _slot_actors.has(index):
+			current_hp = _actors_health(index, "hp")
+			max_hp = _actors_health(index, "max_hp")
 		var bar_width: float = minf(34.0, rect.size.x - 14.0)
 		_bar(Rect2(center_x - bar_width / 2, top + 84, bar_width, 4), float(current_hp) / maxf(1, max_hp), CORAL, 0.4 if cleared else 1.0)
 	if cleared:
@@ -367,6 +516,174 @@ func _draw_direction_arrow(origin: Vector2, tip: Vector2, color: Color) -> void:
 	var side: Vector2 = Vector2(-direction.y, direction.x)
 	draw_line(origin, tip, color, 1.5, true)
 	draw_polyline(PackedVector2Array([tip - direction * 5 + side * 4, tip, tip - direction * 5 - side * 4]), color, 1.5, true)
+
+
+func _actors_health(slot: int, key: String) -> int:
+	var total: int = 0
+	for actor_data in _slot_actors.get(slot, []):
+		if not bool(actor_data.get("untargetable", false)):
+			total += int(actor_data.get(key, 0))
+	return total
+
+
+func _draw_reserved_growth(rect: Rect2, index: int) -> void:
+	if not _reserved_snapshot.has(index):
+		return
+	var owner: int = int(_reserved_snapshot[index])
+	if owner < 0 or owner >= game.rooms.size() or game.rooms[owner].is_empty():
+		return
+	if str(game.rooms[owner].get("status", "")) == "cleared" or _defeated_centers.has(owner):
+		return
+	var anchor: Vector2 = rect.get_center() + Vector2(0, 20)
+	_center_text("ПАСТЬ", Vector2(rect.get_center().x, rect.end.y - 8), 8, Color("b98c94"))
+	draw_line(Vector2(_slot_rect(owner).get_center().x, anchor.y), anchor, Color(0.65, 0.28, 0.35, 0.6), 5, true)
+	var mouths: Array = _slot_actors.get(index, [])
+	if mouths.is_empty():
+		# Before combat the reserved footprint previews the coming extension.
+		EvolutionVisuals.actor(self, anchor, 0.55 if compact else 0.85, "mimic_living_chamber", "appendage", {}, _clock)
+		return
+	for mouth in mouths:
+		if str(mouth.get("phase_id", "")) != "appendage":
+			continue
+		_actor_positions[str(mouth.actor_id)] = anchor + Vector2(0, -14)
+		EvolutionVisuals.actor(self, anchor, 0.55 if compact else 0.85, "mimic_living_chamber", "appendage", mouth.get("effects", {}), _clock)
+	# Appendages share the heart: no independent HP or target marker here.
+
+
+func _draw_evolution_props(rect: Rect2, index: int, stats: Dictionary, cleared: bool) -> void:
+	var state: Dictionary = _room_visual_state.get(index, {})
+	var inset: Vector2 = Vector2(3, 5) if compact else Vector2(7, 22)
+	var canvas_rect := Rect2(rect.position + inset, rect.size - inset * 2)
+	EvolutionVisuals.chamber(self, canvas_rect, str(stats.get("evolution_path", "")), int(stats.get("evolution_stage", 2)), _clock, cleared, state)
+	if int(state.get("effects", {}).get("fire_ticks", 0)) > 0:
+		var ground: float = rect.end.y - 19
+		for i in range(5):
+			var at := Vector2(rect.position.x + rect.size.x * (i + 1) / 6.0, ground)
+			_draw_torch(at, i, 0.6)
+
+
+func _draw_evolution_actors(rect: Rect2, index: int, stats: Dictionary, cleared: bool) -> void:
+	if str(stats.get("kind", "")) != "monster":
+		return
+	var path: String = str(stats.get("evolution_path", ""))
+	if path == "wraith_throne_guardian":
+		return
+	var actors: Array = _slot_actors.get(index, [])
+	var live: bool = not actors.is_empty()
+	if cleared and not live:
+		_draw_rubble(Vector2(rect.get_center().x, rect.position.y + (76 if compact else 98)), 0.75)
+		return
+	if not live:
+		actors = [{"phase_id": "base", "path_id": path, "effects": {}, "hp": stats.get("hp", 0), "max_hp": stats.get("hp", 0)}]
+	var count: int = actors.size()
+	for i in range(count):
+		var actor_data: Dictionary = actors[i]
+		var offset: float = minf(22, rect.size.x * 0.15) * _floor_direction(index / 5) if live and not compact else 0.0
+		var at := Vector2(rect.get_center().x + offset + (i - (count - 1) * 0.5) * minf(27, rect.size.x / (count + 1)), rect.position.y + (76 if compact else 98))
+		var scale_factor: float = (0.48 if compact else 0.78) * (0.8 if count > 1 else 1.0)
+		var phase: String = str(actor_data.get("phase_id", "base"))
+		var effects: Dictionary = actor_data.get("effects", {})
+		var tint: Color = Color(0.54, 0.56, 0.54, 0.40) if cleared else Color.WHITE
+		if "spirit" in actor_data.get("tags", []) or bool(effects.get("spectral", false)):
+			tint = Color(0.72, 0.65, 0.93, 0.6 if not cleared else 0.25)
+		if live:
+			_actor_positions[str(actor_data.get("actor_id", ""))] = at + Vector2(0, -20 * scale_factor)
+			if count > 1:
+				draw_circle(at + Vector2(0, -14 * scale_factor), 17 * scale_factor, Color("111a1e"))
+				draw_arc(at + Vector2(0, -14 * scale_factor), 17 * scale_factor, 0, TAU, 20, Color(TEAL, 0.5), 1, true)
+		var rendered: bool = EvolutionVisuals.actor(self, at, scale_factor, str(actor_data.get("path_id", path)), phase, effects, _clock)
+		if not rendered:
+			var icon_id: String = str(actor_data.get("servant_class", stats.id)) if phase == "servant" else str(stats.id)
+			var icon_size: float = 46 * scale_factor
+			_icon(icon_id, Rect2(at + Vector2(-icon_size / 2, -icon_size), Vector2.ONE * icon_size), tint)
+		if not live:
+			continue
+		_draw_defender_wards(at + Vector2(0, -24 * scale_factor), scale_factor * 0.7, actor_data)
+		if count > 1 and not bool(actor_data.get("untargetable", false)):
+			_bar(Rect2(at + Vector2(-10, 3), Vector2(20, 3)), float(actor_data.hp) / maxf(1, float(actor_data.max_hp)), CORAL)
+		var preparation: Dictionary = effects.get("preparing", {})
+		if not preparation.is_empty():
+			var ratio: float = 1.0 - float(preparation.get("remaining", 0)) / maxf(1, float(preparation.get("total", 1)))
+			_bar(Rect2(at + Vector2(-15, -42 * scale_factor), Vector2(30, 3)), ratio, GOLD)
+		elif int(effects.get("cocoon_ready_in", 0)) > 0:
+			var total: float = float(effects.get("cocoon_cooldown_total", effects.cocoon_ready_in))
+			_bar(Rect2(at + Vector2(-15, -42 * scale_factor), Vector2(30, 3)), 1.0 - float(effects.cocoon_ready_in) / maxf(1, total), Color("c9d3c2"))
+
+
+func _draw_event_feedback() -> void:
+	# A bounded event queue consumes only new seq IDs. It never infers damage.
+	for item in _events:
+		var event: Dictionary = item.event
+		var progress: float = clampf(float(item.age) / 0.7, 0, 1)
+		var alpha: float = 1.0 - progress
+		var kind: String = str(event.get("kind", ""))
+		var target_id: String = str(event.get("target", ""))
+		var actor_id: String = str(event.get("actor", ""))
+		var slot: int = int(event.get("source_slot", game.current_slot))
+		var fallback := _position_for_slot(slot) + Vector2(0, -25)
+		var target: Vector2 = _hero_positions.get(target_id, _actor_positions.get(target_id, fallback))
+		var source: Vector2 = _actor_positions.get(actor_id, _hero_positions.get(actor_id, fallback))
+		var tint := Color(TEAL if "heal" in kind else GOLD if "shield" in kind else CORAL, alpha)
+		var amount: int = int(event.get("amount", 0))
+		var meta: Dictionary = event.get("meta", {})
+		if amount != 0 and kind in ["attack", "heal", "steal_heal", "poison", "cleave", "chain", "bolt"]:
+			_center_text(("+" if "heal" in kind else "−") + str(absi(amount)), target + Vector2(0, -24 - progress * 19), 10 if compact else 12, tint)
+		var special: String = str(meta.get("prepared_kind", meta.get("ability", "")))
+		if kind == "attack" and _draw_ability_feedback(special, source, target, progress, alpha):
+			pass
+		elif kind == "attack" and str(meta.get("damage_type", "")) == "magic":
+			var spark: Vector2 = source.lerp(target, minf(1, progress * 2.5)) + Vector2(0, -12)
+			draw_line(source + Vector2(0, -12), spark, Color("ae9bdd", alpha * 0.6), 2, true)
+			draw_circle(spark, (5 if bool(meta.get("charged", false)) else 2.5), Color("c5c1f1", alpha))
+		elif "bolt" in kind or "bomb" in kind or "spell" in kind or "stone" in kind or "shot" in kind or "transfer" in kind:
+			var p: Vector2 = source.lerp(target, minf(1, progress * 2))
+			draw_line(source.lerp(p, 0.7), p, tint, 2, true)
+			draw_circle(p, 2.5 if compact else 4, tint)
+		elif kind in ["rotate", "spawn", "revive"] or "transform" in kind or "hatch" in kind or "cocoon" in kind or "hypno" in kind:
+			draw_arc(target, 12 + progress * 12, 0, TAU, 18, tint, 1.6, true)
+		elif "scream" in kind or "cleanse" in kind or "shock" in kind:
+			draw_arc(source, 10 + progress * 60, -PI * 0.7, PI * 0.7, 24, tint, 2, true)
+		elif kind in ["parry", "decoy", "armor_break", "disarm", "swap_weapon"]:
+			draw_polyline(PackedVector2Array([target + Vector2(-9, -24), target + Vector2(0, -14), target + Vector2(9, -24)]), Color(GOLD, alpha), 2, true)
+		if int(meta.get("shield_absorbed", 0)) > 0:
+			draw_arc(target + Vector2(0, -15), 19, PI * 0.6, PI * 1.4, 14, Color(TEAL, alpha), 3, true)
+
+
+func _draw_ability_feedback(ability: String, source: Vector2, target: Vector2, progress: float, alpha: float) -> bool:
+	# Event metadata describes an attack that actually happened. These traces
+	# do not schedule a second strike or add their own damage/timers to the model.
+	var metal := Color("a8bdc3", alpha)
+	var red := Color(CORAL, alpha)
+	var reach: float = 0.65 if compact else 1.0
+	match ability:
+		"boulder":
+			var at: Vector2 = source.lerp(target, minf(1, progress * 2)) + Vector2(0, -sin(minf(1, progress * 2) * PI) * 35 * reach - 10)
+			var radius: float = 7 * reach
+			draw_colored_polygon(PackedVector2Array([at + Vector2(-radius, -radius * 0.5), at + Vector2(radius * 0.2, -radius), at + Vector2(radius, 0), at + Vector2(radius * 0.2, radius), at + Vector2(-radius, radius * 0.4)]), metal)
+			draw_line(at - Vector2(radius * 0.6, 0), at + Vector2(radius * 0.2, -radius * 0.4), Color(INK, alpha), 1.3)
+		"guillotine":
+			var at := target + Vector2(0, -45 + minf(1, progress * 2) * 35) * reach
+			draw_line(at + Vector2(-13, -20) * reach, at + Vector2(-13, 16) * reach, Color(GOLD, alpha * 0.6), 1.5)
+			draw_line(at + Vector2(13, -20) * reach, at + Vector2(13, 16) * reach, Color(GOLD, alpha * 0.6), 1.5)
+			draw_colored_polygon(PackedVector2Array([at + Vector2(-11, -7) * reach, at + Vector2(11, -7) * reach, at + Vector2(11, 0) * reach, at + Vector2(-11, 9) * reach]), metal)
+		"earthshaker":
+			var width: float = (15 + progress * 80) * reach
+			var floor_at := source + Vector2(0, 16)
+			for side in [-1, 1]:
+				draw_polyline(PackedVector2Array([floor_at, floor_at + Vector2(side * width * 0.35, -6), floor_at + Vector2(side * width * 0.65, 3), floor_at + Vector2(side * width, -7)]), Color(GOLD, alpha), 2, true)
+		"cleaver":
+			draw_arc(target + Vector2(0, -12), (13 + progress * 25) * reach, PI * 0.85, PI * 1.9, 18, metal, 4 * reach, true)
+			draw_arc(target + Vector2(0, -12), (10 + progress * 24) * reach, PI * 0.85, PI * 1.9, 18, red, 2, true)
+		"banshee":
+			for i in range(3):
+				draw_arc(source + Vector2(0, -12), (10 + i * 9 + progress * 55) * reach, 0, TAU, 24, Color("ae9bdd", alpha / (1 + i * 0.4)), 2, true)
+		"hellfire":
+			var tip: Vector2 = source.lerp(target + Vector2(0, 12), minf(1, progress * 3))
+			draw_colored_polygon(PackedVector2Array([source, tip + Vector2(0, -10) * reach, tip + Vector2(0, 7) * reach]), Color(CORAL, alpha * 0.55))
+			draw_line(source, tip, Color(GOLD, alpha), 3 * reach, true)
+		_:
+			return false
+	return true
 
 
 func _draw_cleared_mark(at: Vector2, color: Color) -> void:
@@ -582,6 +899,8 @@ func _draw_throne() -> void:
 	_draw_throne_furniture(center, 0.82 if compact else 1.0)
 	var lord_tint: Color = Color.WHITE if int(game.lord.hp) > 0 else Color(0.42, 0.42, 0.42, 0.75)
 	_icon(lord_icon, Rect2(center + (Vector2(-25, -54) if compact else Vector2(-31, -65)), Vector2.ONE * (50 if compact else 62)), lord_tint)
+	_actor_positions["lord"] = center + Vector2(0, -30)
+	_draw_throne_guards(center)
 	if active:
 		_draw_defender_wards(center + Vector2(0, -34), 1.12)
 	_draw_torch(Vector2(hall.position.x + (17 if compact else 41), top + 72), 22, 0.8 if compact else 1.25)
@@ -612,6 +931,23 @@ func _draw_throne_furniture(at: Vector2, scale_factor: float) -> void:
 	draw_rect(Rect2(at + Vector2(-42, 14) * scale_factor, Vector2(84, 7) * scale_factor), Color("67624c"))
 
 
+func _draw_throne_guards(center: Vector2) -> void:
+	var guards: Array = []
+	for actor_data in _slot_actors.get(game.rooms.size(), []):
+		if str(actor_data.get("phase_id", "")) == "throne_guard":
+			guards.append(actor_data)
+	if guards.is_empty() and (str(game.phase) == "prepare" or (int(game.current_slot) < game.rooms.size() and str(game.phase) in ["raid", "result"])):
+		if _throne_guard_slot >= 0:
+			guards.append({})
+	for i in range(guards.size()):
+		var at := center + Vector2((-42 - i * 25) * _floor_direction(game.floor_count), 0)
+		var guard: Dictionary = guards[i]
+		EvolutionVisuals.actor(self, at, 0.7 if compact else 0.95, "wraith_throne_guardian", "throne_guard", {}, _clock)
+		if not guard.is_empty():
+			_actor_positions[str(guard.get("actor_id", ""))] = at + Vector2(0, -25)
+			_bar(Rect2(at + Vector2(-14, -51), Vector2(28, 3)), float(guard.hp) / maxf(1, float(guard.max_hp)), Color("ae9bdd"))
+
+
 func _draw_banner(at: Vector2, color: Color, width: float, height: float) -> void:
 	draw_colored_polygon(PackedVector2Array([at, at + Vector2(width, 0), at + Vector2(width, height), at + Vector2(width / 2, height - 8), at + Vector2(0, height)]), color)
 	draw_line(at + Vector2(-3, 1), at + Vector2(width + 3, 1), GOLD.darkened(0.35), 3)
@@ -634,16 +970,18 @@ func _draw_party() -> void:
 		return
 	for index in range(living.size() - 1, -1, -1):
 		var hero: Dictionary = living[index]
-		var hero_at: Vector2 = _party_position + Vector2(-index * 12.5 * _party_direction, -index * 4)
+		var goal: Vector2 = _party_position + Vector2(-index * 19.5 * _party_direction, -index * 4)
+		var hero_at: Vector2 = _animated_hero_position(hero, goal)
 		var foot_swing: float = sin(_clock * (14 if walking else 2.6) + index) * (3 if walking else 0.5)
 		var bob: float = absf(foot_swing) * 0.5
-		var definition: Dictionary = Content.hero(str(hero.id))
+		var definition: Dictionary = _hero_definitions.get(str(hero.id), {})
 		var body_color: Color = definition.color.darkened(0.48)
 		draw_ellipse_shadow(hero_at + Vector2(0, 7), 10)
 		draw_line(hero_at + Vector2(-3, 0), hero_at + Vector2(-5 + foot_swing, 8), body_color, 4)
 		draw_line(hero_at + Vector2(3, 0), hero_at + Vector2(5 - foot_swing, 8), body_color, 4)
 		draw_rect(Rect2(hero_at + Vector2(-6, -10 - bob), Vector2(12, 13)), body_color)
 		_icon(str(hero.id), Rect2(hero_at + Vector2(-14, -32 - bob), Vector2(28, 28)))
+		EvolutionVisuals.hero_equipment(self, hero_at + Vector2(0, -bob), 0.75, _hero_equipment.get(str(hero.get("instance_id", hero.id)), {}), _hero_effects.get(str(hero.get("instance_id", hero.id)), {}), _clock)
 		_bar(Rect2(hero_at + Vector2(-11, -38 - bob), Vector2(22, 3)), float(hero.hp) / maxf(1, int(hero.max_hp)), TEAL)
 		if int(hero.get("poison_ticks", 0)) > 0:
 			draw_circle(hero_at + Vector2(11, -29), 3, Color("92b957"))
@@ -657,6 +995,7 @@ func _draw_party() -> void:
 		if str(game.get("active_target_id")) == str(hero.get("instance_id", "")) and str(game.phase) == "raid":
 			var marker: Vector2 = hero_at + Vector2(0, -45 - bob)
 			draw_colored_polygon(PackedVector2Array([marker + Vector2(-3, -4), marker + Vector2(3, -4), marker]), CORAL)
+	_draw_party_links(living)
 
 
 func _draw_compact_party(living: Array[Dictionary], walking: bool) -> void:
@@ -670,7 +1009,9 @@ func _draw_compact_party(living: Array[Dictionary], walking: bool) -> void:
 		var bob: float = sin(_clock * (14 if walking else 2.6) + index) * (1.2 if walking else 0.3)
 		var at: Vector2 = _party_position + Vector2((column - (row_count - 1) * 0.5) * stride * -_party_direction, 20 - row * (icon_size + 5) + bob)
 		at.x = clampf(at.x, icon_size * 0.5 + 2, size.x - icon_size * 0.5 - 2)
+		at = _animated_hero_position(hero, at)
 		_icon(str(hero.id), Rect2(at + Vector2(-icon_size * 0.5, -icon_size), Vector2.ONE * icon_size))
+		EvolutionVisuals.hero_equipment(self, at, icon_size / 35.0, _hero_equipment.get(str(hero.get("instance_id", hero.id)), {}), _hero_effects.get(str(hero.get("instance_id", hero.id)), {}), _clock)
 		_bar(Rect2(at + Vector2(-icon_size * 0.5, 2), Vector2(icon_size, 2)), float(hero.hp) / maxf(1, int(hero.max_hp)), TEAL)
 		if int(hero.get("poison_ticks", 0)) > 0:
 			draw_circle(at + Vector2(icon_size * 0.5 - 1, -icon_size + 1), 2, Color("92b957"))
@@ -678,6 +1019,31 @@ func _draw_compact_party(living: Array[Dictionary], walking: bool) -> void:
 			draw_line(at + Vector2(-icon_size * 0.4, -icon_size + 1), at + Vector2(icon_size * 0.4, -1), Color("b4a0d5"), 1.5)
 		if str(game.get("active_target_id")) == str(hero.get("instance_id", "")) and str(game.phase) == "raid":
 			draw_rect(Rect2(at + Vector2(-icon_size * 0.5 - 1, -icon_size - 1), Vector2.ONE * (icon_size + 2)), CORAL, false, 1)
+	_draw_party_links(living)
+
+
+func _animated_hero_position(hero: Dictionary, goal: Vector2) -> Vector2:
+	var id: String = str(hero.get("instance_id", hero.get("id", "")))
+	var previous: Vector2 = _hero_positions.get(id, goal)
+	var at: Vector2 = previous.lerp(goal, _frame_blend)
+	_hero_positions[id] = at
+	return at
+
+
+func _draw_party_links(living: Array[Dictionary]) -> void:
+	for hero in living:
+		var id: String = str(hero.get("instance_id", ""))
+		var at: Vector2 = _hero_positions.get(id, _party_position)
+		var effects: Dictionary = hero.get("effects", {})
+		for other in effects.get("chain_with", []):
+			if str(other) < id or not _hero_positions.has(str(other)):
+				continue
+			var target: Vector2 = _hero_positions[str(other)]
+			draw_line(at + Vector2(0, -9), target + Vector2(0, -9), GOLD, 2, true)
+			for i in range(1, 5):
+				draw_arc(at.lerp(target, i / 5.0) + Vector2(0, -9), 2, 0, TAU, 8, Color("a8bdc3"), 1)
+		if int(effects.get("partition_ticks", 0)) > 0:
+			draw_line(at + Vector2(9, -36), at + Vector2(9, 4), MUTED, 3)
 
 
 func draw_ellipse_shadow(at: Vector2, radius: float) -> void:
@@ -772,11 +1138,11 @@ func _lord_visual() -> Dictionary:
 	return Lords.get_lord(str(archetype))
 
 
-func _draw_defender_wards(at: Vector2, scale_factor: float = 1.0) -> void:
+func _draw_defender_wards(at: Vector2, scale_factor: float = 1.0, actor_data: Dictionary = {}) -> void:
 	# Only renders existing model state. Casting and expiry belong to DungeonGame.
-	if game == null or game.defender.is_empty():
+	if game == null or (actor_data.is_empty() and game.defender.is_empty()):
 		return
-	var current: Dictionary = game.defender
+	var current: Dictionary = game.defender if actor_data.is_empty() else actor_data
 	var radius: float = 30.0 * scale_factor
 	if int(current.get("shield", 0)) > 0:
 		draw_arc(at, radius, 0, TAU, 40, Color(0.46, 0.75, 0.79, 0.8), 2.0 * scale_factor, true)
@@ -966,7 +1332,7 @@ func _get_tooltip(at_position: Vector2) -> String:
 
 func _draw_combos() -> void:
 	# Model decides the pair and direction, including right-to-left floors.
-	for combo in game.active_combos():
+	for combo in _combo_snapshot:
 		var first: Rect2 = _slot_rect(int(combo.from))
 		var second: Rect2 = _slot_rect(int(combo.to))
 		var direction: float = signf(second.get_center().x - first.get_center().x)

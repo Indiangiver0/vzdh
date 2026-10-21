@@ -1,0 +1,93 @@
+{
+  "purpose": "Acceptance checks from approved mechanics; execute after integration with isolated state",
+  "cases": [
+    {
+      "id": "catalog",
+      "expect": "16 rooms, 3 approved paths each plus the approved cursed gift as fourth mimic path; 49 paths and 147 stages; rejected proposals absent"
+    },
+    {
+      "id": "all_paths",
+      "expect": "Every path at each stage enters a real encounter and reaches a finite outcome without runtime errors"
+    },
+    {
+      "id": "brood_budget",
+      "expect": "Mother, finite offspring and revival share one room XP and loot award"
+    },
+    {
+      "id": "gallery_budget",
+      "expect": "Two adjacent defenders act together, each owner rewards once, second slot does not fight again"
+    },
+    {
+      "id": "possessed_form",
+      "expect": "Body becomes spirit once; spirit takes physical x0.2 and magic x1.5; one room award"
+    },
+    {
+      "id": "throne_guard",
+      "expect": "Altar is passed without combat; reserved spirit absorbs attacks at throne while Lord attacks"
+    },
+    {
+      "id": "cocoon",
+      "expect": "One hero loses actions for 2 game seconds, cooldown8; caster action spent; caster death releases target; pause and speed preserve simulated result"
+    },
+    {
+      "id": "rotation",
+      "expect": "Wounded front below30% swaps with eligible physical ally at60%+, costs one normal attack, once per encounter; targets track IDs"
+    },
+    {
+      "id": "werewolf_release",
+      "expect": "Lethal hit before transform prevents it; transform retains HP; caster death immediately restores living knight to front"
+    },
+    {
+      "id": "last_prayer",
+      "expect": "Snapshot at death respects silence/cocoon/partitions; one living target, no resurrection or repeated trigger"
+    },
+    {
+      "id": "equipment_slots",
+      "expect": "Two slots only; replacing, stealing and returning items never duplicates stats or resets used ability charges"
+    },
+    {
+      "id": "special_schedule",
+      "expect": "Party starts with at most0/1/2/3 special items at waves1/10/20/30, different owners; preview does not reroll"
+    },
+    {
+      "id": "growth",
+      "expect": "Identical baseline100HP/10DMG gives approx155/13 at11,223/17 at21,499/30 at51; legacy level and pressure do not stack"
+    },
+    {
+      "id": "armor",
+      "expect": "Damage10 armor7 leaves5; damage20 armor7 leaves13; magic and bypass stay distinct"
+    },
+    {
+      "id": "linked_damage",
+      "expect": "Chain transfers conserve total damage and never recurse; cleave transfers surplus only once"
+    },
+    {
+      "id": "sapper",
+      "expect": "Prepared trap remains disarmed after rogue death and charges one tool exactly once"
+    },
+    {
+      "id": "reserves",
+      "expect": "Ballista ammo adds once per wave, finite cap; moving/previewing never creates ammo"
+    },
+    {
+      "id": "living_chamber",
+      "expect": "Only empty same-floor neighbours reserved; build/move respects occupied growth; selling centre releases it"
+    },
+    {
+      "id": "snake_links",
+      "expect": "Adjacency follows route on both directions and never crosses floors; empty rooms break ordinary links"
+    },
+    {
+      "id": "preview_purity",
+      "expect": "Repeated trees/stats/previews do not change RNG, charges, HP, gold or occupied cells"
+    },
+    {
+      "id": "event_bounds",
+      "expect": "Events have monotonic IDs, bounded lifetime, no retained history across long waves"
+    },
+    {
+      "id": "desktop_mobile",
+      "expect": "New trees/equipment fit1280x800 and390x844; double tap, back buttons and touch scrolling remain usable"
+    }
+  ]
+}
