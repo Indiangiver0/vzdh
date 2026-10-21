@@ -1742,7 +1742,7 @@ func _build_mobile_lords() -> void:
 func _build_menu() -> void:
 	var topline = HBoxContainer.new()
 	page.add_child(topline)
-	var edition = _eyebrow("NO HERO RETURNS     /     ДЕРЕВЬЯ РАЗВИТИЯ")
+	var edition = _eyebrow("NO HERO RETURNS v1.0.5     /     ДЕРЕВЬЯ РАЗВИТИЯ")
 	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	topline.add_child(edition)
 	topline.add_child(_label("ДУШИ  %d" % int(lords_profile.souls), 12, VIOLET))
