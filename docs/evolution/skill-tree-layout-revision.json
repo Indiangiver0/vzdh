@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "updated": "2026-10-22",
+  "status": "full_snowflake_proposal_pending_approval",
+  "user_authorized_prerequisite_reorganization": true,
+  "preserve_all_120_skill_effects_and_prices": true,
+  "old_catalog_prerequisites": "historical_baseline_until_new_graph_is_approved",
+  "current_deliverable": "full_120_node_snowflake_with_six_straight_rays_short_twigs_and_six_local_bridges",
+  "latest_user_preference": "return_to_first_snowflake_shape_and_refine_it",
+  "two_ray_sample": "not_selected_by_user",
+  "proposal_file": "skill-tree-snowflake.json",
+  "sample_parent_overrides": {
+    "traps_finishing_mechanisms": {
+      "any_of": ["traps_sharpening", "traps_hidden_drive"]
+    }
+  },
+  "full_120_node_remapping": "proposed_in_skill_tree_snowflake_json_not_yet_approved",
+  "game_implementation": "not_started"
+}

@@ -1,0 +1,1741 @@
+{
+  "version": 1,
+  "status": "layout_proposal",
+  "rays": [
+    {
+      "id": "lord",
+      "name": "Лорд",
+      "angle": -90,
+      "main": [
+        "lord_will_1",
+        "lord_throne_armor_1",
+        "lord_might_1",
+        "lord_will_2",
+        "lord_throne_wrath",
+        "lord_might_2",
+        "lord_will_3",
+        "lord_last_word"
+      ],
+      "twigs": [
+        {
+          "from": "lord_throne_armor_1",
+          "side": -1,
+          "ids": [
+            "lord_fortified_throne",
+            "lord_throne_armor_2",
+            "lord_throne_armor_3"
+          ]
+        },
+        {
+          "from": "lord_might_1",
+          "side": 1,
+          "ids": [
+            "lord_counterstrike",
+            "lord_vengeful_seal"
+          ]
+        },
+        {
+          "from": "lord_will_3",
+          "side": -1,
+          "ids": [
+            "lord_might_3",
+            "lord_blood_throne"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "creatures",
+      "name": "Существа",
+      "angle": -30,
+      "main": [
+        "creatures_strength_1",
+        "creatures_vitality_1",
+        "creatures_strength_2",
+        "creatures_discipline",
+        "creatures_vitality_2",
+        "creatures_strength_3",
+        "creatures_dark_legion"
+      ],
+      "twigs": [
+        {
+          "from": "creatures_strength_1",
+          "side": 1,
+          "ids": [
+            "creatures_hunting_instinct",
+            "creatures_onslaught",
+            "creatures_anatomy_knowledge"
+          ]
+        },
+        {
+          "from": "creatures_vitality_1",
+          "side": -1,
+          "ids": [
+            "creatures_tough_hide",
+            "creatures_spectral_resilience",
+            "creatures_power_of_lament"
+          ]
+        },
+        {
+          "from": "creatures_vitality_1",
+          "side": 1,
+          "ids": [
+            "creatures_bone_carapace",
+            "creatures_retaliatory_steel",
+            "creatures_fortified_aegis"
+          ]
+        },
+        {
+          "from": "creatures_strength_2",
+          "side": -1,
+          "ids": [
+            "creatures_beast_ferocity",
+            "creatures_hellish_heat"
+          ]
+        },
+        {
+          "from": "creatures_strength_2",
+          "side": 1,
+          "ids": [
+            "creatures_stubbornness",
+            "creatures_defiance"
+          ]
+        },
+        {
+          "from": "creatures_discipline",
+          "side": -1,
+          "ids": [
+            "creatures_loud_command",
+            "shared_distant_orders"
+          ]
+        },
+        {
+          "from": "creatures_discipline",
+          "side": 1,
+          "ids": [
+            "creatures_battle_rhythm",
+            "creatures_heavy_swing"
+          ]
+        },
+        {
+          "from": "creatures_vitality_2",
+          "side": 1,
+          "ids": [
+            "creatures_hardy_brood",
+            "creatures_united_pack",
+            "creatures_trained_brood"
+          ]
+        },
+        {
+          "from": "creatures_strength_3",
+          "side": -1,
+          "ids": [
+            "creatures_sturdy_lid",
+            "creatures_frenzied_servants"
+          ]
+        },
+        {
+          "from": "creatures_strength_3",
+          "side": 1,
+          "ids": [
+            "shared_unity_of_power",
+            "creatures_hungry_extensions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "traps",
+      "name": "Ловушки",
+      "angle": 30,
+      "main": [
+        "traps_mechanisms_1",
+        "traps_workshop",
+        "traps_mechanisms_2",
+        "traps_cascade",
+        "traps_mechanisms_3",
+        "traps_deadly_corridor"
+      ],
+      "twigs": [
+        {
+          "from": "traps_mechanisms_1",
+          "side": 1,
+          "ids": [
+            "shared_convincing_counterfeit",
+            "shared_spare_decoy"
+          ]
+        },
+        {
+          "from": "traps_workshop",
+          "side": -1,
+          "ids": [
+            "traps_hidden_drive",
+            "traps_finishing_mechanisms",
+            "traps_runic_volley"
+          ]
+        },
+        {
+          "from": "traps_workshop",
+          "side": 1,
+          "ids": [
+            "traps_strong_links",
+            "traps_dense_casting",
+            "shared_runic_channel"
+          ]
+        },
+        {
+          "from": "traps_mechanisms_2",
+          "side": 1,
+          "ids": [
+            "traps_sharpening",
+            "traps_flywheel_acceleration"
+          ]
+        },
+        {
+          "from": "traps_cascade",
+          "side": -1,
+          "ids": [
+            "traps_tension",
+            "traps_expanded_arsenal",
+            "traps_heavy_tip"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "poison",
+      "name": "Яды",
+      "angle": 90,
+      "main": [
+        "poison_alchemy_1",
+        "poison_stable_formula",
+        "poison_alchemy_2",
+        "poison_mature_formula",
+        "poison_alchemy_3",
+        "poison_plague_focus"
+      ],
+      "twigs": [
+        {
+          "from": "poison_stable_formula",
+          "side": -1,
+          "ids": [
+            "poison_last_drop",
+            "poison_final_sediment"
+          ]
+        },
+        {
+          "from": "poison_stable_formula",
+          "side": 1,
+          "ids": [
+            "poison_bitter_medicine",
+            "poison_gas_reserve"
+          ]
+        },
+        {
+          "from": "poison_alchemy_2",
+          "side": -1,
+          "ids": [
+            "poison_penetrating_venom",
+            "poison_corrosive_formula",
+            "shared_burning_toxin"
+          ]
+        },
+        {
+          "from": "poison_mature_formula",
+          "side": -1,
+          "ids": [
+            "poison_unbroken_maturity",
+            "poison_heavy_breathing",
+            "poison_long_poison"
+          ]
+        },
+        {
+          "from": "poison_alchemy_3",
+          "side": 1,
+          "ids": [
+            "poison_clean_distillation",
+            "ritual_plague_reaction"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "economy",
+      "name": "Экономика",
+      "angle": 150,
+      "main": [
+        "economy_tribute_1",
+        "economy_building_estimate",
+        "economy_tribute_2",
+        "economy_gold_reserve",
+        "economy_tribute_3",
+        "economy_military_order"
+      ],
+      "twigs": [
+        {
+          "from": "economy_tribute_1",
+          "side": 1,
+          "ids": [
+            "economy_supply",
+            "economy_buyer"
+          ]
+        },
+        {
+          "from": "economy_building_estimate",
+          "side": -1,
+          "ids": [
+            "economy_construction_contract",
+            "economy_building_estimate_2"
+          ]
+        },
+        {
+          "from": "economy_tribute_2",
+          "side": -1,
+          "ids": [
+            "economy_court_healer",
+            "shared_mass_conduit"
+          ]
+        },
+        {
+          "from": "economy_gold_reserve",
+          "side": 1,
+          "ids": [
+            "economy_greed",
+            "shared_trophy_metal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ritual",
+      "name": "Ритуалы",
+      "angle": 210,
+      "main": [
+        "ritual_impulse",
+        "ritual_economy_1",
+        "ritual_cover",
+        "ritual_on_the_edge",
+        "ritual_economy_2",
+        "ritual_echo",
+        "ritual_economy_3",
+        "ritual_great_ritual"
+      ],
+      "twigs": [
+        {
+          "from": "ritual_cover",
+          "side": 1,
+          "ids": [
+            "ritual_barrier",
+            "ritual_dense_cover",
+            "ritual_knightly_ritual"
+          ]
+        },
+        {
+          "from": "ritual_on_the_edge",
+          "side": 1,
+          "ids": [
+            "ritual_enhanced_impulse",
+            "ritual_necrotic_bond"
+          ]
+        },
+        {
+          "from": "ritual_on_the_edge",
+          "side": -1,
+          "ids": [
+            "ritual_soul_catcher",
+            "shared_saved_power"
+          ]
+        },
+        {
+          "from": "ritual_echo",
+          "side": 1,
+          "ids": [
+            "shared_common_bulwark",
+            "shared_dark_recovery"
+          ]
+        }
+      ]
+    }
+  ],
+  "bridges": [
+    {
+      "id": "shared_oath_of_the_fallen",
+      "parents": [
+        "lord_vengeful_seal",
+        "shared_distant_orders"
+      ],
+      "mode": "all"
+    },
+    {
+      "id": "shared_fire_support",
+      "parents": [
+        "creatures_heavy_swing",
+        "traps_heavy_tip"
+      ],
+      "mode": "all"
+    },
+    {
+      "id": "shared_poisoned_edges",
+      "parents": [
+        "traps_flywheel_acceleration",
+        "shared_burning_toxin"
+      ],
+      "mode": "all"
+    },
+    {
+      "id": "shared_sharp_teeth",
+      "parents": [
+        "poison_gas_reserve",
+        "shared_mass_conduit"
+      ],
+      "mode": "any"
+    },
+    {
+      "id": "shared_art_of_harvest",
+      "parents": [
+        "shared_trophy_metal",
+        "shared_saved_power"
+      ],
+      "mode": "all"
+    },
+    {
+      "id": "shared_impulse_legacy",
+      "parents": [
+        "shared_dark_recovery",
+        "lord_blood_throne"
+      ],
+      "mode": "all"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "creatures_strength_1",
+      "name": "Сила I",
+      "category": "creatures",
+      "cost": 1,
+      "parents": [
+        "root"
+      ],
+      "mode": "all",
+      "effect": "+8% урона существ. Складывается с другими узлами Силы; Лорда и ловушки не усиливает."
+    },
+    {
+      "id": "creatures_vitality_1",
+      "name": "Живучесть I",
+      "category": "creatures",
+      "cost": 2,
+      "parents": [
+        "creatures_strength_1"
+      ],
+      "mode": "all",
+      "effect": "+8% максимального HP существ. На Лорда и ловушки не действует."
+    },
+    {
+      "id": "creatures_strength_2",
+      "name": "Сила II",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_vitality_1"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% урона существ: с Силой I суммарно +16%. Лорд и ловушки бонус не получают."
+    },
+    {
+      "id": "creatures_tough_hide",
+      "name": "Крепкая шкура",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_vitality_1"
+      ],
+      "mode": "all",
+      "effect": "Первое обычное физическое попадание по защитнику наносит на 15% меньше урона. Один заряд на комнату за волну, общий для форм и выводка; заклинания и подготовленные особые атаки не затрагиваются."
+    },
+    {
+      "id": "creatures_stubbornness",
+      "name": "Упрямство",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_strength_2"
+      ],
+      "mode": "all",
+      "effect": "Когда живой защитник впервые опускается ниже 30% HP, две следующие обычные атаки получают +15% урона. Один запуск на комнату за волну; смена формы и воскрешение его не обновляют, смертельный удар навык не предотвращает."
+    },
+    {
+      "id": "creatures_discipline",
+      "name": "Дисциплина",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_strength_2"
+      ],
+      "mode": "all",
+      "effect": "После победы героев над существом два первых обычных удара следующего соседнего защитника получают +10% урона. Один раз на принимающую комнату за волну; пустота, ловушка и лестница обрывают связь, повторные фазы её не обновляют."
+    },
+    {
+      "id": "creatures_vitality_2",
+      "name": "Живучесть II",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_discipline"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% максимального HP существ. С Живучестью I суммарно +16%; на Лорда не действует."
+    },
+    {
+      "id": "creatures_strength_3",
+      "name": "Сила III",
+      "category": "creatures",
+      "cost": 6,
+      "parents": [
+        "creatures_vitality_2"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% урона существ. Сила I / II / III вместе дают +24%, без перемножения; Лорд и ловушки бонус не получают."
+    },
+    {
+      "id": "creatures_dark_legion",
+      "name": "Тёмный легион",
+      "category": "creatures",
+      "cost": 8,
+      "parents": [
+        "creatures_strength_3"
+      ],
+      "mode": "all",
+      "effect": "Первый герой, лично добитый ударом живого защитника, позволяет восстановить ему 10% максимального HP. Одно лечение на всю комнату за волну, включая выводок; яд предыдущей комнаты не считается, смерть и воскрешение использование не обновляют."
+    },
+    {
+      "id": "creatures_hunting_instinct",
+      "name": "Охотничий инстинкт",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_strength_1"
+      ],
+      "mode": "all",
+      "effect": "После добровольного отхода раненого героя следующая обычная атака существа получает +15% урона. Один раз на комнату за волну, с обычным выбором цели; принудительные перемещения бонус не запускают."
+    },
+    {
+      "id": "creatures_hardy_brood",
+      "name": "Крепкий выводок",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_vitality_2"
+      ],
+      "mode": "all",
+      "effect": "+10% максимального HP паучатам, защитнику матки и обращённому слуге вампира. Главный защитник и его новая форма бонус не получают; число бойцов и опыт сохраняются."
+    },
+    {
+      "id": "creatures_battle_rhythm",
+      "name": "Боевой ритм",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_discipline"
+      ],
+      "mode": "all",
+      "effect": "Каждая четвёртая обычная атака комнаты получает +20% урона. Счётчик общий для всех её существ и продолжается после смены формы или воскрешения; пропуски и отдельные способности его не продвигают."
+    },
+    {
+      "id": "creatures_defiance",
+      "name": "Непокорность",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_stubbornness"
+      ],
+      "mode": "all",
+      "effect": "При запуске Упрямства следующий обычный физический удар по существу ослабляется на 15%. Один раз на комнату за волну; неиспользованная защита исчезает после двух усиленных атак Упрямства, магия и подготовленные особые удары проходят обычно."
+    },
+    {
+      "id": "creatures_united_pack",
+      "name": "Единая стая",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_hardy_brood"
+      ],
+      "mode": "all",
+      "effect": "После окончательной гибели главного существа две обычные атаки оставшегося или вылупляющегося выводка получают +15% урона. Два заряда на комнату вместе, включая слугу вампира; промежуточная смерть, фазы и воскрешение эффект не обновляют."
+    },
+    {
+      "id": "creatures_onslaught",
+      "name": "Натиск",
+      "category": "creatures",
+      "cost": 2,
+      "parents": [
+        "creatures_hunting_instinct"
+      ],
+      "mode": "all",
+      "effect": "Один усиленный Охотничьим инстинктом удар дополнительно игнорирует 1 броню, не ниже нуля. Новых атак и постоянного снижения брони нет; один раз на комнату за волну."
+    },
+    {
+      "id": "ritual_economy_1",
+      "name": "Экономный ритуал I",
+      "category": "ritual",
+      "cost": 2,
+      "parents": [
+        "ritual_impulse"
+      ],
+      "mode": "all",
+      "effect": "Цена Q ниже на 5%. Скидки трёх Экономных ритуалов складываются до −15%; окончательная цена округляется вверх, минимум 1 золото, бонусы дохода в базовую цену Q не входят."
+    },
+    {
+      "id": "ritual_economy_2",
+      "name": "Экономный ритуал II",
+      "category": "ritual",
+      "cost": 4,
+      "parents": [
+        "ritual_on_the_edge"
+      ],
+      "mode": "all",
+      "effect": "Ещё −5% стоимости Q: вместе с первым узлом −10%. Число зарядов не меняется; окончательная цена округляется вверх, минимум 1 золото."
+    },
+    {
+      "id": "ritual_economy_3",
+      "name": "Экономный ритуал III",
+      "category": "ritual",
+      "cost": 6,
+      "parents": [
+        "ritual_echo"
+      ],
+      "mode": "all",
+      "effect": "Ещё −5% стоимости Q: три узла вместе дают максимум −15%. Зарядов остаётся два на волну; окончательная цена округляется вверх, минимум 1 золото."
+    },
+    {
+      "id": "traps_mechanisms_1",
+      "name": "Механизмы I",
+      "category": "traps",
+      "cost": 1,
+      "parents": [
+        "root"
+      ],
+      "mode": "all",
+      "effect": "+8% прямого урона ловушек. Яд, длительность контроля и вспомогательные эффекты не усиливаются."
+    },
+    {
+      "id": "traps_workshop",
+      "name": "Мастерская",
+      "category": "traps",
+      "cost": 2,
+      "parents": [
+        "traps_mechanisms_1"
+      ],
+      "mode": "all",
+      "effect": "Первое улучшение каждой ловушки после изучения навыка дешевле на 1 золото, минимум 1. Скидка однократна для конкретной комнаты, действует и на существующие, и на будущие ловушки; прошлые расходы не возвращаются."
+    },
+    {
+      "id": "traps_mechanisms_2",
+      "name": "Механизмы II",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_workshop"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% прямого урона ловушек, с Механизмами I суммарно +16%. Яд, контроль и вспомогательные эффекты не меняются."
+    },
+    {
+      "id": "traps_sharpening",
+      "name": "Заточка",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_mechanisms_2"
+      ],
+      "mode": "all",
+      "effect": "+12% прямого урона шипов и пола лезвий, включая развитые формы. Складывается с Механизмами; новых срабатываний, контроля и кровотечения нет."
+    },
+    {
+      "id": "traps_tension",
+      "name": "Натяжение",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_cascade"
+      ],
+      "mode": "all",
+      "effect": "+12% прямого урона баллисты всех форм. У осадного болта усиливается исходный урон, затем применяется обычное ослабление при пробитии; число болтов, пробитий и скорость сохраняются."
+    },
+    {
+      "id": "traps_hidden_drive",
+      "name": "Скрытый привод",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_workshop"
+      ],
+      "mode": "all",
+      "effect": "Следопыт предотвращает на 10% меньше прямого урона ловушки: вместо 20 предотвратит 18. Яд и контроль не меняются; предварительное обезвреживание учитывается один раз, без лишнего инструмента."
+    },
+    {
+      "id": "traps_cascade",
+      "name": "Каскад",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_mechanisms_2"
+      ],
+      "mode": "all",
+      "effect": "Если предыдущая соседняя ловушка нанесла прямой урон, первое прямое попадание следующей получает +20%. Одно попадание по одной цели на комнату за волну; пустота, существо и лестница прерывают связь, яд и контроль её не запускают."
+    },
+    {
+      "id": "traps_mechanisms_3",
+      "name": "Механизмы III",
+      "category": "traps",
+      "cost": 6,
+      "parents": [
+        "traps_cascade"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% прямого урона ловушек: три Механизма вместе +24%. С подходящей Заточкой или Натяжением +36%; яд, контроль, боеприпасы и число срабатываний сохраняются."
+    },
+    {
+      "id": "traps_deadly_corridor",
+      "name": "Смертельный коридор",
+      "category": "traps",
+      "cost": 8,
+      "parents": [
+        "traps_mechanisms_3"
+      ],
+      "mode": "all",
+      "effect": "Самая поздняя по пути героев ловушка с прямым уроном на каждом этаже получает +15% прямого урона. Более поздняя ударная ловушка забирает бонус, ядовитые и вспомогательные комнаты его не отнимают; новых атак нет."
+    },
+    {
+      "id": "shared_fire_support",
+      "name": "Огневая поддержка",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "creatures_heavy_swing",
+        "traps_heavy_tip"
+      ],
+      "mode": "all",
+      "effect": "Баллиста сразу после существа может выпустить один настоящий выстрел во время боя с ним. Один раз на орудие за волну, на том же этаже; болт расходуется и при подходе героев не возвращается, следопыт может ослабить выстрел."
+    },
+    {
+      "id": "traps_finishing_mechanisms",
+      "name": "Добивающие механизмы",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_hidden_drive"
+      ],
+      "mode": "all",
+      "effect": "Первое прямое попадание ловушки по герою с HP ниже 30% до удара получает +20% урона. Один удар по одной цели на комнату за волну, без смены обычного выбора цели, усиления яда или гарантированной казни."
+    },
+    {
+      "id": "poison_alchemy_1",
+      "name": "Алхимия I",
+      "category": "poison",
+      "cost": 1,
+      "parents": [
+        "root"
+      ],
+      "mode": "all",
+      "effect": "+8% урона яда камер, пауков и способности Лорда. Прямой физический урон и огонь не усиливаются; защита жрицы сохраняется."
+    },
+    {
+      "id": "poison_stable_formula",
+      "name": "Устойчивый состав",
+      "category": "poison",
+      "cost": 2,
+      "parents": [
+        "poison_alchemy_1"
+      ],
+      "mode": "all",
+      "effect": "Накладываемый яд действует на 1 тик дольше. Число наложений и защита жрицы сохраняются; действует на яд камер, пауков и Q."
+    },
+    {
+      "id": "poison_alchemy_2",
+      "name": "Алхимия II",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_stable_formula"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% урона яда, с Алхимией I суммарно +16%. Не усиливает физический урон и огонь; защита жрицы сохраняется."
+    },
+    {
+      "id": "poison_last_drop",
+      "name": "Последняя капля",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_stable_formula"
+      ],
+      "mode": "all",
+      "effect": "Последний естественный тик яда наносит на 50% больше урона. Снятие или расходование яда бонус не запускает, обновление может отложить последний тик; защита жрицы действует."
+    },
+    {
+      "id": "poison_mature_formula",
+      "name": "Выдержанный состав",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_alchemy_2"
+      ],
+      "mode": "all",
+      "effect": "С третьего тика после наложения яд наносит на 15% больше урона до окончания. Новое наложение сбрасывает выдержку; дополнительных тиков и вспышек нет, защита жрицы сохраняется."
+    },
+    {
+      "id": "poison_alchemy_3",
+      "name": "Алхимия III",
+      "category": "poison",
+      "cost": 6,
+      "parents": [
+        "poison_mature_formula"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% урона яда: Алхимия I / II / III вместе +24%. Длительность, число наложений, огонь и физический урон не меняются."
+    },
+    {
+      "id": "poison_plague_focus",
+      "name": "Чумной очаг",
+      "category": "poison",
+      "cost": 8,
+      "parents": [
+        "poison_alchemy_3"
+      ],
+      "mode": "all",
+      "effect": "Первый герой, погибший от любого урона во время отравления, выпускает по остальным живым героям вспышку силой одного обычного тика своего яда. Один раз на этаж за волну; усиление Последней капли не учитывается, цепочки и нового отравления нет, защита живой жрицы действует."
+    },
+    {
+      "id": "shared_poisoned_edges",
+      "name": "Ядовитая заточка",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "traps_flywheel_acceleration",
+        "shared_burning_toxin"
+      ],
+      "mode": "all",
+      "effect": "Первое прямое ранение выжившего героя шипами или лезвиями добавляет яд на 2 базовых тика, каждый силой 10% фактически нанесённого прямого урона. Одно наложение на одну цель за комнату за волну; Алхимия, длительность и защита жрицы учитываются, обновление яда обычное и сбрасывает выдержку без отдельного сохраняющего навыка."
+    },
+    {
+      "id": "lord_will_1",
+      "name": "Воля I",
+      "category": "lord",
+      "cost": 1,
+      "parents": [
+        "root"
+      ],
+      "mode": "all",
+      "effect": "+8% максимального HP Лорда. Сохраняется количество недостающего здоровья: 40/100 станет 48/108; существа бонус не получают."
+    },
+    {
+      "id": "lord_might_1",
+      "name": "Мощь I",
+      "category": "lord",
+      "cost": 2,
+      "parents": [
+        "lord_throne_armor_1"
+      ],
+      "mode": "all",
+      "effect": "+8% урона обычных атак Лорда. Отдельного бонуса Q, существам и ловушкам нет."
+    },
+    {
+      "id": "lord_will_2",
+      "name": "Воля II",
+      "category": "lord",
+      "cost": 4,
+      "parents": [
+        "lord_might_1"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% максимального HP Лорда, вместе с Волей I +16%. Сохраняется количество недостающего здоровья, полного лечения нет."
+    },
+    {
+      "id": "lord_throne_armor_1",
+      "name": "Тронная броня I",
+      "category": "lord",
+      "cost": 4,
+      "parents": [
+        "lord_will_1"
+      ],
+      "mode": "all",
+      "effect": "+1 к броне самого Лорда по обычным правилам его защиты. Одна покупка за забег; существ и ловушки не усиливает."
+    },
+    {
+      "id": "lord_throne_wrath",
+      "name": "Гнев трона",
+      "category": "lord",
+      "cost": 4,
+      "parents": [
+        "lord_will_2"
+      ],
+      "mode": "all",
+      "effect": "Первая обычная атака Лорда за волну получает +25% урона. Дополнительного действия нет; Q бонус не получает и не расходует."
+    },
+    {
+      "id": "lord_might_2",
+      "name": "Мощь II",
+      "category": "lord",
+      "cost": 4,
+      "parents": [
+        "lord_throne_wrath"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% урона обычных атак Лорда, с Мощью I суммарно +16%. Q, существа и ловушки не усиливаются."
+    },
+    {
+      "id": "lord_will_3",
+      "name": "Воля III",
+      "category": "lord",
+      "cost": 6,
+      "parents": [
+        "lord_might_2"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% максимального HP Лорда: три Воли вместе дают +24%. Количество недостающего HP сохраняется, существа бонус не получают."
+    },
+    {
+      "id": "lord_last_word",
+      "name": "Последнее слово",
+      "category": "lord",
+      "cost": 8,
+      "parents": [
+        "lord_will_3"
+      ],
+      "mode": "all",
+      "effect": "Когда живой Лорд впервые опускается ниже 25% HP, его следующая обычная атака получает +50% урона. Один запуск за волну; нужно дожить до своего действия, лечения, щита и спасения от смерти нет, Q заряд не расходует."
+    },
+    {
+      "id": "lord_counterstrike",
+      "name": "Ответный удар",
+      "category": "lord",
+      "cost": 4,
+      "parents": [
+        "lord_might_1"
+      ],
+      "mode": "all",
+      "effect": "После трёх обычных попаданий героев, снявших HP Лорда, его следующая обычная атака получает +20% урона. Один раз за волну; заклинания, способности и полностью поглощённые щитом удары счётчик не заполняют, мгновенной контратаки нет."
+    },
+    {
+      "id": "lord_fortified_throne",
+      "name": "Укреплённый трон",
+      "category": "lord",
+      "cost": 4,
+      "parents": [
+        "lord_throne_armor_1"
+      ],
+      "mode": "all",
+      "effect": "Первое обычное физическое попадание, способное снять HP Лорда, наносит на 20% меньше урона после брони. Один заряд за волну; полностью поглощённый щитом удар его сохраняет, заклинания и подготовленные особые удары не затрагиваются, воскрешение заряд не обновляет."
+    },
+    {
+      "id": "lord_throne_armor_2",
+      "name": "Тронная броня II",
+      "category": "lord",
+      "cost": 6,
+      "parents": [
+        "lord_fortified_throne"
+      ],
+      "mode": "all",
+      "effect": "Ещё +1 к броне самого Лорда по обычным правилам, вместе с первым узлом +2. Одна покупка за забег; существ и ловушки не усиливает."
+    },
+    {
+      "id": "economy_tribute_1",
+      "name": "Дань I",
+      "category": "economy",
+      "cost": 1,
+      "parents": [
+        "root"
+      ],
+      "mode": "all",
+      "effect": "+1 золото за полностью отражённую волну, независимо от числа героев. Прошлые волны не оплачиваются, цена Q не растёт."
+    },
+    {
+      "id": "economy_building_estimate",
+      "name": "Строительная смета",
+      "category": "economy",
+      "cost": 2,
+      "parents": [
+        "economy_tribute_1"
+      ],
+      "mode": "all",
+      "effect": "Новые этажи дешевле на 5%. Скидки складываются; окончательная цена округляется вверх, минимум 1 золото, возвратов за старые этажи нет."
+    },
+    {
+      "id": "economy_tribute_2",
+      "name": "Дань II",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_building_estimate"
+      ],
+      "mode": "all",
+      "effect": "Ещё +1 золото за полностью отражённую волну, с Данью I суммарно +2. Не умножается на число героев и не повышает цену Q."
+    },
+    {
+      "id": "economy_supply",
+      "name": "Снабжение",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_tribute_1"
+      ],
+      "mode": "all",
+      "effect": "Первая новая комната в каждой подготовке дешевле на 1 золото, минимум 1. Улучшения и этажи скидку не тратят, остаток не копится; отмена возвращает уплаченное и восстанавливает скидку."
+    },
+    {
+      "id": "economy_court_healer",
+      "name": "Придворный лекарь",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_tribute_2"
+      ],
+      "mode": "all",
+      "effect": "Платное лечение Лорда между волнами дешевле на 10%, количество HP не меняется. Скидки складываются, итог округляется вверх, минимум 1 золото; на лечение существ, жриц и Q не действует."
+    },
+    {
+      "id": "economy_gold_reserve",
+      "name": "Золотой запас",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_tribute_2"
+      ],
+      "mode": "all",
+      "effect": "После успешной волны за каждые 20 золота в кошельке получаешь 1 золото, максимум 3. Кошелёк фиксируется до награды за завершение, после убийств и расходов на Q; бонус выплачивается один раз и сам себя не увеличивает, при поражении выплаты нет."
+    },
+    {
+      "id": "economy_tribute_3",
+      "name": "Дань III",
+      "category": "economy",
+      "cost": 6,
+      "parents": [
+        "economy_gold_reserve"
+      ],
+      "mode": "all",
+      "effect": "Ещё +1 золото за успешную волну: три Дани вместе дают +3. С Золотым запасом до +6 за волну, без влияния на цену Q и доплаты за прошлые волны."
+    },
+    {
+      "id": "economy_military_order",
+      "name": "Военный заказ",
+      "category": "economy",
+      "cost": 8,
+      "parents": [
+        "economy_tribute_3"
+      ],
+      "mode": "all",
+      "effect": "Первое улучшение комнаты в каждой подготовке дешевле на 20%, экономия максимум 5 золота. Применяется после остальных скидок, включая Мастерскую; итог округляется вверх, минимум 1, остаток не копится, продажа учитывает реально вложенное золото."
+    },
+    {
+      "id": "ritual_impulse",
+      "name": "Ритуальный импульс",
+      "category": "ritual",
+      "cost": 1,
+      "parents": [
+        "root"
+      ],
+      "mode": "all",
+      "effect": "После успешного Q следующая обычная атака текущего существа или Лорда получает +10% урона. Повторное Q не складывает импульсы; дополнительного удара и усиления самого Q нет, неиспользованный бонус исчезает в конце боя."
+    },
+    {
+      "id": "ritual_cover",
+      "name": "Ритуальный покров",
+      "category": "ritual",
+      "cost": 4,
+      "parents": [
+        "ritual_economy_1"
+      ],
+      "mode": "all",
+      "effect": "Первое успешное Q за волну даёт текущему существу или Лорду отдельный щит в 5% максимального HP. Добавляется к основному щиту Рыцаря; второе Q, воскрешение и смена формы не обновляют использование, щит исчезает в конце боя."
+    },
+    {
+      "id": "ritual_on_the_edge",
+      "name": "На грани",
+      "category": "ritual",
+      "cost": 4,
+      "parents": [
+        "ritual_cover"
+      ],
+      "mode": "all",
+      "effect": "Успешное Q по живому защитнику с HP ниже 30% добавляет ещё +15% к первому удару Ритуального импульса: базово получится +25%. Один запуск за волну; нужно успеть провести обычную атаку, лечения и спасения от смерти нет."
+    },
+    {
+      "id": "ritual_echo",
+      "name": "Эхо ритуала",
+      "category": "ritual",
+      "cost": 6,
+      "parents": [
+        "ritual_economy_2"
+      ],
+      "mode": "all",
+      "effect": "После успешного Q Ритуальный импульс усиливает две следующие обычные атаки по +10% вместо одной. Дополнительные +15% от На грани получает только первый удар; повторное Q оставляет два заряда, а не суммирует их, остаток исчезает в конце боя."
+    },
+    {
+      "id": "ritual_great_ritual",
+      "name": "Великий ритуал",
+      "category": "ritual",
+      "cost": 8,
+      "parents": [
+        "ritual_economy_3"
+      ],
+      "mode": "all",
+      "effect": "Второе успешное Q за волну усиливается: Рыцарь получает +20% к основному щиту, Некромант +20% к HP возвращения от второй метки, Алхимик +20% урона яда второго Q. Бонус Алхимика складывается с Алхимией; вспышка, Импульс, отдельный Покров, цена, длительность и два заряда не меняются."
+    },
+    {
+      "id": "ritual_barrier",
+      "name": "Ритуальный барьер",
+      "category": "ritual",
+      "cost": 4,
+      "parents": [
+        "ritual_cover"
+      ],
+      "mode": "all",
+      "effect": "Первое успешное Q за волну защищает текущего защитника от одного заряженного заклинания чародея на 20%. Считается после брони и призрачности, до оставшихся щитов; физические удары заряд не тратят, второе Q и воскрешение его не обновляют, барьер исчезает в конце боя."
+    },
+    {
+      "id": "shared_trophy_metal",
+      "name": "Трофейный металл",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "economy_greed"
+      ],
+      "mode": "all",
+      "effect": "Первый герой за волну, добитый прямым уроном ловушки, оставляет металл для скидки 2 золота на одно улучшение комнаты, минимум цены 1. Хранится максимум один запас, переносимый между волнами; яд и существа его не дают, продать металл нельзя, возвраты основаны на реальной оплате."
+    },
+    {
+      "id": "shared_impulse_legacy",
+      "name": "Наследие импульса",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "shared_dark_recovery",
+        "lord_blood_throne"
+      ],
+      "mode": "all",
+      "effect": "После окончательной гибели существа оставшиеся Ритуальные импульсы один раз за волну переходят к Лорду с обычным бонусом +10%, либо +15% с Усиленным импульсом. Дополнительные +15% На грани не переносятся; с собственным запасом Лорда берётся большее число зарядов, максимум два, остаток исчезает в конце волны."
+    },
+    {
+      "id": "shared_oath_of_the_fallen",
+      "name": "Клятва павших",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "lord_vengeful_seal",
+        "shared_distant_orders"
+      ],
+      "mode": "all",
+      "effect": "Окончательно побеждённая комната с существами даёт Лорду одну отметку, максимум три за волну. Каждая усиливает отдельную обычную атаку на 10%; выводок и промежуточные смерти не дают лишних отметок, Q их не тратит, на следующую волну остаток не переносится."
+    },
+    {
+      "id": "poison_corrosive_formula",
+      "name": "Разъедающий состав",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_penetrating_venom"
+      ],
+      "mode": "all",
+      "effect": "После третьего тика непрерывного яда у героя на 1 броню меньше, максимум −1 и не ниже нуля. Обновление сохраняет уже возникшую коррозию; окончание или снятие яда возвращает броню, защита жрицы от яда сохраняется."
+    },
+    {
+      "id": "poison_bitter_medicine",
+      "name": "Горькое лекарство",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_stable_formula"
+      ],
+      "mode": "all",
+      "effect": "Первое подходящее боевое лечение отравленного героя восстанавливает на 20% меньше HP, расходуя один оставшийся тик яда без урона. Один раз на героя за волну; с другими запретами действует сильнейший, если штраф не ухудшает лечение, тик не расходуется. Восстановление от уровня не затрагивается; расходованный тик не запускает Последнюю каплю."
+    },
+    {
+      "id": "poison_unbroken_maturity",
+      "name": "Несбиваемая выдержка",
+      "category": "poison",
+      "cost": 6,
+      "parents": [
+        "poison_mature_formula"
+      ],
+      "mode": "all",
+      "effect": "Обновление яда сохраняет выдержку, пока отравление непрерывно. Окончание или снятие обнуляет подготовку; мощность и длительность обновляются обычно, Последняя капля всё ещё требует естественного окончания."
+    },
+    {
+      "id": "traps_heavy_tip",
+      "name": "Тяжёлый наконечник",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_expanded_arsenal"
+      ],
+      "mode": "all",
+      "effect": "Осадный болт сохраняет после каждого пробития на 10 процентных пунктов больше силы, максимум 90%. Число пробитых целей и другие формы баллисты не меняются: например, сохранение 60% станет 70%."
+    },
+    {
+      "id": "traps_flywheel_acceleration",
+      "name": "Разгон маховика",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_sharpening"
+      ],
+      "mode": "all",
+      "effect": "Сработавшие секции Кровавой мельницы получают последовательно +0% / +5% / +10% / +15% прямого урона, максимум +15%. Обезвреженная секция разгон не увеличивает; новых ударов нет, в следующую волну разгон начинается заново, другие формы лезвий не меняются."
+    },
+    {
+      "id": "traps_expanded_arsenal",
+      "name": "Расширенный арсенал",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_tension"
+      ],
+      "mode": "all",
+      "effect": "Арсеналы баллисты вмещают на 2 болта больше: 4 / 5 / 6 вместо 2 / 3 / 4. Покупка не выдаёт болты, пополнение остаётся по одному за волну; максимум один выстрел на героя, другие формы баллисты не меняются."
+    },
+    {
+      "id": "economy_buyer",
+      "name": "Скупщик",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_supply"
+      ],
+      "mode": "all",
+      "effect": "Продажа комнаты после её участия в бою возвращает 60% реально вложенного золота вместо 50%, с округлением вниз. Отмена новой комнаты по-прежнему возвращает всю фактическую оплату; этажи продавать нельзя."
+    },
+    {
+      "id": "economy_construction_contract",
+      "name": "Строительный подряд",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_building_estimate"
+      ],
+      "mode": "all",
+      "effect": "После покупки этажа одна следующая новая комната в этой подготовке дешевле на 2 золота, минимум 1. Один подряд за подготовку, складывается со Снабжением, действует в любом свободном месте и не копится; отмена возвращает оплату и восстанавливает скидку."
+    },
+    {
+      "id": "economy_building_estimate_2",
+      "name": "Строительная смета II",
+      "category": "economy",
+      "cost": 6,
+      "parents": [
+        "economy_construction_contract"
+      ],
+      "mode": "all",
+      "effect": "Ещё −5% цены новых этажей, с первой Сметой −10%. Скидки складываются, окончательная цена округляется вверх, минимум 1 золото; за купленные этажи возвратов нет."
+    },
+    {
+      "id": "creatures_bone_carapace",
+      "name": "Костяной панцирь",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_vitality_1"
+      ],
+      "mode": "all",
+      "effect": "Телесные защитники и телесные дополнительные бойцы получают +1 к броне по обычным правилам. Лорд и духи бонус не получают; при переходе в призрачную форму панцирь временно исчезает."
+    },
+    {
+      "id": "creatures_spectral_resilience",
+      "name": "Призрачная стойкость",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_tough_hide"
+      ],
+      "mode": "all",
+      "effect": "Призрачные существа получают на 10% меньше магического урона после обычной уязвимости: без брони и щитов 100 магии нанесёт 135 вместо 150. Действует на духа стража и призрачного соседа, не на Лорда; физический множитель остаётся 20%."
+    },
+    {
+      "id": "creatures_beast_ferocity",
+      "name": "Звериная свирепость",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_strength_2"
+      ],
+      "mode": "all",
+      "effect": "+10% урона обычных атак пауков, паучат и гончих всех форм. Складывается с Силой; яд, выдох, кокон, захват и другие отдельные способности не усиливаются."
+    },
+    {
+      "id": "shared_unity_of_power",
+      "name": "Единство власти",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "creatures_strength_3"
+      ],
+      "mode": "all",
+      "effect": "+5% урона обычных атак существ и Лорда, а также прямого урона ловушек. Прибавки складываются; яд, огонь, контроль и отдельные способности не усиливаются, пропущенные навыки не выдаются."
+    },
+    {
+      "id": "shared_common_bulwark",
+      "name": "Общий оплот",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "ritual_echo"
+      ],
+      "mode": "all",
+      "effect": "+5% максимального HP существ, их дополнительных бойцов и самого Лорда. Складывается с Живучестью и Волей; у Лорда сохраняется количество недостающего HP, брони и щита навык не даёт."
+    },
+    {
+      "id": "shared_dark_recovery",
+      "name": "Тёмное восстановление",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "shared_common_bulwark"
+      ],
+      "mode": "all",
+      "effect": "Лечение существ и платное лечение Лорда восстанавливают на 10% больше HP до максимума. Источники и число лечений сохраняются; воскрешение, щиты, рост максимального HP и лечение вражеских героев не усиливаются, цена услуги не меняется."
+    },
+    {
+      "id": "ritual_enhanced_impulse",
+      "name": "Усиленный импульс",
+      "category": "ritual",
+      "cost": 4,
+      "parents": [
+        "ritual_on_the_edge"
+      ],
+      "mode": "all",
+      "effect": "Обычный бонус Ритуального импульса повышается с +10% до +15% за удар. С Эхом два удара по +15%, с На грани первый +30%, второй +15%; дополнительных атак и зарядов Q нет."
+    },
+    {
+      "id": "ritual_dense_cover",
+      "name": "Плотный покров",
+      "category": "ritual",
+      "cost": 4,
+      "parents": [
+        "ritual_barrier"
+      ],
+      "mode": "all",
+      "effect": "Щит Ритуального покрова повышается с 5% до 7% максимального HP защитника. Только первое успешное Q за волну; основной щит Рыцаря и защита Барьера прежние, воскрешение и смена формы использование не обновляют."
+    },
+    {
+      "id": "economy_greed",
+      "name": "Жадность",
+      "category": "economy",
+      "cost": 4,
+      "parents": [
+        "economy_gold_reserve"
+      ],
+      "mode": "all",
+      "effect": "+20% золота за убитых героев, но герои получают +15% опыта за побеждённых существ. Дробный бонус золота копится до целой монеты; Дань, продажи, завершение волны и цена Q не меняются, старый вариант Жадности заменяется."
+    },
+    {
+      "id": "lord_might_3",
+      "name": "Мощь III",
+      "category": "lord",
+      "cost": 6,
+      "parents": [
+        "lord_will_3"
+      ],
+      "mode": "all",
+      "effect": "Ещё +8% урона обычных атак Лорда: три Мощи вместе +24%, с Единством власти +29%. Прибавки складываются; Q, существа и ловушки бонус не получают."
+    },
+    {
+      "id": "lord_vengeful_seal",
+      "name": "Мстительная печать",
+      "category": "lord",
+      "cost": 6,
+      "parents": [
+        "lord_counterstrike"
+      ],
+      "mode": "all",
+      "effect": "Пережив заряженное заклинание, снявшее HP, Лорд один раз за волну отвечает магу магическим уроном в 20% реально потерянного здоровья до защиты мага. Смертельное или полностью поглощённое щитом заклинание не запускает ответ; новых отражений и обычной атаки Лорда нет."
+    },
+    {
+      "id": "lord_blood_throne",
+      "name": "Кровавый трон",
+      "category": "lord",
+      "cost": 6,
+      "parents": [
+        "lord_might_3"
+      ],
+      "mode": "all",
+      "effect": "Первый герой, лично добитый обычной атакой живого Лорда, лечит его на 5% максимального HP. Один раз за волну; яд Q, Печать и существа не запускают лечение, воскрешение использование не обновляет, Тёмное восстановление этот эффект не усиливает."
+    },
+    {
+      "id": "poison_penetrating_venom",
+      "name": "Проникающий яд",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_alchemy_2"
+      ],
+      "mode": "all",
+      "effect": "Жрица предотвращает на 10% меньше ядовитого урона: вместо 10 предотвратит 9. Её лечение, другие сопротивления и урон против отряда без жрицы не меняются."
+    },
+    {
+      "id": "poison_final_sediment",
+      "name": "Финальный осадок",
+      "category": "poison",
+      "cost": 6,
+      "parents": [
+        "poison_last_drop"
+      ],
+      "mode": "all",
+      "effect": "Бонус Последней капли заменяется с +50% на +100% урона последнего естественного тика. Не добавляет отдельного удара; снятие и расходование яда бонус не запускают, Чумной очаг использует обычный тик."
+    },
+    {
+      "id": "poison_heavy_breathing",
+      "name": "Тяжёлое дыхание",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_unbroken_maturity"
+      ],
+      "mode": "all",
+      "effect": "С третьего тика выдержанного яда обычные атаки героя слабее на 10% перед защитой цели. Заряженные заклинания, лечение, песня и инструменты сохраняются; обновление сбрасывает подготовку без Несбиваемой выдержки, окончание яда убирает штраф, он не нарастает."
+    },
+    {
+      "id": "traps_strong_links",
+      "name": "Крепкие звенья",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_workshop"
+      ],
+      "mode": "all",
+      "effect": "Общая цепь получает одно дополнительное расходуемое звено: 2 / 4 / 5 передач вместо 1 / 3 / 4. Общий урон и число связанных героев не меняются, передача не запускает новую передачу; следопыт ослабляет и лишнее звено, другие формы Оков прежние."
+    },
+    {
+      "id": "traps_dense_casting",
+      "name": "Плотная отливка",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_strong_links"
+      ],
+      "mode": "all",
+      "effect": "Переплавка даёт +20% щита на единицу забранной брони и +20% собственного предела щита. Больше брони не забирает; нужны бронированный герой и подходящий защитник, следопыт действует обычно, другие Ржавые руны не усиливаются."
+    },
+    {
+      "id": "shared_mass_conduit",
+      "name": "Проводник мессы",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "economy_court_healer"
+      ],
+      "mode": "all",
+      "effect": "Чёрная месса восстанавливает защитнику на 10% больше HP из существующего перехвата, не отнимая дополнительно лечение героя. С Тёмным восстановлением суммарно +20%; прежние лимиты, максимум HP и число перехватов сохраняются, воскрешения нет."
+    },
+    {
+      "id": "creatures_loud_command",
+      "name": "Громкий приказ",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_discipline"
+      ],
+      "mode": "all",
+      "effect": "Знамя гоблинов направляет на отмеченного героя ещё одну обычную атаку соседа: 2 / 3 / 4 вместо 1 / 2 / 3. Новых атак нет; нужен подходящий сосед того же этажа, пустота и лестница обрывают связь, после приказов обычный выбор цели возвращается."
+    },
+    {
+      "id": "creatures_heavy_swing",
+      "name": "Тяжёлый замах",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_battle_rhythm"
+      ],
+      "mode": "all",
+      "effect": "+12% урона подготовленной ударной волны и броска камня огра всех форм. Обычные удары и пир не усиливаются; подготовка и откат прежние, бард может задержать замах, гибель его срывает."
+    },
+    {
+      "id": "creatures_anatomy_knowledge",
+      "name": "Знание анатомии",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_onslaught"
+      ],
+      "mode": "all",
+      "effect": "Первое физическое попадание палача по герою с HP ниже 30% перед ударом получает +15% урона. Один раз на комнату за волну, с обычной целью; подходит гильотине, избыточный урон Перерубателя повторно не усиливается, дуэль и воскрешение запас не увеличивают."
+    },
+    {
+      "id": "creatures_retaliatory_steel",
+      "name": "Ответная сталь",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_bone_carapace"
+      ],
+      "mode": "all",
+      "effect": "Контратаки Караульного стража после парирования получают +15% урона. Запас парирований прежний; заряженное заклинание их обходит, обычные удары, Эгида и вышедший дух бонус не получают."
+    },
+    {
+      "id": "creatures_sturdy_lid",
+      "name": "Прочная крышка",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_strength_3"
+      ],
+      "mode": "all",
+      "effect": "+15% прочности гроба ветки Хозяина саркофага. Время ритуала, лечение и один уход в гроб сохраняются; разрушение срывает ритуал, смертельный удар до укрытия убивает вампира, гробы слуг не усиливаются."
+    },
+    {
+      "id": "creatures_power_of_lament",
+      "name": "Сила плача",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_spectral_resilience"
+      ],
+      "mode": "all",
+      "effect": "+12% урона крика Баньши и существующего отзвука поздней формы, без повторного перемножения бонусов. Подготовка и число криков прежние; заряженное заклинание или гибель срывают крик, другие духи не усиливаются."
+    },
+    {
+      "id": "shared_convincing_counterfeit",
+      "name": "Убедительная подделка",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "traps_mechanisms_1"
+      ],
+      "mode": "all",
+      "effect": "Поддельное оружие мимика ослабляет обычные атаки героя на 25% вместо 20%. Число целей и действие до конца волны сохраняются; классовые способности, заряженные заклинания и броня не меняются, следопыт распознаёт подделку, повторные подмены не складываются."
+    },
+    {
+      "id": "shared_sharp_teeth",
+      "name": "Острые зубцы",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "poison_gas_reserve",
+        "shared_mass_conduit"
+      ],
+      "mode": "any",
+      "effect": "Финальный укус проклятого кубка получает +15% урона. Три настоящих лечения и их сила сохраняются, новых кубков и укусов нет; следопыт распознаёт подарок, на коротком пути он всё ещё может только помочь герою."
+    },
+    {
+      "id": "creatures_hellish_heat",
+      "name": "Адский жар",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_beast_ferocity"
+      ],
+      "mode": "all",
+      "effect": "Ожоги от пола Адской гончей получают +12% урона. Длительность, выдох и откат прежние; лечение и магия ожог не вызывают, гибель гончей гасит огонь, повторного сложения пожаров на одной атаке нет."
+    },
+    {
+      "id": "creatures_frenzied_servants",
+      "name": "Неистовые прислужники",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_sturdy_lid"
+      ],
+      "mode": "all",
+      "effect": "+15% урона обычных атак существ, но −8% их максимального HP, включая дополнительных бойцов. Проценты складываются; Лорд, ловушки и отдельные способности не затрагиваются, старый вариант таланта заменяется."
+    },
+    {
+      "id": "poison_long_poison",
+      "name": "Долгий яд",
+      "category": "poison",
+      "cost": 6,
+      "parents": [
+        "poison_heavy_breathing"
+      ],
+      "mode": "all",
+      "effect": "Яд действует ещё на 2 тика дольше после обычных расчётов, вместе с Устойчивым составом +3 тика, но прямой урон ловушек ниже на 8%. Обычные атаки существ и Лорда не ослабляются, новых наложений нет; старый Долгий яд заменяется."
+    },
+    {
+      "id": "shared_burning_toxin",
+      "name": "Пылающий токсин",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "poison_corrosive_formula"
+      ],
+      "mode": "all",
+      "effect": "Первый ожог пола по отравленному герою расходует 1 оставшийся тик яда и наносит его урон сразу. Один перенос на героя за комнату за волну, без бесплатного тика; Алхимия, выдержка и защита жрицы учитываются, Последняя капля и Финальный осадок не запускаются."
+    },
+    {
+      "id": "ritual_soul_catcher",
+      "name": "Ловец душ",
+      "category": "ritual",
+      "cost": 2,
+      "parents": [
+        "ritual_on_the_edge"
+      ],
+      "mode": "all",
+      "effect": "Обычный герой: 45% получить 0 душ, 55% — 1; особый: 25% — 0, 55% — 1, 20% — 2. Один бросок на героя; гарантия после двух неудач сохраняется, покупка не сбрасывает счётчик и не даёт прошлых наград."
+    },
+    {
+      "id": "shared_art_of_harvest",
+      "name": "Искусство жатвы",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "shared_trophy_metal",
+        "shared_saved_power"
+      ],
+      "mode": "all",
+      "effect": "У особого героя с Ловцом душ: 25% получить 0 душ, 50% — 1, 25% — 2. При гарантии после двух неудач: 75% — 1, 25% — 2; обычные герои не меняются, дополнительных бросков и третьей души нет, штраф опыта Жадности сохраняется."
+    },
+    {
+      "id": "shared_saved_power",
+      "name": "Сбережённая сила",
+      "category": "shared",
+      "cost": 4,
+      "parents": [
+        "ritual_soul_catcher"
+      ],
+      "mode": "all",
+      "effect": "За каждый неиспользованный заряд Q после успешной волны +1 золото, максимум +2. Золотой запас считается до этой выплаты; при поражении бонуса нет, заряды не копятся и цена Q не растёт."
+    },
+    {
+      "id": "lord_throne_armor_3",
+      "name": "Тронная броня III",
+      "category": "lord",
+      "cost": 6,
+      "parents": [
+        "lord_throne_armor_2"
+      ],
+      "mode": "all",
+      "effect": "Ещё +1 к броне Лорда: три узла вместе дают +3 по обычным правилам. Одна покупка за забег; существа и ловушки бонус не получают."
+    },
+    {
+      "id": "creatures_trained_brood",
+      "name": "Обученный выводок",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_united_pack"
+      ],
+      "mode": "all",
+      "effect": "+10% урона обычных атак паучат, защитника матки и обращённого слуги вампира. Складывается с подходящими бонусами; главный защитник, его новые формы и классовые приёмы слуги не усиливаются, число бойцов, частота атак и опыт прежние."
+    },
+    {
+      "id": "creatures_fortified_aegis",
+      "name": "Укреплённая эгида",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "creatures_retaliatory_steel"
+      ],
+      "mode": "all",
+      "effect": "Хранитель эгиды передаёт соседнему защитнику на 15% больше щита. Руну нужно успеть зарядить до смерти; соседство и одна передача сохраняются, щиты Q и Переплавки не усиливаются."
+    },
+    {
+      "id": "shared_spare_decoy",
+      "name": "Запасная обманка",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "shared_convincing_counterfeit"
+      ],
+      "mode": "all",
+      "effect": "У Ложной сокровищницы на одну начальную обманку больше: две вместо одной, каждая принимает один направленный удар. Обманки не атакуют и не дают опыт; поздняя смена оболочки бонус не повторяет, живой следопыт находит мимика, воскрешение обманки не возвращает."
+    },
+    {
+      "id": "shared_distant_orders",
+      "name": "Дальние приказы",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "creatures_loud_command"
+      ],
+      "mode": "all",
+      "effect": "Знамя гоблинов передаёт приказ следующему существу через одно пустое место того же этажа. Число направленных ударов прежнее; непосредственный сосед тоже подходит, постройка, второе пустое место и лестница перекрывают связь."
+    },
+    {
+      "id": "shared_runic_channel",
+      "name": "Рунный канал",
+      "category": "shared",
+      "cost": 6,
+      "parents": [
+        "traps_dense_casting"
+      ],
+      "mode": "all",
+      "effect": "Щит Эгиды или Переплавки может дойти до одного следующего существа через одно пустое место того же этажа. Создание и размер щита прежние, непосредственный сосед подходит; две пустоты, постройка и лестница перекрывают канал, другие переносы не меняются."
+    },
+    {
+      "id": "creatures_hungry_extensions",
+      "name": "Голодные отростки",
+      "category": "creatures",
+      "cost": 4,
+      "parents": [
+        "shared_unity_of_power"
+      ],
+      "mode": "all",
+      "effect": "Боковые пасти Живой комнаты мимика получают +25% урона обычных атак. Число пастей и занятых мест прежнее, нужен свободный ростовой слот; сердце одно, смерть центра убирает отростки, центральная пасть не усиливается."
+    },
+    {
+      "id": "traps_runic_volley",
+      "name": "Рунный залп",
+      "category": "traps",
+      "cost": 4,
+      "parents": [
+        "traps_finishing_mechanisms"
+      ],
+      "mode": "all",
+      "effect": "Залп Кровожадных кольев после убийства получает +15% урона. Начальный удар не усиливается, требуется прямое добивание ловушкой; залп один за комнату за волну и цепочек не создаёт, следопыт действует обычно."
+    },
+    {
+      "id": "poison_gas_reserve",
+      "name": "Запас газа",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_bitter_medicine"
+      ],
+      "mode": "all",
+      "effect": "Туманный склеп получает один дополнительный выброс: 3 / 4 / 5 вместо 2 / 3 / 4. Мощность, интервалы и число боёв облака прежние; неиспользованный заряд исчезает с облаком, пустоты выбросов не создают, следопыт и жрица сохраняют противодействие."
+    },
+    {
+      "id": "poison_clean_distillation",
+      "name": "Чистая перегонка",
+      "category": "poison",
+      "cost": 4,
+      "parents": [
+        "poison_alchemy_3"
+      ],
+      "mode": "all",
+      "effect": "Дожигатель перерабатывает на 10 процентных пунктов больше оставшегося урона яда: 60% / 65% / 70% вместо 50% / 55% / 60%, максимум 100%. Расход яда и число целей прежние, без яда реакции нет; следопыт и жрица действуют обычно, Последняя капля и Финальный осадок не запускаются."
+    },
+    {
+      "id": "ritual_knightly_ritual",
+      "name": "Рыцарский ритуал",
+      "category": "ritual",
+      "cost": 6,
+      "parents": [
+        "ritual_dense_cover"
+      ],
+      "mode": "all",
+      "effect": "Основной щит Q Падшего рыцаря больше на 10% у обоих вариантов способности. На втором Q складывается с Великим ритуалом до +30%; отдельный Покров, усиленные удары, цена и два заряда прежние.",
+      "required_lord": "fallen_knight"
+    },
+    {
+      "id": "ritual_necrotic_bond",
+      "name": "Некротическая связь",
+      "category": "ritual",
+      "cost": 6,
+      "parents": [
+        "ritual_enhanced_impulse"
+      ],
+      "mode": "all",
+      "effect": "Возвращение от метки Q Некроманта даёт на 10% больше HP с учётом варианта и мастерства, не выше максимума. На второй метке с Великим ритуалом суммарно +30%; новых меток и воскрешений нет, урон Мстительного призрака прежний.",
+      "required_lord": "necromancer"
+    },
+    {
+      "id": "ritual_plague_reaction",
+      "name": "Чумная реакция",
+      "category": "ritual",
+      "cost": 6,
+      "parents": [
+        "poison_clean_distillation"
+      ],
+      "mode": "all",
+      "effect": "Мгновенная вспышка Q Чумного алхимика по уже отравленным героям получает +25% урона, включая Едкую вспышку. Сила и длительность нового яда, защита от него, цена и два заряда прежние; Великий ритуал усиливает яд второго Q отдельно.",
+      "required_lord": "plague_alchemist"
+    }
+  ]
+}
