@@ -1,0 +1,21 @@
+{
+  "version": "2.0",
+  "name": "Система прокачки",
+  "source_commit": "8fbced9faa3aa24706556ed21cb2508abc48364f",
+  "engine": "4.7.2.stable.official.ed1daf0bf",
+  "engine_runtime_source": "gh-pages v1.0.5: same Godot engine version and build",
+  "built_at_utc": "2026-10-23T08:26:57.7531932Z",
+  "pack": "game-v2.0-8fbced9.pck",
+  "pack_bytes": 536824,
+  "pack_sha256": "7c5fe26cfb012353422ca0e6060cfd3ea0370a54807ac2b101e486ffef9ce677",
+  "content": [
+    "room evolutions",
+    "hero equipment",
+    "existing progression trees"
+  ],
+  "planned_not_implemented": [
+    "120-node global skill tree",
+    "run souls for skills",
+    "gold cost for Q"
+  ]
+}
