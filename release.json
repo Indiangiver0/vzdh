@@ -1,21 +1,24 @@
 {
-  "version": "2.0",
+  "version": "2.1.0",
   "name": "Система прокачки",
-  "source_commit": "8fbced9faa3aa24706556ed21cb2508abc48364f",
+  "source_commit": "682938cb19c1f88bb26d08c85ae4ba353a176d29",
+  "source_tag": "v2.1.0",
   "engine": "4.7.2.stable.official.ed1daf0bf",
-  "engine_runtime_source": "gh-pages v1.0.5: same Godot engine version and build",
-  "built_at_utc": "2026-10-23T08:26:57.7531932Z",
-  "pack": "game-v2.0-8fbced9.pck",
-  "pack_bytes": 536824,
-  "pack_sha256": "7c5fe26cfb012353422ca0e6060cfd3ea0370a54807ac2b101e486ffef9ce677",
+  "engine_runtime_source": "gh-pages d69ac14439505968280757ab798406c5ad8a51e8 (identical Godot engine build)",
+  "built_at_utc": "2026-10-27T09:01:50.159250+00:00",
+  "pack": "game-v2.1.0-682938c.pck",
+  "pack_bytes": 795140,
+  "pack_sha256": "5d5e911f31b8deb822f3ed22d7b33f2c0b9d626b8ca4b8b81ec4a1efcd76c7b4",
   "content": [
-    "room evolutions",
-    "hero equipment",
-    "existing progression trees"
+    "120 one-time run skills with a zoomable snowflake map",
+    "run souls with random drops and a pity rule",
+    "paid Q with fixed per-wave cost and skill discounts",
+    "permanent Lord Seals with profile compatibility",
+    "mage counterplay during duels and stronger three-hero parties",
+    "existing room evolutions and hero equipment"
   ],
-  "planned_not_implemented": [
-    "120-node global skill tree",
-    "run souls for skills",
-    "gold cost for Q"
-  ]
+  "verification": {
+    "pack_export": "succeeded without reported errors",
+    "gameplay_tests": "not run for this release"
+  }
 }
