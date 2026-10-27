@@ -4,6 +4,7 @@ extends RefCounted
 
 const Damage = preload("res://scripts/damage_rules.gd")
 const HeroRules = preload("res://scripts/hero_rules.gd")
+const Skills = preload("res://scripts/run_skill_effects.gd")
 var actors: Array[Dictionary] = []
 var owners: Dictionary = {}
 var consumed: Dictionary = {}
@@ -68,7 +69,7 @@ func next_wave(g) -> void:
 			continue
 		var memory: Dictionary = room.get("evolution_memory", {})
 		var stage: int = int(room.get("evolution_stage", 2))
-		memory.ammo = mini(1 + tier(stage), int(memory.get("ammo", 0)) + 1)
+		memory.ammo = mini(1 + tier(stage) + int(Skills.value(g, "traps_expanded_arsenal", "extra_ammunition_capacity")), int(memory.get("ammo", 0)) + 1)
 		room.evolution_memory = memory
 
 
@@ -126,6 +127,8 @@ func make_actor(g, slot: int, stats: Dictionary, form: String = "base", scale: f
 	actor.hp = maxi(1, ceili(float(stats.hp) * scale))
 	actor.max_hp = actor.hp
 	actor.damage = maxi(1, ceili(float(stats.damage) * scale))
+	actor.tree_base_damage = float(stats.get("tree_base_damage", stats.damage)) * scale
+	actor.tree_base_hp = float(stats.get("tree_base_hp", stats.hp)) * scale
 	actor.effects = {}
 	actor.charges = {}
 	actor.age = 0
@@ -151,6 +154,7 @@ func make_actor(g, slot: int, stats: Dictionary, form: String = "base", scale: f
 		actor.finalized = false
 	elif not owners.has(slot):
 		owners[slot] = {"stats": stats.duplicate(true), "rewarded": false, "engaged": false, "queues": [], "flags": {}}
+	Skills.actor_spawn(g, actor)
 	return actor
 
 
@@ -159,6 +163,7 @@ func add_actor(g, actor: Dictionary) -> void:
 	if owners.has(int(actor.source_slot)):
 		owners[int(actor.source_slot)].engaged = true
 	g.defenders = actors
+	Skills.publish(g, actor)
 	event(g, "spawn", str(actor.actor_id), "", 0, "%s вступает в бой" % actor.name, int(actor.source_slot))
 
 
@@ -172,6 +177,7 @@ func sync_primary(g) -> void:
 		g.defender = alive[0]
 	g.defenders = actors
 	for actor in actors:
+		Skills.publish(g, actor)
 		var slot: int = int(actor.source_slot)
 		if slot >= 0 and slot < g.rooms.size() and not g.rooms[slot].is_empty():
 			g.rooms[slot].current_hp = int(actor.hp)
@@ -288,11 +294,13 @@ func hero_damage_breakdown(g, hero: Dictionary, amount: int, source: String, all
 	# Only the damage left on the primary target can overflow. A redirected
 	# share has already spent that part of the original hit's damage budget.
 	result.overkill = maxi(0, amount - int(result.actual))
+	if int(hero.hp) <= 0:
+		clear_ended_duels(g)
 	return result
 
 
-func poison(g, hero: Dictionary, damage: int, duration: int, source: String) -> void:
-	g._apply_hero_poison(hero, maxi(1, damage), maxi(1, duration), source)
+func poison(g, hero: Dictionary, damage: float, duration: int, source: String, extra_bonus: float = 0.0) -> void:
+	g._apply_hero_poison(hero, maxf(0.0, damage), g._scaled_poison_duration(maxi(1, duration)), source, extra_bonus)
 
 
 func begin_combat(g) -> void:
@@ -322,6 +330,8 @@ func begin_combat(g) -> void:
 				tags.append("spirit")
 			g.defender.tags = tags
 			g.defender.effects.spirit = true
+			g.defender.armor = maxi(0, int(g.defender.armor) - int(g.defender.get("tree_bone_armor", 0)))
+			g.defender.tree_bone_armor = 0
 		elif kind == "banner":
 			g.defender.effects.banner = p.duplicate(true)
 		elif kind == "rust_window":
@@ -336,6 +346,8 @@ func begin_combat(g) -> void:
 				for key in ["poison_ticks", "shackles_ticks", "silence_ticks", "rust_ticks", "cocoon_ticks"]:
 					if cleared >= max_effects or int(hero.get(key, 0)) <= 0:
 						continue
+					if key == "poison_ticks":
+						g.clear_poison(hero)
 					hero[key] = 0
 					cleared += 1
 			for actor in actors:
@@ -352,6 +364,7 @@ func begin_combat(g) -> void:
 		pending.remove_at(index)
 	for actor in actors:
 		support_from_future(g, actor)
+	sync_primary(g)
 	if not g._living().is_empty():
 		g.active_target_id = str(g._living()[0].instance_id)
 	event(g, "enter", str(g.defender.actor_id), g.active_target_id, 0, "Бой: %s" % g.defender.name, g.current_slot)
@@ -364,7 +377,7 @@ func setup_actor(g, actor: Dictionary) -> void:
 	if path == "guardian_parry":
 		actor.charges.parry = int(params(actor).get("parry_charges", t))
 	elif path == "mimic_false_treasury":
-		actor.charges.decoys = 0 if has_class(g, "rogue") else 1
+		actor.charges.decoys = 0 if has_class(g, "rogue") else 1 + int(Skills.value(g, "shared_spare_decoy", "extra_initial_decoys"))
 	elif path == "mimic_living_chamber":
 		for reserved_slot in g.reserved_room_slots():
 			if int(g.reserved_room_slots()[reserved_slot]) != slot:
@@ -379,7 +392,8 @@ func setup_actor(g, actor: Dictionary) -> void:
 		var memory: Dictionary = g.rooms[slot].get("evolution_memory", {})
 		if memory.has("thrall") and int(memory.get("thrall_wave", 0)) == g.wave:
 			var servant: Dictionary = make_actor(g, slot, actor, "servant", float(params(actor).get("servant_hp_factor", 0.3)))
-			servant.damage = maxi(1, ceili(actor.damage * float(params(actor).get("servant_damage_factor", 0.3))))
+			servant.tree_base_damage = Skills.base_damage(actor) * float(params(actor).get("servant_damage_factor", 0.3))
+			servant.damage = maxi(1, ceili(Skills.damage(servant)))
 			servant.class_skill = bool(params(actor).get("class_skill", false))
 			servant.path_id = ""
 			servant.servant_class = str(memory.thrall)
@@ -391,7 +405,7 @@ func setup_actor(g, actor: Dictionary) -> void:
 		give_cup(g, actor)
 	if path == "duelist" and not g._living().is_empty():
 		actor.effects.duel = str(g._living()[0].instance_id)
-		actor.effects.duel_ticks = int(params(actor).get("duel_rounds", 2))
+		actor.effects.duel_ticks = 2 if t == 1 else 3
 
 
 func has_class(g, id: String) -> bool:
@@ -408,7 +422,7 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 	var path: String = str(stats.get("evolution_path", ""))
 	if path.is_empty():
 		g.defender = stats
-		g._trigger_trap(stats, disabled)
+		trigger_plain_trap(g, slot, stats, disabled)
 		return
 	var t: int = tier(int(stats.get("evolution_stage", 2)))
 	var p: Dictionary = params(stats)
@@ -423,21 +437,21 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 		before_hp[str(hero.instance_id)] = int(hero.hp)
 	var pending_start: int = pending.size()
 	var n: int = next_neighbor(g, slot)
-	var hit: int = maxi(1, ceili(float(stats.damage) * power))
+	var hit: float = Skills.base_damage(stats) * power
 	var monster_next: bool = n >= 0 and not g.rooms[n].is_empty() and str(g.room_stats(n).kind) == "monster"
 	match path:
 		"spikes_armour_press":
-			hero_damage(g, front, ceili((float(stats.damage) * float(p.get("base_damage_factor", 0.6)) + mini(int(p.get("bonus_cap", 18)), int(front.armor) * int(p.get("damage_per_armor", 3)))) * power), source)
+			trap_hit(g, slot, stats, front, Skills.base_damage(stats) * float(p.get("base_damage_factor", 0.6)) + mini(int(p.get("bonus_cap", 18)), g.effective_hero_armor(front) * int(p.get("damage_per_armor", 3))), power)
 		"spikes_collapsing_walkway":
 			for hero in party.slice(1, mini(party.size(), int(p.get("rear_targets", 1)) + 1)):
-				hero_damage(g, hero, ceili(hit * float(p.get("damage_factor", 0.9))), source)
+				trap_hit(g, slot, stats, hero, Skills.base_damage(stats) * float(p.get("damage_factor", 0.9)), power)
 		"spikes_blood_surge":
-			hero_damage(g, front, hit, source)
+			trap_hit(g, slot, stats, front, Skills.base_damage(stats), power)
 			if int(front.hp) <= 0:
 				for hero in party.slice(1):
-					hero_damage(g, hero, maxi(1, ceili(hit * float(p.get("surge_factor", 0.4)))), source)
+					trap_hit(g, slot, stats, hero, Skills.base_damage(stats) * float(p.get("surge_factor", 0.4)), power, Skills.value(g, "traps_runic_volley", "post_kill_volley_damage_bonus"))
 		"poison_fog_crypt":
-			pending.append({"kind": "fog", "damage": maxi(1, hit), "charges": 1 if disabled else int(p.get("pulses", 2)), "battles": int(p.get("battles", 1)), "source": source})
+			pending.append({"kind": "fog", "damage": hit, "charges": 1 if disabled else int(p.get("pulses", 2)) + int(Skills.value(g, "poison_gas_reserve", "extra_cloud_pulses")), "battles": int(p.get("battles", 1)), "source": source})
 			for hero in party:
 				poison(g, hero, hit, 2, source)
 		"poison_spore_garden":
@@ -448,19 +462,17 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 			for hero in party:
 				if int(hero.poison_ticks) <= 0 or reacted >= int(p.get("targets", 1)):
 					continue
-				var burst: int = mini(int(hero.poison_ticks) * int(hero.poison_damage), maxi(8, hit * 5))
-				burst = ceili(burst * float(p.get("remaining_poison_factor", 0.5)) * power)
+				var burst: float = minf(float(hero.poison_ticks) * float(hero.poison_damage), maxf(8.0, hit * 5.0))
+				burst *= minf(1.0, float(p.get("remaining_poison_factor", 0.5)) + Skills.value(g, "poison_clean_distillation", "remaining_poison_conversion_addition")) * power
 				hero_damage(g, hero, g._poison_hit(hero, burst, aura), source)
-				hero.poison_ticks = 0
-				hero.poison_damage = 0
-				hero.poison_heal_factor = 1.0
+				g.clear_poison(hero)
 				reacted += 1
 		"shackles_shared_chain":
 			if party.size() >= 2:
 				var ids: Array[String] = [str(front.instance_id), str(party[-1].instance_id)]
 				if t == 3 and party.size() >= 3:
 					ids.append(str(party[1].instance_id))
-				pending.append({"kind": "chain", "ids": ids, "charges": 1 if disabled else int(p.get("charges", 1)), "fraction": 0.15 if disabled else float(p.get("share_fraction", 0.25)), "source": source})
+				pending.append({"kind": "chain", "ids": ids, "charges": 1 if disabled else int(p.get("charges", 1)) + int(Skills.value(g, "traps_strong_links", "extra_damage_transfer_charges")), "fraction": 0.15 if disabled else float(p.get("share_fraction", 0.25)), "source": source})
 		"shackles_prisoner_scales":
 			if party.size() >= 2:
 				var other: Dictionary = g._most_wounded(party)
@@ -485,42 +497,49 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 		"silence_funeral_peal":
 			pending.append({"kind": "funeral", "ticks": 1 if disabled else int(p.get("silence_rounds", 1)), "source": source})
 		"rust_fracture_window":
-			var armored: Dictionary = most_armored(party)
-			pending.append({"kind": "rust_window", "target": str(armored.instance_id), "amount": mini(int(armored.armor), 1 if disabled else int(p.get("armor_reduction", 1))), "ticks": 1 if disabled else int(p.get("duration_rounds", 3)), "source": source})
+			var armored: Dictionary = most_armored(g, party)
+			pending.append({"kind": "rust_window", "target": str(armored.instance_id), "amount": mini(g.effective_hero_armor(armored), 1 if disabled else int(p.get("armor_reduction", 1))), "ticks": 1 if disabled else int(p.get("duration_rounds", 3)), "source": source})
 		"rust_shard_chamber":
-			var metal: int = mini(int(p.get("damage_cap", 12)), int(most_armored(party).armor) * int(p.get("damage_per_armor", 3)))
+			var metal: int = mini(int(p.get("damage_cap", 12)), g.effective_hero_armor(most_armored(g, party)) * int(p.get("damage_per_armor", 3)))
 			for hero in party:
-				hero_damage(g, hero, ceili(float(metal) * power), source)
+				trap_hit(g, slot, stats, hero, float(metal), power)
 		"rust_reforging":
-			if monster_next:
-				var armored: Dictionary = most_armored(party)
-				var metal: int = mini(int(armored.armor), 1 if disabled else int(p.get("armor_reduction", 1)))
+			n = Skills.transfer_neighbor(g, slot, "shared_runic_channel")
+			if n >= 0:
+				var armored: Dictionary = most_armored(g, party)
+				var metal: int = mini(g.effective_hero_armor(armored), 1 if disabled else int(p.get("armor_reduction", 1)))
 				pending.append({"kind": "rust_window", "slot": n, "target": str(armored.instance_id), "amount": metal, "ticks": 1000000, "source": source})
-				pending.append({"kind": "shield", "slot": n, "amount": mini(int(p.get("shield_cap", 8)), metal * int(p.get("shield_per_armor", 8)))})
+				pending.append({"kind": "shield", "slot": n, "amount": ceili(minf(float(p.get("shield_cap", 8)), metal * float(p.get("shield_per_armor", 8))) * (1.2 if Skills.has(g, "traps_dense_casting") else 1.0))})
 		"ballista_clear_sight":
-			hero_damage(g, party[-1], ceili(hit * float(p.get("shot_factor", 1.0))), source)
+			trap_hit(g, slot, stats, party[-1], Skills.base_damage(stats) * float(p.get("shot_factor", 1.0)), power)
 		"ballista_reserve_magazine":
 			var memory: Dictionary = g.rooms[slot].get("evolution_memory", {})
 			var ammunition: int = int(memory.get("ammo", 0))
 			for hero in party:
 				if ammunition <= 0:
 					break
-				hero_damage(g, hero, ceili(hit * float(p.get("shot_factor", 0.8))), source)
+				var shot_ids: Array = Skills.room(g, slot).get("shot_ids", [])
+				if shot_ids.has(str(hero.instance_id)):
+					continue
+				trap_hit(g, slot, stats, hero, Skills.base_damage(stats) * float(p.get("shot_factor", 0.8)), power)
+				shot_ids.append(str(hero.instance_id))
+				Skills.room(g, slot).shot_ids = shot_ids
 				ammunition -= 1
 			memory.ammo = ammunition
 			g.rooms[slot].evolution_memory = memory
 		"ballista_siege":
 			for i in range(mini(party.size(), int(p.get("targets", 2)))):
-				hero_damage(g, party[i], maxi(1, ceili(hit * float(p.get("shot_factor", 0.8)) * pow(float(p.get("falloff", 0.6)), i))), source)
+				var falloff: float = minf(0.9, float(p.get("falloff", 0.6)) + Skills.value(g, "traps_heavy_tip", "piercing_damage_retention_addition"))
+				trap_hit(g, slot, stats, party[i], Skills.base_damage(stats) * float(p.get("shot_factor", 0.8)) * pow(falloff, i), power)
 		"blade_floor_blood_mill":
-			trap_sequence = {"slot": slot, "remaining": 1 if disabled else int(p.get("sections", 2)), "damage": maxi(1, ceili(float(hit) * float(p.get("section_damage_factor", 0.55)))), "source": source}
+			trap_sequence = {"slot": slot, "remaining": 1 if disabled else int(p.get("sections", 2)), "damage": Skills.base_damage(stats) * float(p.get("section_damage_factor", 0.55)), "source": source, "section": 0, "power": power, "disabled": disabled, "stats": stats.duplicate(true)}
 		"blade_floor_partition_corridor":
 			if monster_next:
 				pending.append({"kind": "partitions", "slot": n, "ticks": 1 if disabled else int(p.get("partition_rounds", 2)), "source": source})
 		"blade_floor_corpse_reclaimer":
 			pass
 	apply_trap_echo(g, slot, stats, party, before_hp, pending_start, power)
-	event(g, "trap", "room_%d" % slot, str(front.instance_id), hit, str(stats.name) + (" · механизм ослаблен" if disabled else ""), slot)
+	event(g, "trap", "room_%d" % slot, str(front.instance_id), ceili(hit), str(stats.name) + (" · механизм ослаблен" if disabled else ""), slot)
 
 
 func apply_trap_echo(g, slot: int, stats: Dictionary, party: Array[Dictionary], before_hp: Dictionary, pending_start: int, power: float) -> void:
@@ -538,18 +557,20 @@ func apply_trap_echo(g, slot: int, stats: Dictionary, party: Array[Dictionary], 
 	if str(stats.kind) == "poison":
 		for hero in party:
 			if int(hero.hp) > 0:
-				var pulse: int = g._poison_hit(hero, maxi(1, floori(float(stats.damage) * power * 0.4)), g._poison_aura_multiplier())
+				var pulse: int = g._poison_hit(hero, Skills.base_damage(stats) * (1.0 + float(g.run_skill_modifiers().get("poison_damage", 0.0))) * power * 0.4, g._poison_aura_multiplier())
 				total += hero_damage(g, hero, pulse, source)
 		activated = true
 	elif not trap_sequence.is_empty() and int(trap_sequence.slot) == slot:
-		trap_sequence.damage = int(trap_sequence.damage) + maxi(1, floori(float(trap_sequence.damage) * 0.4))
+		trap_sequence.damage = float(trap_sequence.damage) * 1.4
 		activated = true
 	else:
 		for hero in party:
 			var dealt: int = int(before_hp.get(str(hero.instance_id), int(hero.hp))) - int(hero.hp)
 			if dealt > 0:
 				activated = true
-				total += hero_damage(g, hero, maxi(1, floori(float(dealt) * 0.4)), source)
+				var actual: int = hero_damage(g, hero, maxi(1, floori(float(dealt) * 0.4)), source)
+				total += actual
+				Skills.trap_after_hit(g, slot, stats, hero, actual, int(hero.hp) <= 0)
 		for index in range(pending_start, pending.size()):
 			if pending[index].has("ticks") and int(pending[index].ticks) < 6:
 				pending[index].ticks = int(pending[index].ticks) + 1
@@ -559,10 +580,10 @@ func apply_trap_echo(g, slot: int, stats: Dictionary, party: Array[Dictionary], 
 		event(g, "echo", "room_%d" % slot, "", total, "Эхо механизмов усиливает ловушку", slot)
 
 
-func most_armored(party: Array[Dictionary]) -> Dictionary:
+func most_armored(g, party: Array[Dictionary]) -> Dictionary:
 	var result: Dictionary = party[0]
 	for hero in party:
-		if int(hero.armor) > int(result.armor):
+		if g.effective_hero_armor(hero) > g.effective_hero_armor(result):
 			result = hero
 	return result
 
@@ -574,7 +595,10 @@ func step(g) -> void:
 	if not trap_sequence.is_empty():
 		g._apply_poison()
 		for hero in g._living():
-			hero_damage(g, hero, int(trap_sequence.damage), str(trap_sequence.source))
+			var acceleration: float = minf(0.15, float(trap_sequence.section) * 0.05) if Skills.has(g, "traps_flywheel_acceleration") and not bool(trap_sequence.disabled) else 0.0
+			trap_hit(g, int(trap_sequence.slot), trap_sequence.stats, hero, float(trap_sequence.damage), float(trap_sequence.power), acceleration)
+		if not bool(trap_sequence.disabled):
+			trap_sequence.section = int(trap_sequence.section) + 1
 		heal_phase(g)
 		process_hero_deaths(g)
 		trap_sequence.remaining = int(trap_sequence.remaining) - 1
@@ -597,7 +621,7 @@ func step(g) -> void:
 	var fog: Dictionary = effects.get("fog", {})
 	if not fog.is_empty() and int(fog.charges) > 0 and g.combat_tick % 2 == 1:
 		for hero in g._living():
-			poison(g, hero, int(fog.damage), 2, str(fog.source))
+			poison(g, hero, float(fog.damage), 2, str(fog.source))
 		fog.charges = int(fog.charges) - 1
 	g._apply_poison()
 	process_hero_deaths(g)
@@ -625,7 +649,7 @@ func step(g) -> void:
 		if play_drum(g, hero, available):
 			continue
 		var target: Dictionary = select_hero_target(hero, available)
-		if target.is_empty() or not duel_allows(g, hero, target):
+		if target.is_empty():
 			continue
 		var attack: Dictionary = plan_hero_attack(g, hero, target)
 		if not attack.is_empty():
@@ -680,7 +704,7 @@ func heal_phase(g) -> Array[String]:
 				hero.cursed_cup.uses = int(hero.cursed_cup.uses) + 1
 				heal(g, hero, hero, maxi(1, ceili(hero.max_hp * float(hero.cursed_cup.get("heal_fraction", 0.08)))))
 				if int(hero.cursed_cup.uses) >= int(hero.cursed_cup.get("uses_to_bite", 3)):
-					hero_damage(g, hero, maxi(1, ceili(hero.max_hp * float(hero.cursed_cup.get("bite_fraction", 0.3)))), str(hero.cursed_cup.source))
+					hero_damage(g, hero, maxi(1, ceili(hero.max_hp * float(hero.cursed_cup.get("bite_fraction", 0.3)) * (1.0 + Skills.value(g, "shared_sharp_teeth", "final_cup_bite_damage_bonus")))), str(hero.cursed_cup.source))
 					event(g, "curse", "cup", str(hero.instance_id), 0, "Кубок раскрывает зубы")
 					hero.erase("cursed_cup")
 		if str(hero.id) != "priest" or g.combat_tick % 3 != 0 or not can_cast(hero):
@@ -695,9 +719,7 @@ func heal_phase(g) -> Array[String]:
 func heal(g, healer: Dictionary, target: Dictionary, amount: int) -> int:
 	if int(target.hp) <= 0:
 		return 0
-	var value: int = amount
-	if int(target.poison_ticks) > 0:
-		value = maxi(1, floori(value * float(target.get("poison_heal_factor", 1.0))))
+	var value: int = maxi(1, floori(amount * Skills.healing_factor(g, target, amount)))
 	var mass: Dictionary = effects.get("mass", {})
 	if not mass.is_empty() and str(healer.id) == "priest":
 		effects.erase("mass")
@@ -705,7 +727,7 @@ func heal(g, healer: Dictionary, target: Dictionary, amount: int) -> int:
 		if not active.is_empty():
 			var stolen: int = floori(value * float(mass.fraction))
 			var defender: Dictionary = active[0]
-			var gain: int = mini(stolen, int(defender.max_hp) - int(defender.hp))
+			var gain: int = mini(Skills.heal_amount(g, stolen, true), int(defender.max_hp) - int(defender.hp))
 			defender.hp = int(defender.hp) + gain
 			value -= stolen
 			event(g, "steal_heal", str(healer.instance_id), str(defender.actor_id), gain, "Чёрная месса перехватывает лечение")
@@ -736,6 +758,7 @@ func select_hero_target(hero: Dictionary, available: Array[Dictionary]) -> Dicti
 
 
 func duel_allows(g, hero: Dictionary, _target: Dictionary) -> bool:
+	clear_ended_duels(g)
 	for actor in living_actors():
 		if int(actor.effects.get("duel_ticks", 0)) > 0 and str(actor.effects.get("duel", "")) != str(hero.instance_id):
 			g._battle_add(str(actor.source_room_uid), "control_actions")
@@ -766,6 +789,10 @@ func plan_hero_attack(g, hero: Dictionary, target: Dictionary) -> Dictionary:
 		if not HeroRules.item_active(hero, "item_memory_staff"):
 			state.stored_spell = false
 	hero.equipment_state = state
+	# Backline mages keep their charge clock during a duel; only a charged
+	# spell may act outside the two duel participants.
+	if not charged and not duel_allows(g, hero, target):
+		return {}
 	var raw: float = float(hero.damage)
 	var kind: String = "magic" if str(hero.id) == "mage" and can_cast(hero) else "physical"
 	if charged:
@@ -778,7 +805,9 @@ func plan_hero_attack(g, hero: Dictionary, target: Dictionary) -> Dictionary:
 	if str(hero.id) == "barbarian" and int(hero.hp) * 5 <= int(hero.max_hp) * 2:
 		raw *= 1.25
 	if bool(hero.get("weapon_swapped", false)) and not charged:
-		raw *= 0.8
+		raw *= 0.75 if Skills.has(g, "shared_convincing_counterfeit") else 0.8
+	if not charged and bool(hero.get("run_heavy_breathing", false)):
+		raw *= 0.9
 	if int(hero.effects.get("web_ticks", 0)) > 0:
 		raw *= 0.8
 	if int(effects.get("aura_suppressed", 0)) <= 0:
@@ -793,13 +822,13 @@ func plan_hero_attack(g, hero: Dictionary, target: Dictionary) -> Dictionary:
 		elif str(hero.id) == "barbarian":
 			raw *= 1.2
 	var armor: int = maxi(0, int(target.armor) - (1 if int(target.effects.get("split_ticks", 0)) > 0 else 0))
-	var hit: int = Damage.defender_hit(raw, armor, tags, kind, 1 if charged else 0)
+	var hit: float = Damage.defender_raw(raw, armor, tags, kind, 1 if charged else 0)
 	var hypnotist: String = str(hero.effects.get("hypnotized_by", ""))
 	if not hypnotist.is_empty() and not charged:
 		hero.effects.erase("hypnotized_by")
 		for ally in g._living():
 			if ally != hero:
-				return {"from": hero, "to": ally, "hero_target": true, "hit": Damage.hero_hit(raw, int(ally.armor)), "raw": raw, "type": "physical", "ordinary": true, "source": hypnotist, "hypnosis": true}
+				return {"from": hero, "to": ally, "hero_target": true, "hit": Damage.hero_hit(raw, g.effective_hero_armor(ally)), "raw": raw, "type": "physical", "ordinary": true, "source": hypnotist, "hypnosis": true}
 	if int(target.charges.get("decoys", 0)) > 0:
 		target.charges.decoys = int(target.charges.decoys) - 1
 		event(g, "decoy", str(hero.instance_id), str(target.actor_id), 0, "Ложный сундук рассыпается")
@@ -811,7 +840,7 @@ func plan_hero_attack(g, hero: Dictionary, target: Dictionary) -> Dictionary:
 			parried.append(str(hero.instance_id))
 			target.charges.parried_heroes = parried
 			event(g, "parry", str(target.actor_id), str(hero.instance_id), 0, "Страж парирует и отвечает")
-			return actor_strike(g, target, hero, 0.65, false)
+			return actor_strike(g, target, hero, 0.65, true, "physical", false, "parry")
 	return {"from": hero, "to": target, "hero_target": false, "hit": hit, "raw": raw, "type": kind, "ordinary": not charged, "source": str(hero.instance_id), "charged": charged}
 
 
@@ -851,11 +880,6 @@ func select_actor_target(g, actor: Dictionary) -> Dictionary:
 				score = value
 		if not best.is_empty():
 			return best
-	var banner: Dictionary = actor.effects.get("banner", {})
-	if not banner.is_empty() and int(banner.get("hits", 0)) > 0:
-		var marked: Dictionary = living_hero(g, str(banner.target))
-		if not marked.is_empty():
-			return marked
 	if int(actor.effects.get("duel_ticks", 0)) > 0:
 		var rival: Dictionary = living_hero(g, str(actor.effects.duel))
 		if not rival.is_empty():
@@ -884,8 +908,21 @@ func select_actor_target(g, actor: Dictionary) -> Dictionary:
 	return party[0]
 
 
-func actor_strike(g, actor: Dictionary, target: Dictionary, multiplier: float = 1.0, special: bool = false, kind: String = "physical", bypass: bool = false) -> Dictionary:
-	var raw: float = float(actor.damage) * multiplier
+func actor_strike(g, actor: Dictionary, target: Dictionary, multiplier: float = 1.0, special: bool = false, kind: String = "physical", bypass: bool = false, ability_override: String = "") -> Dictionary:
+	# Reserve one directed ordinary strike at declaration time. The shared
+	# source-room budget survives forms and cannot be refilled by later marks.
+	if not special and int(actor.effects.get("duel_ticks", 0)) <= 0:
+		var banner: Dictionary = Skills.room(g, int(actor.source_slot)).get("incoming_banner", {})
+		if not banner.is_empty():
+			var orders: Dictionary = Skills.room(g, int(banner.source_slot))
+			var marked: Dictionary = living_hero(g, str(banner.target))
+			if int(orders.get("banner_remaining", 0)) > 0 and not marked.is_empty():
+				target = marked
+				orders.banner_remaining = int(orders.banner_remaining) - 1
+				g.active_target_id = str(target.instance_id)
+	var ability: String = ability_override if not ability_override.is_empty() else str(actor.effects.get("resolving_ability", ""))
+	var tree: Dictionary = Skills.attack_bonus(g, actor, target, not special, ability)
+	var raw: float = Skills.damage(actor, float(tree.bonus), multiplier)
 	var bonus: float = float(actor.get("revenant_damage_bonus", 0.0))
 	if int(actor.get("ability_attacks", 0)) > 0:
 		bonus += float(actor.get("ability_attack_bonus", 0.0))
@@ -911,11 +948,9 @@ func actor_strike(g, actor: Dictionary, target: Dictionary, multiplier: float = 
 		raw *= float(params(actor).get("sapper_bite_factor", 1.0))
 	if str(actor.get("specialization", "")) == "ambush" and int(actor.age) == 1:
 		raw *= 1.75
-	var armor: int = int(target.armor)
+	var armor: int = maxi(0, g.effective_hero_armor(target) - int(tree.armor_bypass))
 	if str(actor.id) == "wraith":
 		armor = maxi(0, armor - int(actor.get("armor_bypass", 2)))
-	if int(target.get("rust_ticks", 0)) > 0:
-		armor = maxi(0, armor - int(target.get("rust_amount", 1)))
 	var value: int = Damage.hero_hit(raw, armor, kind, bypass)
 	var tags: PackedStringArray = actor.get("tags", PackedStringArray())
 	if tags.has("corporeal") and str(target.id) == "knight":
@@ -925,7 +960,7 @@ func actor_strike(g, actor: Dictionary, target: Dictionary, multiplier: float = 
 	if not special and kind == "physical" and int(target.effects.get("cover_until", -1)) == g.combat_tick:
 		value = maxi(1, ceili(value * 0.7))
 		target.effects.erase("cover_until")
-	return {"from": actor, "to": target, "hero_target": true, "hit": value, "raw": raw, "type": kind, "ordinary": not special, "source": str(actor.source_room_uid), "ability": str(actor.effects.get("resolving_ability", ""))}
+	return {"from": actor, "to": target, "hero_target": true, "hit": value, "raw": raw, "type": kind, "ordinary": not special, "source": str(actor.source_room_uid), "ability": ability}
 
 
 func prepare(g, actor: Dictionary, kind: String, duration: int, target: Dictionary = {}) -> void:
@@ -1003,7 +1038,7 @@ func plan_actor(g, actor: Dictionary, strikes: Array[Dictionary]) -> void:
 					strikes.append(actor_strike(g, actor, hero, float(p.get("scream_factor", 1.4)), true, "magic", true))
 				actor.charges.scream = true
 				if t == 3:
-					pending.append({"kind": "banshee_echo", "damage": maxi(1, ceili(actor.damage * float(p.get("echo_factor", 0.35)))), "source": str(actor.source_room_uid)})
+					pending.append({"kind": "banshee_echo", "damage": maxi(1, ceili(Skills.damage(actor, Skills.value(g, "creatures_power_of_lament", "existing_echo_damage_bonus"), float(p.get("echo_factor", 0.35))))), "source": str(actor.source_room_uid)})
 			"hellfire":
 				actor.effects.fire_ticks = int(p.get("fire_rounds", 3)) + 1
 				event(g, "fire", str(actor.actor_id), "", 2 + t, "Пол охвачен пламенем", int(actor.source_slot))
@@ -1069,6 +1104,10 @@ func plan_actor(g, actor: Dictionary, strikes: Array[Dictionary]) -> void:
 		actor.charges.bomb = true
 		bomb(g, actor, false)
 		return
+	clear_ended_duels(g)
+	for duelist in living_actors():
+		if int(duelist.effects.get("duel_ticks", 0)) > 0 and duelist != actor:
+			return
 	var multiplier: float = 1.0
 	actor.effects.erase("resolving_ability")
 	if str(actor.id) == "ogre" and path.is_empty() and age % 3 == 0:
@@ -1088,10 +1127,13 @@ func resolve_strikes(g, strikes: Array[Dictionary]) -> void:
 	# Reserve finite shield absorption in declared order before resolving HP.
 	for strike in strikes:
 		var target: Dictionary = strike.to
-		var amount: int = int(strike.hit)
+		var amount: int = ceili(float(strike.hit))
 		if not bool(strike.hero_target):
+			amount = Skills.protect(g, target, float(strike.hit), bool(strike.ordinary), str(strike.type), bool(strike.get("charged", false)))
 			var absorbed: int = mini(amount, int(target.get("shield", 0)))
+			# Cover is already inside shield; spend that subset first, never add it twice.
 			target.shield = int(target.get("shield", 0)) - absorbed
+			target.run_cover_shield = maxi(0, int(target.get("run_cover_shield", 0)) - absorbed)
 			amount -= absorbed
 			strike.absorbed = absorbed
 		strike.amount = amount
@@ -1116,6 +1158,7 @@ func resolve_strikes(g, strikes: Array[Dictionary]) -> void:
 		var target_id: String = str(target.get("actor_id", target.get("instance_id", "")))
 		event(g, "attack", attacker_id, target_id, actual, "%s → %s: −%d HP" % [attacker.name, target.name, actual], int(attacker.get("source_slot", -1)))
 		g.last_action.meta = {"damage_type": str(strike.type), "ordinary": bool(strike.ordinary), "ability": str(strike.get("ability", "")), "prepared_kind": str(strike.get("ability", "")), "charged": bool(strike.get("charged", false)), "shield_absorbed": int(strike.get("absorbed", 0))}
+	clear_ended_duels(g)
 	# Reactions follow the complete direct damage batch. A slain vampire cannot
 	# heal; a pending death remains a death for prayer and formation decisions.
 	for strike in hits:
@@ -1132,18 +1175,19 @@ func resolve_strikes(g, strikes: Array[Dictionary]) -> void:
 			actor.effects.erase("release_coffin")
 			actor.phase_id = "base"
 			actor.max_hp = int(actor.effects.body_max)
-			actor.hp = mini(int(actor.max_hp), int(actor.effects.body_hp) + ceili(actor.max_hp * float(params(actor).get("heal_fraction", 0.35))))
+			actor.hp = mini(int(actor.max_hp), int(actor.effects.body_hp) + Skills.heal_amount(g, actor.max_hp * float(params(actor).get("heal_fraction", 0.35))))
 			actor.charges.empowered_bite = t == 3
 			event(g, "transform", str(actor.actor_id), "", int(actor.hp), "Вампир покидает саркофаг", int(actor.source_slot))
 		if int(actor.effects.get("pending_heal", 0)) > 0:
-			var gain: int = mini(int(actor.max_hp) - int(actor.hp), int(actor.effects.pending_heal))
+			var gain: int = mini(int(actor.max_hp) - int(actor.hp), Skills.heal_amount(g, float(actor.effects.pending_heal)))
 			actor.effects.erase("pending_heal")
 			actor.hp = int(actor.hp) + gain
 			event(g, "heal", str(actor.actor_id), str(actor.actor_id), gain, "Защитник восстанавливает здоровье", int(actor.source_slot))
 		if path == "war_hound_lycanthrope" and int(actor.hp) * 5 <= int(actor.max_hp) * 2 and not bool(actor.charges.get("transformed", false)):
 			actor.charges.transformed = true
 			actor.effects.transformed = true
-			actor.damage = ceili(actor.damage * float(params(actor).get("transformed_damage_factor", 1.2)))
+			actor.tree_base_damage = Skills.base_damage(actor) * float(params(actor).get("transformed_damage_factor", 1.2))
+			actor.damage = ceili(Skills.damage(actor))
 			if t >= 2:
 				for hero in g._living():
 					if str(hero.id) in ["priest", "bard", "mage"]:
@@ -1159,13 +1203,15 @@ func resolve_strikes(g, strikes: Array[Dictionary]) -> void:
 			actor.effects.body_max = int(actor.max_hp)
 			actor.effects.ritual_ticks = int(params(actor).get("ritual_rounds", 3))
 			actor.phase_id = "sarcophagus"
-			actor.max_hp = maxi(1, ceili(actor.max_hp * float(params(actor).get("coffin_hp_factor", 0.2))))
+			actor.max_hp = maxi(1, ceili(float(actor.get("tree_base_hp", actor.max_hp)) * float(params(actor).get("coffin_hp_factor", 0.2)) * (1.0 + float(actor.get("tree_hp_bonus", 0.0)) + Skills.value(g, "creatures_sturdy_lid", "coffin_hp_bonus"))))
 			actor.hp = actor.max_hp
 			event(g, "transform", str(actor.actor_id), "", 3, "Вампир скрывается в саркофаге", int(actor.source_slot))
 		if path == "mimic_false_treasury" and t >= 2 and float(actor.hp) / actor.max_hp < float(params(actor).get("relocate_hp_fraction", 0.5)) and not bool(actor.charges.get("second_shell", false)):
 			actor.charges.second_shell = true
 			actor.charges.decoys = 0 if has_class(g, "rogue") else 1
 			event(g, "transform", str(actor.actor_id), "", 0, "Мимик меняет оболочку", int(actor.source_slot))
+
+	Skills.expire_after_exchange(g)
 
 
 func after_actor_hit(g, strike: Dictionary) -> void:
@@ -1182,26 +1228,28 @@ func after_actor_hit(g, strike: Dictionary) -> void:
 			for hero in g.heroes:
 				hero.erase("goblin_mark_slot")
 			target.goblin_mark_slot = int(linked.to)
-	if actor.effects.has("banner"):
-		actor.effects.banner.hits = maxi(0, int(actor.effects.banner.hits) - 1)
 	if str(actor.id) == "vampire" and int(actor.hp) > 0 and str(actor.phase_id) != "sarcophagus":
-		actor.hp = mini(int(actor.max_hp), int(actor.hp) + ceili(dealt * 0.25))
+		actor.hp = mini(int(actor.max_hp), int(actor.hp) + Skills.heal_amount(g, dealt * 0.25))
 	if path == "venom_hunter" and int(target.hp) > 0:
 		if t >= 2 and int(target.poison_ticks) > 0:
 			var consumed_ticks: int = mini(int(target.poison_ticks), int(params(actor).get("consume_ticks", 2)))
-			var burst: int = consumed_ticks * int(target.poison_damage)
-			target.poison_ticks = maxi(0, int(target.poison_ticks) - consumed_ticks)
+			var burst: float = 0.0
+			for _tick in range(consumed_ticks):
+				burst += g.consume_poison_tick(target, false)
 			hero_damage(g, target, g._poison_hit(target, burst, g._poison_aura_multiplier()), str(actor.source_room_uid))
-		poison(g, target, maxi(1, ceili(actor.damage * float(params(actor).get("poison_damage_factor", 0.2)))), int(params(actor).get("poison_ticks", 3)), str(actor.source_room_uid))
+		poison(g, target, Skills.base_damage(actor) * float(params(actor).get("poison_damage_factor", 0.2)), int(params(actor).get("poison_ticks", 3)), str(actor.source_room_uid), float(actor.get("tree_damage_bonus", 0.0)))
 	elif path == "cocoon_weaver" and t == 1:
 		target.effects.web_ticks = 2
 	elif path == "war_banner":
-		var n: int = next_neighbor(g, int(actor.source_slot))
-		if n >= 0 and not g.rooms[n].is_empty() and str(g.room_stats(n).kind) == "monster":
-			for index in range(pending.size() - 1, -1, -1):
-				if str(pending[index].kind) == "banner" and int(pending[index].slot) == n:
-					pending.remove_at(index)
-			pending.append({"kind": "banner", "slot": n, "target": str(target.instance_id), "hits": t})
+		var source_slot: int = int(actor.source_slot)
+		var n: int = Skills.transfer_neighbor(g, source_slot, "shared_distant_orders")
+		if n >= 0:
+			var orders: Dictionary = Skills.room(g, source_slot)
+			if not orders.has("banner_remaining"):
+				orders.banner_remaining = t + int(Skills.value(g, "creatures_loud_command", "extra_directed_ordinary_attacks"))
+			if int(orders.banner_remaining) > 0:
+				var receiving_room: Dictionary = Skills.room(g, n)
+				receiving_room.incoming_banner = {"source_slot": source_slot, "target": str(target.instance_id)}
 	elif path == "pickpockets":
 		var slots: Array = target.get("equipment_disabled_slots", [])
 		if not bool(actor.charges.get("weapon_stolen", false)):
@@ -1225,6 +1273,9 @@ func after_actor_hit(g, strike: Dictionary) -> void:
 		actor.charges.sabotage = true
 		target.disarm_charges = maxi(0, int(target.disarm_charges) - 1)
 	if bool(strike.killed):
+		var recovery: int = Skills.personal_kill(g, actor, bool(strike.ordinary))
+		if recovery > 0:
+			event(g, "heal", str(actor.actor_id), str(actor.actor_id), recovery, "Душа поверженного укрепляет защитника", int(actor.source_slot))
 		if path == "ogre_maneater":
 			actor.charges.earned_feast = true
 		elif path == "vampire_sire" and (not bool(actor.charges.get("sired", false)) or t == 3):
@@ -1244,13 +1295,17 @@ func after_actor_hit(g, strike: Dictionary) -> void:
 			var overflow: int = int(strike.get("overkill", 0))
 			if overflow > 0 and not g._living().is_empty():
 				var other: Dictionary = g._living()[0]
-				var actual: int = hero_damage(g, other, Damage.hero_hit(overflow, int(other.armor)), str(actor.source_room_uid), false)
+				var actual: int = hero_damage(g, other, Damage.hero_hit(overflow, g.effective_hero_armor(other)), str(actor.source_room_uid), false)
 				event(g, "cleave", str(actor.actor_id), str(other.instance_id), actual, "Тесак переносит остаток удара", int(actor.source_slot))
 
 
 func after_hero_hit(g, strike: Dictionary) -> void:
 	var hero: Dictionary = strike.from
 	var target: Dictionary = strike.to
+	Skills.after_received(g, target, strike)
+	if str(target.actor_id) == "lord" and int(target.hp) > 0 and int(strike.actual) > 0 and bool(strike.get("charged", false)) and Skills.has(g, "lord_vengeful_seal") and Skills.once(Skills.wave(g), "vengeful_seal"):
+		var reply: int = hero_damage(g, hero, Damage.hero_hit(float(strike.actual) * Skills.value(g, "lord_vengeful_seal", "reply_damage_fraction_of_actual_lord_hp_lost"), g.effective_hero_armor(hero), "magic"), "lord")
+		event(g, "spell", "lord", str(hero.instance_id), reply, "Мстительная печать отвечает магу")
 	if int(strike.actual) > 0 and bool(strike.ordinary) and HeroRules.item_active(hero, "item_armour_splitter"):
 		var state: Dictionary = hero.get("equipment_state", {})
 		var identity: String = "%s:%s" % [target.actor_id, target.phase_id]
@@ -1266,8 +1321,8 @@ func after_hero_hit(g, strike: Dictionary) -> void:
 					target.effects.split_ticks = 3
 					event(g, "armor_break", str(hero.instance_id), str(target.actor_id), 1, "Топор раскалывает броню", int(target.source_slot))
 		hero.equipment_state = state
-	if bool(strike.ordinary) and int(target.effects.get("fire_ticks", 0)) > 0:
-		hero_damage(g, hero, maxi(1, ceili(target.damage * float(params(target).get("burn_factor", 0.2)))), str(target.source_room_uid))
+	if bool(strike.ordinary) and str(strike.type) == "physical" and int(hero.hp) > 0:
+		burn_floor(g, hero)
 
 
 func bomb(g, actor: Dictionary, final: bool) -> void:
@@ -1276,11 +1331,11 @@ func bomb(g, actor: Dictionary, final: bool) -> void:
 		return
 	var disabled: bool = disarm(g, int(actor.source_slot))
 	var t: int = tier(int(actor.stage))
-	var hit: int = maxi(1, ceili(actor.damage * float(params(actor).get("explosion_factor" if final else "throw_factor", 1.0)) * (0.4 if disabled else 1.0)))
+	var hit: int = maxi(1, ceili(Skills.damage(actor, 0.0, float(params(actor).get("explosion_factor" if final else "throw_factor", 1.0))) * (0.4 if disabled else 1.0)))
 	if not final or t < 3:
 		party.resize(1)
 	for hero in party:
-		hero_damage(g, hero, hit, str(actor.source_room_uid))
+		creature_direct_damage(g, actor, hero, hit)
 	event(g, "explosion", str(actor.actor_id), "", hit, "Пороховая бочка взрывается", int(actor.source_slot))
 
 
@@ -1304,6 +1359,7 @@ func process_hero_deaths(g) -> void:
 			deaths.append({"hero": hero, "prayer": str(hero.id) == "priest" and HeroRules.item_active(hero, "item_last_prayer") and int(hero.get("silence_ticks", 0)) <= 0 and int(hero.get("cocoon_ticks", 0)) <= 0 and int(effects.get("partitions", {}).get("ticks", 0)) <= 0 and not bool(hero.get("equipment_state", {}).get("wave:prayer", false))})
 	for record in deaths:
 		var hero: Dictionary = record.hero
+		clear_ended_duels(g)
 		if hero.has("spore") and bool(hero.spore.get("on_death", false)):
 			burst_spore(g, hero)
 		if bool(record.prayer) and not g._living().is_empty():
@@ -1313,7 +1369,7 @@ func process_hero_deaths(g) -> void:
 			if str(actor.path_id) == "venom_hunter" and tier(int(actor.stage)) == 3 and int(hero.poison_ticks) > 0 and str(hero.get("poison_source", "")) == str(actor.source_room_uid) and not bool(actor.charges.get("infection", false)):
 				actor.charges.infection = true
 				for living in g._living():
-					poison(g, living, maxi(1, int(hero.poison_damage)), 3, str(actor.source_room_uid))
+					poison(g, living, float(hero.get("run_poison_base", hero.poison_damage)), 3, str(actor.source_room_uid))
 	if not deaths.is_empty():
 		var funeral: Dictionary = effects.get("funeral", {})
 		if not funeral.is_empty():
@@ -1333,7 +1389,7 @@ func burst_spore(g, carrier: Dictionary) -> void:
 	carrier.erase("spore")
 	for hero in g._living():
 		if hero != carrier:
-			poison(g, hero, int(spore.damage), int(spore.duration), str(spore.source))
+			poison(g, hero, float(spore.damage), int(spore.duration), str(spore.source))
 	event(g, "spore", str(carrier.instance_id), "", int(spore.damage), "Спора заражает отряд")
 
 
@@ -1371,16 +1427,33 @@ func resolve_actor_deaths(g) -> void:
 			actor.charges.barrel = true
 			bomb(g, actor, true)
 		if path == "guardian_aegis" and bool(actor.charges.get("aegis", false)):
-			var n: int = next_neighbor(g, slot)
+			var n: int = Skills.transfer_neighbor(g, slot, "shared_runic_channel")
 			if n >= 0 and not g.rooms[n].is_empty() and str(g.room_stats(n).kind) == "monster":
-				pending.append({"kind": "shield", "slot": n, "amount": maxi(1, ceili(actor.max_hp * float(params(actor).get("shield_hp_factor", 0.2))))})
+				var amount: int = maxi(1, ceili(actor.max_hp * float(params(actor).get("shield_hp_factor", 0.2)) * (1.0 + Skills.value(g, "creatures_fortified_aegis", "transferred_shield_bonus"))))
+				var recipient: Dictionary = {}
+				for ally in actors:
+					if int(ally.source_slot) == n and int(ally.hp) > 0:
+						recipient = ally
+						break
+				if recipient.is_empty():
+					pending.append({"kind": "shield", "slot": n, "amount": amount})
+				else:
+					recipient.shield = int(recipient.get("shield", 0)) + amount
+					event(g, "shield", str(actor.actor_id), str(recipient.actor_id), amount, "Эгида передаёт щит соседнему защитнику", slot)
 		if path == "guardian_possessed" and str(actor.phase_id) == "base":
 			var spirit: Dictionary = make_actor(g, slot, owners[slot].stats, "spirit", float(params(actor).get("spirit_hp_factor", 0.25)))
-			spirit.damage = maxi(1, ceili(owners[slot].stats.damage * float(params(actor).get("spirit_damage_factor", 0.6))))
+			spirit.tree_base_damage = Skills.base_damage(owners[slot].stats) * float(params(actor).get("spirit_damage_factor", 0.6))
+			spirit.damage = maxi(1, ceili(Skills.damage(spirit)))
 			spirit.path_id = ""
 			spirit.name = "Освобождённый дух"
 			spirit.tags = PackedStringArray(["spirit"])
+			spirit.armor = maxi(0, int(spirit.armor) - int(spirit.get("tree_bone_armor", 0)))
+			spirit.tree_bone_armor = 0
+			for key in ["run_impulse_count", "run_impulse_bonus", "run_edge_bonus", "run_barrier", "run_cover_shield", "shield"]:
+				spirit[key] = actor.get(key, 0)
 			add_actor(g, spirit)
+		if not (path == "guardian_possessed" and str(actor.phase_id) == "base"):
+			Skills.final_death(g, actor)
 		if path == "brood_mother" and str(actor.phase_id) == "base":
 			owners[slot].queues = []
 			for _brood in range(int(params(actor).get("brood_waves", 1))):
@@ -1411,7 +1484,8 @@ func spawn_brood(g, slot: int) -> void:
 	var config: Dictionary = params(owners[slot].stats)
 	for _index in range(count):
 		var child: Dictionary = make_actor(g, slot, owners[slot].stats, "spiderling", float(config.get("brood_hp_factor", 0.2)))
-		child.damage = maxi(1, ceili(owners[slot].stats.damage * float(config.get("brood_damage_factor", 0.35))))
+		child.tree_base_damage = Skills.base_damage(owners[slot].stats) * float(config.get("brood_damage_factor", 0.35))
+		child.damage = maxi(1, ceili(Skills.damage(child)))
 		child.path_id = ""
 		child.name = "Паучонок"
 		add_actor(g, child)
@@ -1423,6 +1497,7 @@ func finish_owners(g) -> void:
 		if not bool(owner.get("engaged", false)) or bool(owner.rewarded) or owner_alive(int(slot)) or not owner.queues.is_empty():
 			continue
 		owner.rewarded = true
+		Skills.room_defeated(g, int(slot))
 		if int(slot) >= g.rooms.size():
 			continue
 		g.rooms[int(slot)].status = "cleared"
@@ -1440,6 +1515,7 @@ func finish_owners(g) -> void:
 
 
 func support_from_future(g, actor: Dictionary) -> void:
+	fire_support(g, actor)
 	var slot: int = int(actor.source_slot)
 	if slot >= g.rooms.size():
 		return
@@ -1461,8 +1537,7 @@ func support_from_future(g, actor: Dictionary) -> void:
 		var before_hp: Dictionary = {}
 		for hero in party:
 			before_hp[str(hero.instance_id)] = int(hero.hp)
-		var hit: int = ceili(stats.damage * float(params(stats).get("shot_factor", 1.0)) * (0.4 if disabled else 1.0))
-		hero_damage(g, target, hit, g._battle_source(n))
+		var hit: int = trap_hit(g, n, stats, target, Skills.base_damage(stats) * float(params(stats).get("shot_factor", 1.0)), 0.4 if disabled else 1.0)
 		apply_trap_echo(g, n, stats, party, before_hp, pending.size(), 0.4 if disabled else 1.0)
 		event(g, "bolt", "room_%d" % n, str(target.instance_id), hit, "Баллиста стреляет через свободный проход", n)
 	process_hero_deaths(g)
@@ -1533,6 +1608,7 @@ func rotate_party(g) -> void:
 	if replacement.is_empty():
 		return
 	var wounded: Dictionary = party[0]
+	Skills.voluntary_retreat(g, living_actors())
 	rotation.used = true
 	rotation.retreat = str(wounded.instance_id)
 	wounded.skip_attack = 1
@@ -1589,3 +1665,139 @@ func end_combat(g) -> void:
 			hero.cursed_cup.used_this_battle = false
 	for actor in actors:
 		g._clear_defender_effects(actor)
+		for key in ["run_impulse_count", "run_edge_bonus", "run_barrier", "run_cover_shield"]:
+			actor.erase(key)
+
+
+func clear_ended_duels(g) -> void:
+	for actor in actors:
+		if int(actor.effects.get("duel_ticks", 0)) > 0 and (int(actor.hp) <= 0 or living_hero(g, str(actor.effects.get("duel", ""))).is_empty()):
+			actor.effects.duel_ticks = 0
+			actor.effects.erase("duel")
+
+
+func burn_floor(g, hero: Dictionary) -> void:
+	# Multiple living hounds never burn the same ordinary physical action twice.
+	var strongest: Dictionary = {}
+	var raw: float = 0.0
+	for actor in living_actors():
+		if int(actor.effects.get("fire_ticks", 0)) <= 0:
+			continue
+		var candidate: float = Skills.damage(actor, Skills.value(g, "creatures_hellish_heat", "burning_floor_damage_bonus"), float(params(actor).get("burn_factor", 0.2)))
+		if candidate > raw:
+			raw = candidate
+			strongest = actor
+	if strongest.is_empty():
+		return
+	var slot: int = int(strongest.source_slot)
+	var dealt: int = creature_direct_damage(g, strongest, hero, maxi(1, ceili(raw)))
+	event(g, "fire", str(strongest.actor_id), str(hero.instance_id), dealt, "Раскалённый пол обжигает героя", slot)
+	if int(hero.hp) > 0 and int(hero.poison_ticks) > 0 and Skills.has(g, "shared_burning_toxin") and Skills.once(Skills.room(g, slot), "burning_toxin:" + str(hero.instance_id)):
+		var toxin: float = g.consume_poison_tick(hero, false)
+		var actual: int = hero_damage(g, hero, g._poison_hit(hero, toxin, g._poison_aura_multiplier()), str(strongest.source_room_uid))
+		event(g, "poison", str(strongest.actor_id), str(hero.instance_id), actual, "Пылающий токсин расходует один тик яда", slot)
+
+
+func trap_hit(g, slot: int, stats: Dictionary, target: Dictionary, raw: float, power: float = 1.0, extra: float = 0.0) -> int:
+	if int(target.hp) <= 0 or raw <= 0.0:
+		return 0
+	var bonus: float = Skills.trap_bonus(g, slot, target, extra)
+	# Hidden drive reduces the amount prevented, never the remaining damage.
+	if power < 1.0 and Skills.has(g, "traps_hidden_drive"):
+		power = 1.0 - (1.0 - power) * Skills.value(g, "traps_hidden_drive", "prevented_direct_damage_multiplier")
+	var amount: int = maxi(1, ceili(raw * (1.0 + float(stats.get("tree_damage_bonus", 0.0)) + bonus) * power))
+	var before: int = int(target.hp)
+	var actual: int = hero_damage(g, target, amount, g._battle_source(slot))
+	Skills.trap_after_hit(g, slot, stats, target, actual, before > 0 and int(target.hp) <= 0)
+	return actual
+
+
+func trigger_plain_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
+	var party: Array[Dictionary] = g._living()
+	if party.is_empty():
+		return
+	var source: String = g._battle_source(slot)
+	var kind: String = str(stats.kind)
+	var before_hp: Dictionary = {}
+	for hero in party:
+		before_hp[str(hero.instance_id)] = int(hero.hp)
+	var echo: bool = g.selected_relics.has("trap_echo") and not g._echo_floors.has(slot / 5)
+	if kind == "spikes":
+		var targets: Array[Dictionary] = party.duplicate()
+		var group: bool = str(stats.specialization) == "volley" or (str(stats.id) == "blade_floor" and str(stats.specialization) != "piercing")
+		if not group:
+			targets.assign([party[-1] if str(stats.id) == "ballista" else party[0]])
+		for hero in targets:
+			var dealt: int = trap_hit(g, slot, stats, hero, Skills.base_damage(stats), float(stats.disarm_multiplier) if disabled else 1.0)
+			event(g, "trap", "room_%d" % slot, str(hero.instance_id), dealt, "%s: −%d HP" % [stats.name, dealt], slot)
+		apply_trap_echo(g, slot, stats, party, before_hp, pending.size(), float(stats.disarm_multiplier) if disabled else 1.0)
+	elif kind == "poison":
+		var duration: int = mini(int(stats.disarm_poison_turns), int(stats.poison_ticks)) if disabled else int(stats.poison_ticks)
+		for hero in party:
+			g._apply_hero_poison(hero, Skills.base_damage(stats), duration, source)
+			if str(stats.specialization) == "plague":
+				hero.poison_heal_factor = 0.5
+		apply_trap_echo(g, slot, stats, party, before_hp, pending.size(), 1.0)
+		event(g, "poison", "room_%d" % slot, "", duration, "Ядовитая камера заражает отряд", slot)
+	elif kind in ["shackles", "silence", "rust"]:
+		var duration: int = int(stats.effect_turns)
+		if disabled:
+			duration = maxi(1, duration - 1) if str(stats.specialization) == "warded" else 1
+			duration = maxi(duration, mini(int(stats.effect_turns), int(stats.disarm_control_floor)))
+		if echo:
+			duration = mini(6, duration + 1)
+			g._echo_floors.append(slot / 5)
+		for hero in party:
+			var key: String = "pending_" + kind
+			if duration >= int(hero.get(key, 0)):
+				hero[key + "_source"] = source
+			hero[key] = maxi(int(hero.get(key, 0)), duration)
+			if kind == "rust":
+				hero.rust_amount = maxi(int(hero.get("rust_amount", 0)), int(stats.effect_power))
+		var targets: Array[Dictionary] = party.duplicate()
+		if not bool(stats.impact_all):
+			targets.resize(1)
+		var raw: float = float(stats.get("tree_base_impact", stats.impact_damage)) * (0.6 if bool(stats.impact_all) else 1.0)
+		for hero in targets:
+			trap_hit(g, slot, stats, hero, raw, 0.4 if disabled else 1.0)
+		event(g, "trap", "room_%d" % slot, "", duration, "%s: контроль на %d тика" % [stats.name, duration], slot)
+
+
+func fire_support(g, actor: Dictionary) -> void:
+	if not Skills.has(g, "shared_fire_support") or str(actor.actor_id) == "lord":
+		return
+	var slot: int = next_neighbor(g, int(actor.source_slot))
+	if slot < 0 or g.rooms[slot].is_empty() or str(g.rooms[slot].id) != "ballista" or spent.has(slot) or g._living().is_empty():
+		return
+	var state: Dictionary = Skills.room(g, slot)
+	if bool(state.get("support", false)):
+		return
+	var stats: Dictionary = g.room_stats(slot)
+	var path: String = str(stats.get("evolution_path", ""))
+	if path == "ballista_reserve_magazine":
+		var memory: Dictionary = g.rooms[slot].get("evolution_memory", {})
+		if int(memory.get("ammo", 0)) <= 0:
+			return
+		state.support = true
+		var disabled: bool = disarm(g, slot)
+		var hero: Dictionary = g._living()[0]
+		var dealt: int = trap_hit(g, slot, stats, hero, Skills.base_damage(stats) * float(params(stats).get("shot_factor", 0.8)), 0.4 if disabled else 1.0)
+		state.shot_ids = [str(hero.instance_id)]
+		memory.ammo = int(memory.ammo) - 1
+		g.rooms[slot].evolution_memory = memory
+		event(g, "bolt", "room_%d" % slot, str(hero.instance_id), dealt, "Огневая поддержка расходует запасной болт", slot)
+	else:
+		state.support = true
+		trigger_trap(g, slot, stats, disarm(g, slot))
+	sync_primary(g)
+	process_hero_deaths(g)
+
+
+func creature_direct_damage(g, actor: Dictionary, hero: Dictionary, amount: int) -> int:
+	var before: int = int(hero.hp)
+	var actual: int = hero_damage(g, hero, amount, str(actor.source_room_uid))
+	if before > 0 and int(hero.hp) <= 0 and actual > 0:
+		var gain: int = Skills.personal_kill(g, actor, false)
+		if gain > 0:
+			event(g, "heal", str(actor.actor_id), str(actor.actor_id), gain, "Тёмный легион восстанавливает защитника", int(actor.source_slot))
+	return actual

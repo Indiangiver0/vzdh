@@ -2,7 +2,7 @@ extends RefCounted
 ## The complete run state and deterministic battle rules. No scene or UI dependencies.
 
 const Content = preload("res://scripts/content_catalog.gd")
-const Talents = preload("res://scripts/talent_catalog.gd")
+const RunSkills = preload("res://scripts/run_skill_catalog.gd")
 const Lords = preload("res://scripts/lord_catalog.gd")
 const Expedition = preload("res://scripts/expedition_catalog.gd")
 const Realm = preload("res://scripts/realm_catalog.gd")
@@ -14,6 +14,19 @@ const MAX_LOGS: int = 70
 const RELIC_WAVE_INTERVAL: int = 10
 const BLUEPRINT_WAVE_INTERVAL: int = 7
 
+signal run_souls_changed(total: int, delta: int)
+signal run_skill_learned(id: String)
+
+var run_souls: int = 0
+var learned_skills: Dictionary = {}
+var run_skill_runtime: Dictionary = {}
+var soul_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var soul_failures: int = 0
+var _skill_preparation: Dictionary = {}
+var _greed_remainder: int = 0
+var _trophy_metal: bool = false
+var _ability_price_snapshot: int = 0
+var _ability_income_snapshot: int = 0
 var phase: String = "prepare"
 var wave: int = 1
 var gold: int = 18
@@ -95,6 +108,16 @@ func restart(new_seed: int = 0) -> void:
 	talent_rng.seed = seed_value ^ 0x54A1E17
 	expedition_rng.seed = seed_value ^ 0x73D19A2
 	deal_rng.seed = seed_value ^ 0x4D3A115
+	soul_rng.seed = seed_value ^ 0x5A01721
+	run_souls = 0
+	learned_skills.clear()
+	run_skill_runtime.clear()
+	soul_failures = 0
+	_skill_preparation.clear()
+	_greed_remainder = 0
+	_trophy_metal = false
+	_ability_price_snapshot = 0
+	_ability_income_snapshot = 0
 	_deal_state.clear()
 	_battle_rooms.clear()
 	_battle_room_indices.clear()
@@ -150,6 +173,7 @@ func restart(new_seed: int = 0) -> void:
 	_instance_counter = 0
 	_waiting_for_entry = true
 	_reset_report()
+	_recalculate_lord()
 	_generate_party()
 	_generate_shop()
 	_log("Подземелье открыто. Постройте защиту и запустите первую волну.")
@@ -190,12 +214,14 @@ func configure_lord(id: String, mastery: int = 1, variant: String = "base") -> S
 	var values: Dictionary = Lords.ability_values(id, mastery, variant)
 	if definition.is_empty() or values.is_empty():
 		return "Неизвестный Владыка."
+	if not learned_skills.is_empty() and not lord_archetype.is_empty() and id != lord_archetype:
+		return "После покупки навыков Владыка закреплён за текущим забегом."
 	lord_archetype = id
 	lord_mastery = int(values.mastery)
 	lord_variant = str(values.variant)
 	# Mastery and variant are snapshots: profile changes cannot alter a running raid.
 	_lord_ability_values = values.duplicate(true)
-	ability_charges = int(values.charges)
+	ability_charges = 2
 	lord.name = str(definition.name)
 	_clear_defender_effects(lord)
 	_log("Владыка: %s · мастерство %d." % [lord.name, lord_mastery])
@@ -214,17 +240,19 @@ func ability_status() -> Dictionary:
 	var definition: Dictionary = Lords.get_lord(lord_archetype)
 	var name: String = str(definition.get("ability_name", "Способность Владыки"))
 	var description: String = str(definition.get("ability_description", ""))
+	var next_cast: int = int(run_skill_runtime.get("q_casts", 0)) + 1 if phase == "raid" else 1
+	var next_great: float = 0.2 if next_cast == 2 and has_run_skill("ritual_great_ritual") else 0.0
 	if not _lord_ability_values.is_empty():
 		if lord_archetype == "fallen_knight":
-			description = "Щит: %d%% максимального HP защитника." % roundi(float(_lord_ability_values.shield_fraction) * 100.0)
+			description = "Щит: %d%% максимального HP защитника." % roundi(float(_lord_ability_values.shield_fraction) * (1.0 + next_great + (0.1 if has_run_skill("ritual_knightly_ritual") else 0.0)) * 100.0)
 			if int(_lord_ability_values.empowered_attacks) > 0:
 				description += " Следующие %d удара: +%d%% урона." % [_lord_ability_values.empowered_attacks, roundi(float(_lord_ability_values.attack_bonus) * 100.0)]
 		elif lord_archetype == "necromancer":
-			description = "Метка возвращает защитника после смертельного удара с %d%% HP." % roundi(float(_lord_ability_values.revive_fraction) * 100.0)
+			description = "Метка возвращает защитника после смертельного удара с %d%% HP." % roundi(minf(1.0, float(_lord_ability_values.revive_fraction) * (1.0 + next_great + (0.1 if has_run_skill("ritual_necrotic_bond") else 0.0))) * 100.0)
 			if float(_lord_ability_values.revive_damage_bonus) > 0.0:
 				description += " После возвращения: +%d%% урона до конца комнаты." % roundi(float(_lord_ability_values.revive_damage_bonus) * 100.0)
 		elif lord_archetype == "plague_alchemist":
-			description = "Вся группа: яд %d × %d тиков. Уже отравленным — ещё %d урона яда." % [_lord_ability_values.poison_damage, _scaled_poison_duration(int(_lord_ability_values.poison_ticks)), _lord_ability_values.burst_damage]
+			description = "Вся группа: яд %.2f × %d тиков. Уже отравленным — вспышка %.2f до защиты от яда." % [float(_lord_ability_values.poison_damage) * (1.0 + float(run_skill_modifiers().get("poison_damage", 0.0)) + next_great), poison_application_duration(_scaled_poison_duration(int(_lord_ability_values.poison_ticks))), float(_lord_ability_values.burst_damage) * (1.25 if has_run_skill("ritual_plague_reaction") else 1.0)]
 	var effect_parts: Array[String] = []
 	if int(defender.get("shield", 0)) > 0:
 		effect_parts.append("Щит %d" % int(defender.shield))
@@ -234,10 +262,17 @@ func ability_status() -> Dictionary:
 		effect_parts.append("Метка возвращения: %d%% HP" % roundi(float(defender.revive_fraction) * 100.0))
 	if float(defender.get("revenant_damage_bonus", 0.0)) > 0.0:
 		effect_parts.append("Возвращённый: +%d%% урона" % roundi(float(defender.revenant_damage_bonus) * 100.0))
+	if int(defender.get("run_impulse_count", 0)) > 0:
+		effect_parts.append("Ритуальных импульсов: %d" % int(defender.run_impulse_count))
+	if int(defender.get("run_cover_shield", 0)) > 0:
+		effect_parts.append("Покров: %d" % int(defender.run_cover_shield))
+	if bool(defender.get("run_barrier", false)):
+		effect_parts.append("Барьер от заклинания")
 	var reason: String = _ability_block_reason()
 	return {
 		"name": name, "description": description, "charges": ability_charges,
-		"max_charges": int(_lord_ability_values.get("charges", 0)),
+		"max_charges": 2 if not _lord_ability_values.is_empty() else 0,
+		"gold_cost": ability_gold_cost(), "base_income": base_wave_income(),
 		"can_cast": reason.is_empty(), "reason": reason, "effect": " · ".join(effect_parts),
 		"shield": int(defender.get("shield", 0)),
 		"empowered_attacks": int(defender.get("ability_attacks", 0)),
@@ -254,6 +289,8 @@ func _ability_block_reason() -> String:
 		return "Владыка погиб."
 	if ability_charges <= 0:
 		return "Заряды этой волны закончились."
+	if gold < ability_gold_cost():
+		return "Не хватает золота: нужно %d." % ability_gold_cost()
 	if _waiting_for_entry or defender.is_empty() or int(defender.get("hp", 0)) <= 0 or _living().is_empty():
 		return "Дождитесь боя с живым защитником."
 	if int(defender.get("delay", 0)) > 0:
@@ -262,71 +299,116 @@ func _ability_block_reason() -> String:
 		return "Сейчас нет активного боя."
 	if current_slot < rooms.size() and str(defender.get("kind", "")) != "monster":
 		return "Способность применяется в боевой комнате или тронном зале."
-	if lord_archetype == "fallen_knight" and (int(defender.get("shield", 0)) > 0 or int(defender.get("ability_attacks", 0)) > 0):
+	if lord_archetype == "fallen_knight" and (int(defender.get("shield", 0)) - int(defender.get("run_cover_shield", 0)) > 0 or int(defender.get("ability_attacks", 0)) > 0):
 		return "У этого защитника ещё действует предыдущий щит или усиление."
 	if lord_archetype == "necromancer" and bool(defender.get("revive_mark", false)):
 		return "Этот защитник уже отмечен для возвращения."
 	return ""
 
 
+func base_wave_income() -> int:
+	if _ability_income_snapshot > 0 and phase in ["raid", "result", "defeat"]:
+		return _ability_income_snapshot
+	return heroes.size() * (3 + floori(float(wave - 1) / 3.0)) + 4
+
+
+func ability_gold_cost() -> int:
+	if _ability_price_snapshot > 0 and phase in ["raid", "result", "defeat"]:
+		return _ability_price_snapshot
+	var discounts: int = int(has_run_skill("ritual_economy_1")) + int(has_run_skill("ritual_economy_2")) + int(has_run_skill("ritual_economy_3"))
+	# Integer numerator avoids a spurious extra coin at exact float boundaries.
+	return maxi(1, ceili(float(base_wave_income() * (100 - 5 * discounts)) / 200.0))
+
+
 func cast_ability() -> String:
 	var reason: String = _ability_block_reason()
 	if not reason.is_empty():
 		return reason
+	var price: int = ability_gold_cost()
+	var casts: int = int(run_skill_runtime.get("q_casts", 0)) + 1
+	var great: float = 0.2 if casts == 2 and has_run_skill("ritual_great_ritual") else 0.0
+	gold -= price
 	ability_charges -= 1
+	run_skill_runtime.q_casts = casts
 	var message: String = ""
 	var amount: int = 0
 	var target_id: String = _defender_actor()
 	if lord_archetype == "fallen_knight":
-		var shield: int = maxi(1, ceili(float(defender.max_hp) * float(_lord_ability_values.shield_fraction)))
-		defender.shield = shield
+		var bonus: float = great + (0.1 if has_run_skill("ritual_knightly_ritual") else 0.0)
+		var shield: int = maxi(1, ceili(float(defender.max_hp) * float(_lord_ability_values.shield_fraction) * (1.0 + bonus)))
+		defender.shield = shield + int(defender.get("run_cover_shield", 0))
 		defender.ability_attacks = int(_lord_ability_values.empowered_attacks)
 		defender.ability_attack_bonus = float(_lord_ability_values.attack_bonus)
 		amount = shield
 		message = "%s: щит +%d, усиленных ударов %d." % [defender.name, shield, defender.ability_attacks]
 	elif lord_archetype == "necromancer":
+		var bonus: float = great + (0.1 if has_run_skill("ritual_necrotic_bond") else 0.0)
 		defender.revive_mark = true
-		defender.revive_fraction = float(_lord_ability_values.revive_fraction)
+		defender.revive_fraction = minf(1.0, float(_lord_ability_values.revive_fraction) * (1.0 + bonus))
 		defender.revive_damage_bonus = float(_lord_ability_values.revive_damage_bonus)
 		amount = maxi(1, ceili(float(defender.max_hp) * float(defender.revive_fraction)))
 		message = "%s отмечен: смертельный удар вернёт его с %d HP." % [defender.name, amount]
-	elif lord_archetype == "plague_alchemist":
+	# Ritual statuses are attached before a lethal alchemist burst ends the battle.
+	if has_run_skill("ritual_impulse"):
+		defender.run_impulse_count = 2 if has_run_skill("ritual_echo") else 1
+		defender.run_impulse_bonus = 0.15 if has_run_skill("ritual_enhanced_impulse") else 0.1
+		if has_run_skill("ritual_on_the_edge") and not bool(run_skill_runtime.get("edge_used", false)) and float(defender.hp) < float(defender.max_hp) * 0.3:
+			defender.run_edge_bonus = 0.15
+			run_skill_runtime.edge_used = true
+	if casts == 1:
+		if has_run_skill("ritual_cover"):
+			var cover: int = maxi(1, ceili(float(defender.max_hp) * (0.07 if has_run_skill("ritual_dense_cover") else 0.05)))
+			defender.run_cover_shield = cover
+			defender.shield = int(defender.get("shield", 0)) + cover
+		if has_run_skill("ritual_barrier"):
+			defender.run_barrier = true
+	_encounter.sync_primary(self)
+	if lord_archetype == "plague_alchemist":
 		var targets: Array[Dictionary] = _living()
 		var poison_aura: float = _poison_aura_multiplier()
 		var duration: int = _scaled_poison_duration(int(_lord_ability_values.poison_ticks))
 		var burst_total: int = 0
 		for hero in targets:
+			if int(hero.hp) <= 0:
+				continue
 			var was_poisoned: bool = int(hero.poison_ticks) > 0
 			if was_poisoned:
-				var burst: int = _poison_hit(hero, int(_lord_ability_values.burst_damage), poison_aura)
-				burst_total += _inflict_hero_damage(hero, burst, "lord")
+				var burst_power: float = float(_lord_ability_values.burst_damage) * (1.0 + (0.25 if has_run_skill("ritual_plague_reaction") else 0.0))
+				burst_total += _inflict_hero_damage(hero, _poison_hit(hero, burst_power, poison_aura), "lord")
 			else:
 				hero.poison_heal_factor = 1.0
-			_apply_hero_poison(hero, int(_lord_ability_values.poison_damage), duration, "lord")
+			if int(hero.hp) > 0:
+				_apply_hero_poison(hero, float(_lord_ability_values.poison_damage), duration, "lord", great)
 		amount = burst_total
 		target_id = str(targets[0].instance_id)
 		active_target_id = target_id
-		message = "Чумная волна: яд %d × %d тиков всей группе; вспышка %d урона уже отравленным." % [_lord_ability_values.poison_damage, duration, burst_total]
+		message = "Чумная волна: яд всей группе; вспышка %d урона уже отравленным." % burst_total
 		_process_deaths()
 		if _living().is_empty():
 			_mark_room_held()
 			_finish_wave()
+	message += " Потрачено %d золота." % price
 	_log(message)
 	_action("ability", "lord", target_id, amount, message)
 	last_action.lord_archetype = lord_archetype
 	last_action.charges = ability_charges
+	last_action.gold_cost = price
 	return ""
 
 
 func _clear_defender_effects(target: Dictionary) -> void:
 	if target.is_empty():
 		return
-	for key in ["shield", "ability_attacks", "ability_attack_bonus", "revive_mark", "revive_fraction", "revive_damage_bonus", "revenant_damage_bonus"]:
+	for key in ["shield", "ability_attacks", "ability_attack_bonus", "revive_mark", "revive_fraction", "revive_damage_bonus", "revenant_damage_bonus", "run_impulse_count", "run_impulse_bonus", "run_edge_bonus", "run_barrier", "run_cover_shield"]:
 		target.erase(key)
 
 
 func _scaled_poison_duration(base_ticks: int) -> int:
 	return maxi(1, ceili(float(base_ticks) * (1.0 + float(talent_modifiers().poison_duration) + float(lord_passive_modifiers().poison_duration))))
+
+
+func poison_application_duration(base_duration: int) -> int:
+	return base_duration + int(has_run_skill("poison_stable_formula")) + (2 if has_run_skill("poison_long_poison") else 0)
 
 
 func _poison_aura_multiplier() -> float:
@@ -338,11 +420,20 @@ func _poison_aura_multiplier() -> float:
 	return 1.0
 
 
-func _poison_hit(hero: Dictionary, raw_damage: int, aura_multiplier: float = 1.0) -> int:
+func _poison_hit(hero: Dictionary, raw_damage: float, aura_multiplier: float = 1.0) -> int:
 	# Callers snapshot the aura before a group hit, so a priest dying during
 	# that same hit cannot change protection according to party order.
-	var multiplier: float = maxf(0.5, float(hero.get("poison_resistance", 1.0)) * aura_multiplier)
-	return maxi(1, floori(float(raw_damage) * multiplier))
+	var resistance: float = float(hero.get("poison_resistance", 1.0))
+	var multiplier: float = maxf(0.5, resistance * aura_multiplier)
+	if aura_multiplier < 1.0 and has_run_skill("poison_penetrating_venom"):
+		var without_priest: float = maxf(0.5, resistance)
+		multiplier = without_priest - (without_priest - multiplier) * 0.9
+	# Fractions accumulate per target until whole HP can be removed. Application,
+	# comparison, maturity and consumption keep the original floating strength.
+	var exact: float = maxf(0.0, raw_damage) * multiplier + float(hero.get("run_poison_damage_carry", 0.0))
+	var damage: int = floori(exact + 0.000001)
+	hero.run_poison_damage_carry = maxf(0.0, exact - float(damage))
+	return damage
 
 
 func _try_revive_defender() -> bool:
@@ -371,7 +462,7 @@ func buy_room(index: int, id: String) -> String:
 	if int(shop.get(id, 0)) <= 0:
 		return "Запас этой комнаты на текущую волну закончился."
 	var definition: Dictionary = Content.room(id)
-	var price: int = int(definition.cost)
+	var price: int = shop_room_cost(id)
 	if gold < price:
 		return "Не хватает золота: нужно %d." % price
 	gold -= price
@@ -382,6 +473,7 @@ func buy_room(index: int, id: String) -> String:
 		"instance_id": _instance_counter, "status": "ready",
 		"specialization": "",
 	}
+	_consume_building_discounts(rooms[index])
 	_log("%s: построено, этаж %d · место %d." % [definition.name, index / 5 + 1, index % 5 + 1])
 	return ""
 
@@ -417,6 +509,12 @@ func upgrade_room(index: int) -> String:
 	if gold < price:
 		return "Не хватает золота: нужно %d." % price
 	gold -= price
+	if has_run_skill("traps_workshop") and str(stats.kind) != "monster" and not bool(rooms[index].get("run_workshop_used", false)):
+		rooms[index].run_workshop_used = true
+	if _trophy_metal:
+		_trophy_metal = false
+	if has_run_skill("economy_military_order"):
+		_skill_preparation.military_used = true
 	rooms[index].rank = int(rooms[index].rank) + 1
 	rooms[index].invested = int(rooms[index].invested) + price
 	_log("%s: ранг %d." % [Content.room(str(rooms[index].id)).name, rooms[index].rank])
@@ -437,6 +535,11 @@ func sell_room(index: int) -> String:
 		_set_deal_risk(false)
 	elif not bool(rooms[index].used):
 		shop[id] = int(shop.get(id, 0)) + 1
+	if not bool(rooms[index].used) and int(rooms[index].get("run_discount_wave", -1)) == wave:
+		if bool(rooms[index].get("run_supply_used", false)):
+			_skill_preparation.supply_used = false
+		if bool(rooms[index].get("run_contract_used", false)):
+			_skill_preparation.contract_available = true
 	gold += refund
 	rooms[index] = {}
 	_log("%s: возвращено %d золота." % [Content.room(id).name, refund])
@@ -450,6 +553,9 @@ func buy_floor() -> String:
 	if gold < price:
 		return "Не хватает золота: нужно %d." % price
 	gold -= price
+	if has_run_skill("economy_construction_contract") and not bool(_skill_preparation.get("contract_granted", false)):
+		_skill_preparation.contract_granted = true
+		_skill_preparation.contract_available = true
 	floor_count += 1
 	floor_traits.append("plain")
 	pending_floor = floor_count - 1
@@ -926,6 +1032,7 @@ func deal_offer() -> Dictionary:
 		return {}
 	var result: Dictionary = _deal_state.duplicate(true)
 	result.available = phase == "prepare" and not bool(result.accepted)
+	result.price = _discounted_room_price(int(_deal_state.price))
 	return result
 
 
@@ -936,7 +1043,7 @@ func buy_deal_room(index: int) -> String:
 		return "Для сделки выберите пустое место."
 	if reserved_room_slots().has(index):
 		return "Это место занимает пасть живой комнаты."
-	var price: int = int(_deal_state.price)
+	var price: int = _discounted_room_price(int(_deal_state.price))
 	if gold < price:
 		return "Не хватает золота: нужно %d." % price
 	gold -= price
@@ -945,6 +1052,7 @@ func buy_deal_room(index: int) -> String:
 		"id": str(_deal_state.room_id), "rank": int(_deal_state.rank), "invested": price, "used": false,
 		"instance_id": _instance_counter, "status": "ready", "specialization": "", "deal_wave": wave,
 	}
+	_consume_building_discounts(rooms[index])
 	_deal_state.accepted = true
 	_deal_state.instance_id = _instance_counter
 	_set_deal_risk(true)
@@ -975,7 +1083,7 @@ func heal_lord() -> String:
 	if gold < price:
 		return "Не хватает золота: нужно %d." % price
 	gold -= price
-	var restored: int = mini(ceili(float(lord.max_hp) * 0.25), int(lord.max_hp) - int(lord.hp))
+	var restored: int = paid_heal_amount()
 	lord.hp = int(lord.hp) + restored
 	_log("Лорд восстановил %d HP." % restored)
 	return ""
@@ -989,10 +1097,13 @@ func start_raid() -> String:
 	migrate_legacy_talents()
 	# Unspent points are banked; they are not a pending reward on the next wave.
 	_talent_reward_pending = false
+	_ability_income_snapshot = base_wave_income()
+	_ability_price_snapshot = ability_gold_cost()
+	run_skill_runtime.clear()
 	_has_started_raid = true
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
-	ability_charges = int(_lord_ability_values.get("charges", 0))
+	ability_charges = 2 if not _lord_ability_values.is_empty() else 0
 	phase = "raid"
 	current_slot = -1
 	defender = {}
@@ -1042,9 +1153,12 @@ func next_wave() -> String:
 	if phase != "result":
 		return "Текущая волна ещё не завершена."
 	wave += 1
+	_skill_preparation.clear()
+	_ability_price_snapshot = 0
+	_ability_income_snapshot = 0
 	_encounter.next_wave(self)
 	_clear_defender_effects(defender)
-	ability_charges = int(_lord_ability_values.get("charges", 0))
+	ability_charges = 2 if not _lord_ability_values.is_empty() else 0
 	current_slot = -1
 	defender = {}
 	combat_tick = 0
@@ -1069,115 +1183,126 @@ func choose_upgrade(id: String) -> String:
 
 
 func migrate_legacy_talents() -> void:
-	# No active run is persisted today. This converts an older in-memory state
-	# once: consumed legacy counters cannot grant the same points twice.
-	if pending_upgrades > 0:
-		skill_points += pending_upgrades
-		pending_upgrades = 0
-		_talent_reward_pending = true
+	# Legacy talent points have no exchange rate into the run's soul wallet.
+	selected_talents.clear()
+	skill_points = 0
+	pending_upgrades = 0
 	talent_offers.clear()
+	_talent_reward_pending = false
+	if phase == "level_up":
+		phase = "prepare"
+
+
+func has_run_skill(id: String) -> bool:
+	return bool(learned_skills.get(id, false))
+
+
+func run_skill_definition(id: String) -> Dictionary:
+	return RunSkills.get_skill(id)
+
+
+func run_skill_number(id: String, key: String, fallback: float = 0.0) -> float:
+	return RunSkills.get_number(id, key, fallback)
+
+
+func run_skill_modifiers() -> Dictionary:
+	return RunSkills.modifiers(learned_skills)
+
+
+func run_skill_state(id: String) -> Dictionary:
+	var node: Dictionary = run_skill_definition(id).duplicate(true)
+	if node.is_empty():
+		return {"id": id, "learned": false, "available": false, "reason": "Неизвестный навык."}
+	var requirements: Dictionary = node.get("requirements", {})
+	var all_of: Array = node.get("requires_all", requirements.get("all_of", []))
+	var any_of: Array = node.get("requires_any", requirements.get("any_of", []))
+	var parent: String = str(node.get("parent", ""))
+	if all_of.is_empty() and any_of.is_empty() and not parent.is_empty() and parent != "start":
+		all_of = [parent]
+	node.requires_all = all_of.duplicate()
+	node.requires_any = any_of.duplicate()
+	node.parents = node.get("parents", all_of if not all_of.is_empty() else any_of).duplicate()
+	node.mode = str(node.get("mode", "any" if all_of.is_empty() and not any_of.is_empty() else "all"))
+	node.cost = int(node.get("cost", node.get("soul_price", 0)))
+	node.required_lord = str(node.get("required_lord", ""))
+	node.description = str(node.get("description", ""))
+	node.category = str(node.get("category", ""))
+	node.x = float(node.get("x", 0.0))
+	node.y = float(node.get("y", 0.0))
+	node.position = Vector2(node.x, node.y)
+	node.learned = has_run_skill(id)
+	var reason: String = ""
+	if bool(node.learned):
+		reason = "Уже изучено в этом забеге."
+	elif phase != "prepare":
+		reason = "Покупка навыков доступна между волнами."
+	elif not str(node.required_lord).is_empty() and str(node.required_lord) != lord_archetype:
+		reason = "Нужен Владыка: %s." % str(Lords.get_lord(str(node.required_lord)).get("name", node.required_lord))
+	else:
+		for required in all_of:
+			if str(required) != "start" and not has_run_skill(str(required)):
+				reason = "Сначала изучите: %s." % str(run_skill_definition(str(required)).get("name", required))
+				break
+		if reason.is_empty() and not any_of.is_empty():
+			var met: bool = false
+			for required in any_of:
+				met = met or str(required) == "start" or has_run_skill(str(required))
+			if not met:
+				reason = "Нужно изучить хотя бы один соединённый навык."
+		if reason.is_empty() and run_souls < int(node.cost):
+			reason = "Не хватает душ: нужно %d." % int(node.cost)
+	node.reason = reason
+	node.available = reason.is_empty()
+	node.can_buy = node.available
+	return node
+
+
+func run_skill_tree() -> Array[Dictionary]:
+	var nodes: Array[Dictionary] = []
+	for definition in RunSkills.all_skills():
+		nodes.append(run_skill_state(str(definition.id)))
+	return nodes
+
+
+func buy_run_skill(id: String) -> bool:
+	var state: Dictionary = run_skill_state(id)
+	if not bool(state.get("available", false)):
+		return false
+	# Validation above and mutations below are one synchronous model action.
+	run_souls -= int(state.cost)
+	learned_skills[id] = true
+	_recalculate_lord()
+	_log("Изучено: %s · −%d душ. Навык действует до конца забега." % [state.name, state.cost])
+	run_souls_changed.emit(run_souls, -int(state.cost))
+	run_skill_learned.emit(id)
+	return true
 
 
 func choose_talent(id: String) -> String:
-	migrate_legacy_talents()
-	if phase not in ["prepare", "level_up"]:
-		return "Таланты изучают между волнами."
-	if skill_points <= 0:
-		return "Нужно 1 очко таланта. Новый уровень даёт одно очко."
-	var definition: Dictionary = Talents.get_talent(id)
-	if definition.is_empty():
-		return "Неизвестный талант."
-	var reason: String = _talent_requirement_error(definition)
-	if not reason.is_empty():
-		return reason
-	selected_talents[id] = int(selected_talents.get(id, 0)) + 1
-	_recalculate_lord()
-	skill_points -= 1
-	var drawback_text: String = ""
-	if not str(definition.drawback).is_empty():
-		drawback_text = " Цена: %s" % definition.drawback
-	_log("Талант «%s» · ранг %d. %s%s" % [definition.name, selected_talents[id], definition.bonus, drawback_text])
-	if skill_points == 0:
-		_talent_reward_pending = false
-		if phase == "level_up":
-			_advance_reward_choice()
-	return ""
+	var state: Dictionary = run_skill_state(id)
+	return "" if buy_run_skill(id) else str(state.get("reason", "Не удалось изучить навык."))
 
 
 func defer_talents() -> String:
 	migrate_legacy_talents()
-	if phase not in ["prepare", "level_up"]:
-		return "Сейчас дерево талантов не ожидает решения."
-	_talent_reward_pending = false
-	if phase == "level_up":
-		_advance_reward_choice()
 	return ""
 
 
 func talent_options() -> Array[Dictionary]:
-	# Legacy read API now exposes all eligible nodes, never a second random reward.
-	var options: Array[Dictionary] = []
-	for id in Talents.tree_ids():
-		var definition: Dictionary = Talents.get_talent(id)
-		if not _talent_is_eligible(definition):
-			continue
-		definition.current_rank = int(selected_talents.get(id, 0))
-		definition.rank = int(definition.current_rank) + 1
-		options.append(definition)
-	return options
+	return run_skill_tree()
 
 
 func talent_tree() -> Array[Dictionary]:
-	var nodes: Array[Dictionary] = []
-	var points: int = maxi(0, skill_points) + maxi(0, pending_upgrades)
-	for id in Talents.tree_ids():
-		var node: Dictionary = Talents.get_talent(id)
-		var rank: int = maxi(0, int(selected_talents.get(id, 0)))
-		var maximum: int = int(node.max_rank)
-		var reason: String = _talent_requirement_error(node)
-		var may_spend: bool = phase in ["prepare", "level_up"]
-		node.rank = rank
-		node.can_buy = reason.is_empty() and may_spend and points > 0
-		node.state = "available"
-		node.status = "1 очко"
-		if maximum > 0 and rank >= maximum:
-			node.state = "maxed"
-			node.status = "Изучено" if maximum == 1 else "Предел: %d/%d" % [rank, maximum]
-		elif rank > 0:
-			# A legacy chosen node remains acquired despite new prerequisites.
-			node.state = "acquired"
-			node.status = "Взято: %d" % rank
-			if not may_spend:
-				node.status += " · Между волнами"
-			elif points == 0:
-				node.status += " · Нужно 1 очко"
-			else:
-				node.status += " · Ещё ранг за 1 очко"
-		elif not reason.is_empty():
-			node.state = "locked"
-			node.status = reason
-		elif not may_spend:
-			node.state = "locked"
-			node.status = "Изучение между волнами"
-		elif points == 0:
-			node.state = "unaffordable"
-			node.status = "Нужно 1 очко"
-		nodes.append(node)
-	return nodes
+	return run_skill_tree()
 
 
 func talent_preview(id: String) -> Dictionary:
-	var definition: Dictionary = Talents.get_talent(id)
-	if definition.is_empty():
+	if run_skill_definition(id).is_empty():
 		return {}
 	var snapshot: Variant = _progression_snapshot()
 	var before: Dictionary = snapshot._progression_metrics()
-	var rank: int = int(selected_talents.get(id, 0))
-	var maximum: int = int(definition.max_rank)
-	# Locked prerequisites can be inspected, but a capped node has no next rank.
-	if maximum == 0 or rank < maximum:
-		snapshot.selected_talents[id] = rank + 1
-		snapshot._recalculate_lord()
+	snapshot.learned_skills[id] = true
+	snapshot._recalculate_lord()
 	return {"before": before, "after": snapshot._progression_metrics()}
 
 
@@ -1191,7 +1316,9 @@ func _progression_snapshot() -> Variant:
 	snapshot.rooms.assign(rooms.duplicate(true))
 	snapshot.lord = lord.duplicate(true)
 	snapshot.upgrades = upgrades.duplicate(true)
-	snapshot.selected_talents = selected_talents.duplicate(true)
+	snapshot.learned_skills = learned_skills.duplicate(true)
+	snapshot._skill_preparation = _skill_preparation.duplicate(true)
+	snapshot._trophy_metal = _trophy_metal
 	snapshot.selected_relics.assign(selected_relics)
 	snapshot._lord_ability_values = _lord_ability_values.duplicate(true)
 	return snapshot
@@ -1222,10 +1349,6 @@ func _progression_metrics() -> Dictionary:
 
 func _advance_reward_choice() -> void:
 	migrate_legacy_talents()
-	# Only newly earned points request a tree once; deferred points stay banked.
-	if _talent_reward_pending and skill_points > 0:
-		phase = "level_up"
-		return
 	_talent_reward_pending = false
 	if _pending_blueprint:
 		var available: Array[String] = _available_blueprint_ids()
@@ -1388,6 +1511,7 @@ func _outgoing_combo(index: int) -> Dictionary:
 
 
 func talent_modifiers() -> Dictionary:
+	# Compatibility read API: only the new one-purchase tree contributes.
 	var modifiers: Dictionary = {
 		"lord_hp": 0.0, "lord_damage": 0.0, "lord_armor": 0.0,
 		"monster_hp": 0.0, "monster_damage": 0.0, "trap_damage": 0.0,
@@ -1395,44 +1519,22 @@ func talent_modifiers() -> Dictionary:
 		"hero_room_xp": 0.0, "floor_cost": 0.0, "heal_cost": 0.0,
 		"opening_strikes": 0.0, "opening_multiplier": 1.0,
 	}
-	for id in selected_talents:
-		var rank: int = maxi(0, int(selected_talents[id]))
-		var definition: Dictionary = Talents.get_talent(str(id))
-		if definition.is_empty() or rank == 0:
-			continue
-		var effects: Dictionary = definition.get("modifiers", {})
-		for key in effects:
-			if str(key) == "opening_multiplier":
-				# Catalog stores the absolute multiplier (2 means double), not +200%.
-				modifiers[key] = float(modifiers[key]) + (float(effects[key]) - 1.0) * rank
-			else:
-				modifiers[key] = float(modifiers.get(key, 0.0)) + float(effects[key]) * rank
+	var skill_modifiers: Dictionary = run_skill_modifiers()
+	for key in skill_modifiers:
+		modifiers[key] = float(skill_modifiers[key])
+	modifiers.trap_damage = float(modifiers.get("direct_trap_damage", 0.0))
+	if has_run_skill("creatures_frenzied_servants"):
+		modifiers.monster_hp = float(modifiers.monster_hp) - 0.08
+	if has_run_skill("economy_greed"):
+		modifiers.kill_gold = 0.2
+		modifiers.hero_room_xp = 0.15
+	modifiers.floor_cost = -0.05 * (int(has_run_skill("economy_building_estimate")) + int(has_run_skill("economy_building_estimate_2")))
+	modifiers.heal_cost = -0.1 if has_run_skill("economy_court_healer") else 0.0
 	return modifiers
 
 
 func opening_strikes_remaining() -> int:
-	return maxi(0, int(talent_modifiers().opening_strikes) - lord_strikes)
-
-
-func _talent_is_eligible(definition: Dictionary) -> bool:
-	return _talent_requirement_error(definition).is_empty()
-
-
-func _talent_requirement_error(definition: Dictionary) -> String:
-	if definition.is_empty():
-		return "Неизвестный талант."
-	if int(lord.level) < int(definition.get("min_level", 1)):
-		return "Нужен уровень Лорда %d" % int(definition.min_level)
-	var rank: int = int(selected_talents.get(str(definition.id), 0))
-	var maximum: int = int(definition.get("max_rank", 0))
-	if maximum > 0 and rank >= maximum:
-		return "Талант достиг предела."
-	# Purchased legacy ranks are never revoked by the new prerequisite graph.
-	if rank == 0:
-		for parent in definition.get("parents", []):
-			if int(selected_talents.get(str(parent), 0)) == 0:
-				return "Сначала %s" % str(Talents.get_talent(str(parent)).name)
-	return ""
+	return 0
 
 
 func _recalculate_lord() -> void:
@@ -1441,7 +1543,9 @@ func _recalculate_lord() -> void:
 	var levels: int = int(lord.level) - 1
 	var modifiers: Dictionary = talent_modifiers()
 	lord.max_hp = maxi(1, ceili(float(120 + 10 * levels) * (1.0 + float(modifiers.lord_hp))))
-	lord.damage = maxi(1, ceili(float(10 + levels) * (1.0 + float(modifiers.lord_damage))))
+	lord.tree_base_damage = float(10 + levels)
+	lord.tree_damage_bonus = float(modifiers.lord_damage)
+	lord.damage = maxi(1, ceili(float(lord.tree_base_damage) * (1.0 + float(lord.tree_damage_bonus) + (0.05 if has_run_skill("shared_unity_of_power") else 0.0))))
 	lord.armor = maxi(0, 1 + int(modifiers.lord_armor))
 	# Increasing max HP preserves wounds; lowering it cannot kill a living lord.
 	# Repeated calls with the same base/modifiers neither heal nor resurrect.
@@ -1462,13 +1566,10 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	var modifiers: Dictionary = talent_modifiers()
 	var faction: Dictionary = _faction_modifiers(str(state.id))
 	var evolution: Dictionary = _evolution_modifiers(state)
-	var hp_factor: float = 1.0 + 0.1 * float(upgrades.hp) + float(modifiers.monster_hp) + float(lord_passive_modifiers().monster_hp)
+	var hp_factor: float = 1.0 + float(lord_passive_modifiers().monster_hp)
 	hp_factor += float(faction.get("monster_hp", 0.0)) + float(evolution.get("hp_bonus", 0.0))
-	var damage_factor: float = 1.0 + 0.1 * float(upgrades.damage if is_monster else upgrades.trap)
-	damage_factor += float(modifiers.monster_damage if is_monster else modifiers.trap_damage)
+	var damage_factor: float = 1.0
 	damage_factor += float(faction.get("monster_damage" if is_monster else "trap_damage", 0.0)) + float(evolution.get("damage_bonus", 0.0))
-	if str(state.id) == "spikes":
-		damage_factor += float(modifiers.spike_damage)
 	var floor_index: int = index / SLOTS_PER_FLOOR
 	var floor_trait: String = floor_traits[floor_index] if floor_index < floor_traits.size() else "plain"
 	var specialization: String = str(state.get("specialization", ""))
@@ -1504,13 +1605,27 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	elif specialization == "lingering":
 		duration += 3
 	duration = _scaled_poison_duration(duration)
-	result.hp = ceili(float(result.hp) * rank_factor * hp_factor) if is_monster else 0
+	result.tree_base_hp = float(result.hp) * rank_factor * hp_factor if is_monster else 0.0
+	result.tree_hp_bonus = float(modifiers.monster_hp) if is_monster else 0.0
+	result.hp = ceili(float(result.tree_base_hp) * (1.0 + float(result.tree_hp_bonus))) if is_monster else 0
 	result.max_hp = result.hp
-	result.damage = ceili(float(result.damage) * rank_factor * damage_factor)
-	if is_monster:
-		result.armor = int(result.armor) + int(faction.get("monster_armor", 0)) + int(evolution.get("armor_bonus", 0))
+	result.tree_base_damage = float(result.damage) * rank_factor * damage_factor
 	if specialization == "virulent":
-		result.damage = int(result.damage) + 1
+		result.tree_base_damage = float(result.tree_base_damage) + 1.0
+	result.tree_damage_bonus = float(modifiers.monster_damage) if is_monster else _direct_trap_bonus(index, state, result)
+	var preview_bonus: float = float(result.tree_damage_bonus)
+	if is_monster:
+		preview_bonus += 0.15 if has_run_skill("creatures_frenzied_servants") else 0.0
+		preview_bonus += 0.05 if has_run_skill("shared_unity_of_power") else 0.0
+		if str(state.id) in ["spider", "war_hound"] and has_run_skill("creatures_beast_ferocity"):
+			preview_bonus += 0.1
+	result.damage = ceili(float(result.tree_base_damage) * (1.0 + preview_bonus))
+	result.tree_bone_armor = 1 if is_monster and result.get("tags", []).has("corporeal") and has_run_skill("creatures_bone_carapace") else 0
+	if is_monster:
+		result.armor = int(result.armor) + int(faction.get("monster_armor", 0)) + int(evolution.get("armor_bonus", 0)) + int(result.tree_bone_armor)
+	if str(result.kind) == "poison":
+		result.damage = float(result.tree_base_damage)
+		result.poison_power_display = float(result.damage) * (1.0 + float(modifiers.get("poison_damage", 0.0)))
 	var base_xp: int = int(result.xp) + 2 * (rank - 1) if is_monster else 0
 	result.xp = hero_room_xp(base_xp)
 	result.rank = rank
@@ -1521,7 +1636,9 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	result.branch = str(branch_names.get(specialization, ""))
 	result.floor_trait = floor_trait
 	result.poison_ticks = duration
+	result.poison_ticks_display = poison_application_duration(duration)
 	result.impact_damage = 0
+	result.tree_base_impact = 0.0
 	result.impact_all = bool(evolution.get("impact_all", false))
 	result.disarm_multiplier = maxf(0.4, float(evolution.get("disarm_multiplier", 0.0)))
 	result.disarm_poison_turns = maxi(3, int(evolution.get("disarm_poison_turns", 0)))
@@ -1531,7 +1648,9 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 		var bonus_turns: int = int(faction.get("control_turns", 0)) + int(evolution.get("control_turns", 0))
 		bonus_turns += 1 if specialization == "control_lingering" else 0
 		result.effect_turns = mini(6, int(result.effect_turns) + bonus_turns)
-		result.impact_damage = ceili(float(maxi(0, rank - 1) + int(evolution.get("impact_bonus", 0))) * damage_factor)
+		result.tree_impact_base_damage = float(maxi(0, rank - 1) + int(evolution.get("impact_bonus", 0))) * damage_factor
+		result.tree_base_impact = result.tree_impact_base_damage
+		result.impact_damage = ceili(float(result.tree_impact_base_damage) * (1.0 + float(result.tree_damage_bonus)))
 	if str(state.id) == "guardian" and selected_relics.has("guardian_oath"):
 		result.armor = int(result.armor) + 1
 	result.role = "Атакует переднего героя"
@@ -1540,7 +1659,7 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	elif str(state.id) == "spider":
 		result.role = "Добивает слабейшего, предпочитает отравленных"
 	elif str(state.id) == "poison":
-		result.role = "Отравляет всю группу на %d тиков" % duration
+		result.role = "Отравляет всю группу на %d тиков" % int(result.poison_ticks_display)
 	elif str(state.id) == "spikes":
 		result.role = "Бьёт всю группу" if specialization == "volley" else "Бьёт переднего героя в обход брони"
 	elif str(state.id) == "ballista":
@@ -1580,33 +1699,145 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	return result
 
 
+func _is_direct_trap(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+	var kind: String = str(Content.room(str(state.get("id", ""))).get("kind", ""))
+	if kind == "spikes":
+		return str(state.get("evolution_path", "")) not in ["blade_floor_partition_corridor", "blade_floor_corpse_reclaimer"]
+	if kind in ["shackles", "silence", "rust"]:
+		var path: String = str(state.get("evolution_path", ""))
+		if not path.is_empty():
+			return path == "rust_shard_chamber"
+		return int(state.get("rank", 1)) > 1
+	return false
+
+
+func _last_direct_trap_on_floor(index: int) -> bool:
+	var candidate: int = next_route_slot(index)
+	while candidate < rooms.size() and candidate / SLOTS_PER_FLOOR == index / SLOTS_PER_FLOOR:
+		if _is_direct_trap(rooms[candidate]):
+			return false
+		candidate = next_route_slot(candidate)
+	return true
+
+
+func _direct_trap_bonus(index: int, state: Dictionary, definition: Dictionary) -> float:
+	if str(definition.kind) in ["monster", "poison"]:
+		return 0.0
+	var bonus: float = float(run_skill_modifiers().get("direct_trap_damage", 0.0))
+	if str(state.id) in ["spikes", "blade_floor"] and has_run_skill("traps_sharpening"):
+		bonus += 0.12
+	if str(state.id) == "ballista" and has_run_skill("traps_tension"):
+		bonus += 0.12
+	if has_run_skill("shared_unity_of_power"):
+		bonus += 0.05
+	if has_run_skill("poison_long_poison"):
+		bonus -= 0.08
+	if has_run_skill("traps_deadly_corridor") and _is_direct_trap(state) and _last_direct_trap_on_floor(index):
+		bonus += 0.15
+	return bonus
+
+
 func hero_room_xp(base_xp: int) -> int:
 	# Round the shared pool to the nearest integer: a small greed penalty must not
 	# turn a 3 XP room into 4 XP (+33%) before its rank has even increased.
 	return maxi(0, roundi(float(base_xp) * (1.0 + float(talent_modifiers().hero_room_xp) + float(lord_passive_modifiers().hero_room_xp))))
 
 
-func floor_cost() -> int:
+func floor_price_details() -> Dictionary:
 	var next_floor: int = floor_count + 1
-	return maxi(1, ceili(float(5 * next_floor * next_floor) * (1.0 + float(talent_modifiers().floor_cost))))
+	var base: int = 5 * next_floor * next_floor
+	var price: int = maxi(1, ceili(float(base) * (1.0 + float(talent_modifiers().floor_cost))))
+	return {"base": base, "price": price, "saving": base - price}
+
+
+func floor_cost() -> int:
+	return int(floor_price_details().price)
+
+
+func heal_price_details() -> Dictionary:
+	var base: int = 6 + 2 * floori(float(wave - 1) / 5.0)
+	var price: int = maxi(1, ceili(float(base) * (1.0 + float(talent_modifiers().heal_cost))))
+	return {"base": base, "price": price, "saving": base - price}
 
 
 func heal_cost() -> int:
-	var base_cost: int = 6 + 2 * floori(float(wave - 1) / 5.0)
-	return maxi(1, ceili(float(base_cost) * (1.0 + float(talent_modifiers().heal_cost))))
+	return int(heal_price_details().price)
+
+
+func paid_heal_amount() -> int:
+	return maxi(0, mini(ceili(float(lord.max_hp) * 0.25 * (1.1 if has_run_skill("shared_dark_recovery") else 1.0)), int(lord.max_hp) - int(lord.hp)))
+
+
+func _discounted_room_price(base_price: int) -> int:
+	var saving: int = 0
+	if has_run_skill("economy_supply") and not bool(_skill_preparation.get("supply_used", false)):
+		saving += 1
+	if bool(_skill_preparation.get("contract_available", false)):
+		saving += 2
+	return maxi(1, base_price - saving)
+
+
+func shop_room_cost(id: String) -> int:
+	var definition: Dictionary = Content.room(id)
+	return _discounted_room_price(int(definition.get("cost", 0))) if not definition.is_empty() else 0
+
+
+func _consume_building_discounts(room: Dictionary) -> void:
+	room.run_discount_wave = wave
+	if has_run_skill("economy_supply") and not bool(_skill_preparation.get("supply_used", false)):
+		room.run_supply_used = true
+		_skill_preparation.supply_used = true
+	if bool(_skill_preparation.get("contract_available", false)):
+		room.run_contract_used = true
+		_skill_preparation.contract_available = false
+
+
+func upgrade_price_details(index: int) -> Dictionary:
+	var details: Dictionary = {"base": 0, "price": 0, "saving": 0, "discounts": []}
+	if not _valid_slot(index) or rooms[index].is_empty():
+		return details
+	var state: Dictionary = rooms[index]
+	var definition: Dictionary = Content.room(str(state.id))
+	var price: int = int(definition.cost) * (int(state.rank) + 1)
+	details.base = price
+	if has_run_skill("traps_workshop") and str(definition.kind) != "monster" and not bool(state.get("run_workshop_used", false)):
+		var after: int = maxi(1, price - 1)
+		details.discounts.append({"name": "Мастерская", "saving": price - after})
+		price = after
+	if _trophy_metal:
+		var after: int = maxi(1, price - 2)
+		details.discounts.append({"name": "Трофейный металл", "saving": price - after})
+		price = after
+	if has_run_skill("economy_military_order") and not bool(_skill_preparation.get("military_used", false)):
+		var after: int = maxi(1, ceili(float(price) - minf(5.0, float(price) * 0.2)))
+		details.discounts.append({"name": "Военный заказ", "saving": price - after})
+		price = after
+	details.price = price
+	details.saving = int(details.base) - price
+	return details
 
 
 func upgrade_cost(index: int) -> int:
-	if not _valid_slot(index) or rooms[index].is_empty():
-		return 0
-	return int(Content.room(str(rooms[index].id)).cost) * (int(rooms[index].rank) + 1)
+	return int(upgrade_price_details(index).price)
+
+
+func record_direct_trap_kill() -> void:
+	if not has_run_skill("shared_trophy_metal") or bool(run_skill_runtime.get("trophy_kill_used", false)):
+		return
+	run_skill_runtime.trophy_kill_used = true
+	if not _trophy_metal:
+		_trophy_metal = true
+		_log("Трофейный металл: следующее улучшение комнаты дешевле на 2 золота.")
 
 
 func sell_value(index: int) -> int:
 	if not _valid_slot(index) or rooms[index].is_empty():
 		return 0
 	var invested: int = int(rooms[index].invested)
-	return floori(float(invested) / 2.0) if bool(rooms[index].used) else invested
+	var fraction: float = 0.6 if has_run_skill("economy_buyer") else 0.5
+	return floori(float(invested) * fraction) if bool(rooms[index].used) else invested
 
 
 func _generate_party() -> void:
@@ -1628,11 +1859,7 @@ func _generate_party() -> void:
 		for id in party_ids:
 			names.append(str(Content.hero(id).name))
 		wave_description += " Отряд: %s." % ", ".join(names)
-	var group_factor: float = 1.0
-	if party_ids.size() == 2:
-		group_factor = 0.75
-	elif party_ids.size() == 3:
-		group_factor = 0.65
+	var group_factors: Dictionary = HeroRules.party_factors(party_ids.size(), wave)
 	var pressure: float = 1.0
 	var starting_level: int = 1 + floori(float(wave - 1) / 4.0)
 	var disarm_supply: int = mini(6, 2 + floori(float(wave - 1) / 6.0))
@@ -1651,7 +1878,9 @@ func _generate_party() -> void:
 			"disarm_max": disarm_supply if id == "rogue" else 0,
 			"disarm_charges": disarm_supply if id == "rogue" else 0,
 			"elite_modifier": elite_description,
-			"death_processed": false, "group_factor": group_factor,
+			"death_processed": false, "group_factor": group_factors.hp,
+			"group_hp_factor": group_factors.hp, "group_damage_factor": group_factors.damage,
+			"soul_special": not elite_id.is_empty(),
 			"pressure": pressure, "icon": definition.icon, "color": definition.color,
 			"trait": definition.trait,
 		}
@@ -1809,11 +2038,11 @@ func _trigger_trap(stats: Dictionary, disarmed: bool) -> void:
 		var targets: Array[Dictionary] = _living()
 		var poison_aura: float = _poison_aura_multiplier()
 		for hero in targets:
-			_apply_hero_poison(hero, int(stats.damage), duration, _battle_source())
+			_apply_hero_poison(hero, float(stats.get("tree_base_damage", stats.damage)), duration, _battle_source())
 			if str(stats.specialization) == "plague":
 				hero.poison_heal_factor = 0.5
 			if echo:
-				_inflict_hero_damage(hero, _poison_hit(hero, maxi(1, floori(float(stats.damage) * 0.4)), poison_aura), _battle_source())
+				_inflict_hero_damage(hero, _poison_hit(hero, float(stats.get("tree_base_damage", stats.damage)) * 0.4 * (1.0 + float(run_skill_modifiers().get("poison_damage", 0.0))), poison_aura), _battle_source())
 		active_target_id = str(targets[0].instance_id)
 		var text: String = "Вся группа отравлена: %d урона × %d тиков%s." % [stats.damage, duration, " (следопыт сократил эффект)" if disarmed else ""]
 		_log(text)
@@ -1886,20 +2115,78 @@ func _combat_step() -> void:
 	_encounter.step(self)
 
 
+func poison_tick_power(hero: Dictionary, natural: bool = false) -> float:
+	if int(hero.get("poison_ticks", 0)) <= 0:
+		return 0.0
+	var base: float = float(hero.get("run_poison_base", hero.get("poison_damage", 0.0)))
+	var bonus: float = float(hero.get("run_poison_bonus", 0.0))
+	if has_run_skill("poison_mature_formula") and int(hero.get("run_poison_maturity", 0)) >= 2:
+		bonus += 0.15
+	if natural and int(hero.poison_ticks) == 1 and has_run_skill("poison_last_drop"):
+		bonus += 1.0 if has_run_skill("poison_final_sediment") else 0.5
+	return base * (1.0 + bonus)
+
+
+func clear_poison(hero: Dictionary) -> void:
+	hero.poison_ticks = 0
+	hero.poison_damage = 0.0
+	hero.poison_heal_factor = 1.0
+	hero.run_poison_maturity = 0
+	hero.run_poison_uninterrupted = 0
+	hero.run_poison_corrosion = 0
+	hero.run_heavy_breathing = false
+	hero.erase("poison_source")
+	hero.erase("run_poison_base")
+	hero.erase("run_poison_bonus")
+
+
+func consume_poison_tick(hero: Dictionary, natural: bool = false) -> float:
+	var power: float = poison_tick_power(hero, natural)
+	if int(hero.get("poison_ticks", 0)) <= 0:
+		return 0.0
+	if natural:
+		hero.run_poison_maturity = int(hero.get("run_poison_maturity", 0)) + 1
+		hero.run_poison_uninterrupted = int(hero.get("run_poison_uninterrupted", 0)) + 1
+		if int(hero.run_poison_uninterrupted) >= 3 and has_run_skill("poison_corrosive_formula"):
+			hero.run_poison_corrosion = 1
+		if int(hero.run_poison_maturity) >= 3 and has_run_skill("poison_heavy_breathing"):
+			hero.run_heavy_breathing = true
+	hero.poison_ticks = maxi(0, int(hero.poison_ticks) - 1)
+	if int(hero.poison_ticks) == 0:
+		clear_poison(hero)
+	return power
+
+
 func _apply_poison() -> void:
 	var poison_aura: float = _poison_aura_multiplier()
 	for hero in _living():
-		if int(hero.poison_ticks) <= 0:
+		if int(hero.poison_ticks) <= 0 or int(hero.hp) <= 0:
 			continue
-		var damage: int = _poison_hit(hero, int(hero.poison_damage), poison_aura)
+		var damage: int = _poison_hit(hero, poison_tick_power(hero, true), poison_aura)
+		# The lethal natural final tick still counts as dying while poisoned.
 		damage = _encounter.hero_damage(self, hero, damage, str(hero.get("poison_source", "")))
-		hero.poison_ticks = int(hero.poison_ticks) - 1
+		consume_poison_tick(hero, true)
 		_log("Яд: %s −%d HP (%d тиков осталось)." % [hero.name, damage, hero.poison_ticks])
 		_action("poison", "poison", str(hero.instance_id), damage, "Яд → %s: −%d HP" % [hero.name, damage])
-		if int(hero.poison_ticks) == 0:
-			hero.poison_damage = 0
-			hero.poison_heal_factor = 1.0
-			hero.erase("poison_source")
+		last_action.meta = {"maturity": int(hero.get("run_poison_maturity", 0)), "corrosion": int(hero.get("run_poison_corrosion", 0)), "heavy_breathing": bool(hero.get("run_heavy_breathing", false))}
+
+
+func _trigger_plague_focus(victim: Dictionary) -> void:
+	if not has_run_skill("poison_plague_focus") or int(victim.get("poison_ticks", 0)) <= 0 or bool(run_skill_runtime.get("plague_burst_active", false)):
+		return
+	var floor_index: int = clampi(current_slot / SLOTS_PER_FLOOR, 0, floor_count - 1)
+	var key: String = "plague_floor_%d" % floor_index
+	if bool(run_skill_runtime.get(key, false)):
+		return
+	run_skill_runtime[key] = true
+	run_skill_runtime.plague_burst_active = true
+	var power: float = poison_tick_power(victim)
+	var aura: float = _poison_aura_multiplier()
+	var source: String = str(victim.get("poison_source", _battle_source()))
+	for target in _living():
+		var damage: int = _inflict_hero_damage(target, _poison_hit(target, power, aura), source)
+		_action("plague_focus", str(victim.instance_id), str(target.instance_id), damage, "Чумной очаг: −%d HP" % damage)
+	run_skill_runtime.plague_burst_active = false
 
 
 func _process_deaths() -> void:
@@ -1915,7 +2202,12 @@ func _reward_dead_heroes() -> void:
 		changed = true
 		hero.items = []
 		var base_coins: int = 3 + floori(float(wave - 1) / 3.0)
-		var coins: int = maxi(0, ceili(float(base_coins) * (1.0 + float(talent_modifiers().kill_gold))))
+		var coins: int = base_coins
+		if has_run_skill("economy_greed"):
+			_greed_remainder += base_coins * 20
+			coins += _greed_remainder / 100
+			_greed_remainder %= 100
+		_reward_hero_souls(hero)
 		var experience: int = 5 + int(hero.level)
 		gold += coins
 		lord.xp = int(lord.xp) + experience
@@ -1976,6 +2268,13 @@ func _award_room_loot(stats: Dictionary) -> void:
 	_log("%s не улучшает снаряжение выживших; трофей оставлен." % HeroRules.item(item_id).name)
 
 
+func effective_hero_armor(hero: Dictionary) -> int:
+	var armor: int = int(hero.get("armor", 0)) - int(hero.get("run_poison_corrosion", 0))
+	if int(hero.get("rust_ticks", 0)) > 0:
+		armor -= int(hero.get("rust_amount", 1))
+	return maxi(0, armor)
+
+
 func _recalculate_hero(hero: Dictionary) -> void:
 	var base: Dictionary = Content.hero(str(hero.id))
 	HeroRules.ensure_equipment(hero)
@@ -1994,8 +2293,15 @@ func _finish_wave() -> void:
 		return
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
-	gold += 4
-	report.gold = int(report.gold) + 4
+	# Reserve observes the wallet before every completion reward, including saved Q.
+	var reserve: int = mini(3, gold / 20) if has_run_skill("economy_gold_reserve") else 0
+	var tribute: int = int(has_run_skill("economy_tribute_1")) + int(has_run_skill("economy_tribute_2")) + int(has_run_skill("economy_tribute_3"))
+	var saved: int = mini(2, ability_charges) if has_run_skill("shared_saved_power") else 0
+	gold += 4 + reserve + tribute + saved
+	report.gold = int(report.gold) + 4 + reserve + tribute + saved
+	report.skill_gold = {"tribute": tribute, "reserve": reserve, "saved_power": saved}
+	if reserve + tribute + saved > 0:
+		_log("Навыки: дань +%d, запас +%d, сбережённые заряды +%d золота." % [tribute, reserve, saved])
 	if selected_relics.has("tithe_seal"):
 		gold += 2
 		report.gold = int(report.gold) + 2
@@ -2016,23 +2322,21 @@ func _finish_wave() -> void:
 		var previous_damage: int = int(lord.damage)
 		lord.level = int(lord.level) + 1
 		_recalculate_lord()
-		skill_points += 1
-		report.skill_points = int(report.get("skill_points", 0)) + 1
-		_talent_reward_pending = true
-		_log("Лорд достиг уровня %d! +%d HP, +%d урона и 1 очко таланта." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
+		_log("Лорд достиг уровня %d! +%d HP и +%d урона." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
 	_pending_blueprint = wave % BLUEPRINT_WAVE_INTERVAL == 0 and not _available_blueprint_ids().is_empty()
 	_pending_relic = wave % RELIC_WAVE_INTERVAL == 0 and not _available_relic_ids().is_empty()
 	if tutorial_run and wave == 1:
 		if int(lord.level) < 2:
 			lord.level = 2
 			_recalculate_lord()
-		if skill_points == 0:
-			skill_points = 1
-			report.skill_points = int(report.get("skill_points", 0)) + 1
-		_talent_reward_pending = true
+		var tutorial_souls: int = maxi(0, 3 - run_souls)
+		run_souls += tutorial_souls
+		report.souls = int(report.get("souls", 0)) + tutorial_souls
+		report.tutorial_souls = tutorial_souls
+		run_souls_changed.emit(run_souls, tutorial_souls)
 		_pending_blueprint = true
 		_pending_relic = true
-		_log("Учебные награды: талант, чертёж и реликвия. Они действуют только в тренировке.")
+		_log("Учебные награды: души, чертёж и реликвия. Они действуют только в тренировке.")
 	phase = "result"
 	_log("Волна %d отражена! +4 золота за защиту." % wave)
 
@@ -2121,20 +2425,62 @@ func _inflict_hero_damage(hero: Dictionary, raw_damage: int, source: String) -> 
 	_battle_add(source, "damage", damage)
 	if before > 0 and int(hero.hp) == 0:
 		_battle_add(source, "kills")
+		_trigger_plague_focus(hero)
 	return damage
 
 
-func _apply_hero_poison(hero: Dictionary, damage: int, duration: int, source: String) -> void:
-	# The strongest poison keeps ownership when a weaker trap refreshes its time.
-	# Equal potency with a refreshed duration transfers ownership to the new source.
-	if int(hero.poison_ticks) <= 0 or damage > int(hero.poison_damage) or (damage == int(hero.poison_damage) and duration >= int(hero.poison_ticks)):
+func _apply_hero_poison(hero: Dictionary, damage: float, duration: int, source: String, extra_bonus: float = 0.0) -> void:
+	if damage <= 0.0 or duration <= 0 or int(hero.hp) <= 0:
+		return
+	var ongoing: bool = int(hero.get("poison_ticks", 0)) > 0
+	var bonus: float = float(run_skill_modifiers().get("poison_damage", 0.0)) + extra_bonus
+	var strength: float = damage * (1.0 + bonus)
+	var full_duration: int = poison_application_duration(duration)
+	# Stronger poison retains its owner/base. Equal power with a refreshed
+	# duration transfers ownership. No intermediate integer rounding occurs.
+	if not ongoing or strength > float(hero.get("poison_damage", 0.0)) or (is_equal_approx(strength, float(hero.get("poison_damage", 0.0))) and full_duration >= int(hero.poison_ticks)):
 		hero.poison_source = source
-	hero.poison_damage = maxi(int(hero.poison_damage), damage)
-	hero.poison_ticks = maxi(int(hero.poison_ticks), duration)
+		hero.run_poison_base = damage
+		hero.run_poison_bonus = bonus
+		hero.poison_damage = strength
+	hero.poison_ticks = maxi(int(hero.get("poison_ticks", 0)), full_duration)
+	if not ongoing:
+		hero.run_poison_uninterrupted = 0
+		hero.run_poison_corrosion = 0
+	if not ongoing or not has_run_skill("poison_unbroken_maturity"):
+		hero.run_poison_maturity = 0
+		hero.run_heavy_breathing = false
+
+
+func soul_drop_probabilities(special: bool = false) -> Dictionary:
+	var guaranteed: bool = soul_failures >= 2
+	if not special:
+		return {"0": 0.0 if guaranteed else (0.45 if has_run_skill("ritual_soul_catcher") else 0.5), "1": 1.0 if guaranteed else (0.55 if has_run_skill("ritual_soul_catcher") else 0.5), "2": 0.0, "guaranteed": guaranteed}
+	var two: float = 0.25 if has_run_skill("shared_art_of_harvest") else 0.2
+	var zero: float = 0.0 if guaranteed else (0.25 if has_run_skill("ritual_soul_catcher") else 0.3)
+	return {"0": zero, "1": 1.0 - zero - two, "2": two, "guaranteed": guaranteed}
+
+
+func _reward_hero_souls(hero: Dictionary) -> void:
+	if bool(hero.get("soul_rewarded", false)):
+		return
+	hero.soul_rewarded = true
+	var probabilities: Dictionary = soul_drop_probabilities(bool(hero.get("soul_special", not elite_id.is_empty())))
+	# Exactly one isolated weighted draw for each defeated hero, including pity.
+	var roll: float = float(soul_rng.randi_range(0, 99)) / 100.0
+	var reward: int = 0 if roll < float(probabilities["0"]) else (1 if roll < float(probabilities["0"]) + float(probabilities["1"]) else 2)
+	soul_failures = soul_failures + 1 if reward == 0 else 0
+	run_souls += reward
+	report.souls = int(report.get("souls", 0)) + reward
+	run_souls_changed.emit(run_souls, reward)
+	var message: String = "Душа %s разбилась." % str(hero.name) if reward == 0 else "%s: +%d душ." % [hero.name, reward]
+	_log(message)
+	_action("soul_shatter" if reward == 0 else "soul", str(hero.instance_id), "lord", reward, message)
+	last_action.meta = {"run_souls": run_souls, "failure_count": soul_failures, "special": bool(hero.get("soul_special", false)), "guaranteed": bool(probabilities.guaranteed)}
 
 
 func _reset_report() -> void:
-	report = {"killed": 0, "gold": 0, "xp": 0, "lord_damage": 0, "hero_levels": 0, "items": 0, "unlock": "", "skill_points": 0}
+	report = {"killed": 0, "gold": 0, "xp": 0, "lord_damage": 0, "hero_levels": 0, "items": 0, "unlock": "", "skill_points": 0, "souls": 0}
 
 
 func _log(message: String) -> void:

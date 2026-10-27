@@ -55,7 +55,7 @@ static func purchase(profile: Dictionary, id: String) -> String:
 		return "Этот Владыка уже открыт."
 	var price: int = int(definition["unlock_cost"])
 	if int(state["souls"]) < price:
-		return "Не хватает душ: нужно %d." % price
+		return "Не хватает Печатей Владыки: нужно %d." % price
 	state["souls"] = int(state["souls"]) - price
 	state["unlocked"].append(id)
 	state["levels"][id] = 1
@@ -75,7 +75,7 @@ static func upgrade(profile: Dictionary, id: String) -> String:
 		return "Достигнут максимальный уровень мастерства."
 	var price: int = Catalog.upgrade_cost(level)
 	if int(state["souls"]) < price:
-		return "Не хватает душ: нужно %d." % price
+		return "Не хватает Печатей Владыки: нужно %d." % price
 	state["souls"] = int(state["souls"]) - price
 	state["levels"][id] = level + 1
 	_commit(profile, state)

@@ -46,16 +46,25 @@ static func damage_multiplier(wave: int) -> float:
 	return pow(1.0 + DAMAGE_CURVE_STEP * float(maxi(0, wave - 1)), 2.0)
 
 
+static func party_factors(size: int, wave: int) -> Dictionary:
+	if size >= 3:
+		var progress: float = clampf(float(wave - 8) / 12.0, 0.0, 1.0)
+		return {"hp": lerpf(0.65, 0.8, progress), "damage": lerpf(0.65, 0.75, progress)}
+	var factor: float = 0.75 if size == 2 else 1.0
+	return {"hp": factor, "damage": factor}
+
+
 static func scaled_stats(class_base: Dictionary, hero: Dictionary) -> Dictionary:
 	var wave: int = maxi(1, int(hero.get("wave", 1)))
 	# Existing saves lacking starting_level retain their former gained-level meaning.
 	var gained_levels: int = maxi(0, int(hero.get("level", 1)) - int(hero.get("starting_level", 1)))
-	var group_factor: float = maxf(0.0, float(hero.get("group_factor", 1.0)))
+	var group_hp: float = maxf(0.0, float(hero.get("group_hp_factor", hero.get("group_factor", 1.0))))
+	var group_damage: float = maxf(0.0, float(hero.get("group_damage_factor", hero.get("group_factor", 1.0))))
 	var bonus: Dictionary = equipment_stats(hero)
 	var base_hp: float = float(class_base.get("hp", class_base.get("max_hp", 1)))
 	var base_damage: float = float(class_base.get("damage", 1))
-	var scaled_hp: float = (base_hp * hp_multiplier(wave) + float(GAINED_LEVEL_HP * gained_levels)) * group_factor
-	var scaled_damage: float = (base_damage * damage_multiplier(wave) + float(GAINED_LEVEL_DAMAGE * gained_levels)) * group_factor
+	var scaled_hp: float = (base_hp * hp_multiplier(wave) + float(GAINED_LEVEL_HP * gained_levels)) * group_hp
+	var scaled_damage: float = (base_damage * damage_multiplier(wave) + float(GAINED_LEVEL_DAMAGE * gained_levels)) * group_damage
 	return {
 		"max_hp": maxi(1, ceili(scaled_hp * float(hero.get("deal_hp_multiplier", 1.0))) + int(bonus.hp)),
 		"damage": maxi(1, ceili(scaled_damage) + int(bonus.damage)),

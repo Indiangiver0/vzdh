@@ -3,6 +3,7 @@ extends Control
 ## The view never advances combat or modifies the run state.
 
 signal slot_clicked(index: int)
+signal soul_visual_requested(origin: Vector2, amount: int)
 
 const Content = preload("res://scripts/content_catalog.gd")
 const Lords = preload("res://scripts/lord_catalog.gd")
@@ -183,6 +184,9 @@ func refresh_runtime() -> void:
 					continue
 				_last_event_seq = event_seq
 				_events.append({"event": event.duplicate(true), "age": 0.0})
+				if str(event.get("kind", "")) in ["soul", "soul_shatter"]:
+					var origin: Vector2 = _hero_positions.get(str(event.get("actor", "")), _party_position) + Vector2(0, -20)
+					soul_visual_requested.emit(get_global_transform() * origin, int(event.get("amount", 0)))
 			while _events.size() > 24:
 				_events.pop_front()
 	queue_redraw()
@@ -641,6 +645,10 @@ func _draw_event_feedback() -> void:
 			draw_circle(p, 2.5 if compact else 4, tint)
 		elif kind in ["rotate", "spawn", "revive"] or "transform" in kind or "hatch" in kind or "cocoon" in kind or "hypno" in kind:
 			draw_arc(target, 12 + progress * 12, 0, TAU, 18, tint, 1.6, true)
+		elif kind == "plague_focus":
+			var cloud: Vector2 = source.lerp(target, minf(1.0, progress * 2))
+			draw_circle(cloud, 8 + progress * 12, Color(0.53, 0.73, 0.34, alpha * 0.4))
+			_center_text("−%d" % amount, target + Vector2(0, -30 - progress * 15), 11, Color(0.64, 0.82, 0.42, alpha))
 		elif "scream" in kind or "cleanse" in kind or "shock" in kind:
 			draw_arc(source, 10 + progress * 60, -PI * 0.7, PI * 0.7, 24, tint, 2, true)
 		elif kind in ["parry", "decoy", "armor_break", "disarm", "swap_weapon"]:
@@ -1035,6 +1043,14 @@ func _draw_party_links(living: Array[Dictionary]) -> void:
 		var id: String = str(hero.get("instance_id", ""))
 		var at: Vector2 = _hero_positions.get(id, _party_position)
 		var effects: Dictionary = hero.get("effects", {})
+		if int(hero.get("run_poison_corrosion", 0)) > 0:
+			draw_polyline(PackedVector2Array([at + Vector2(-4, -27), at + Vector2(1, -23), at + Vector2(-1, -19), at + Vector2(4, -15)]), Color("a3c46e"), 2, true)
+		if bool(hero.get("run_heavy_breathing", false)):
+			_center_text("↓", at + Vector2(12, -19), 12, Color("a3c46e"))
+		if int(hero.get("poison_ticks", 0)) > 0:
+			var maturity: int = mini(3, int(hero.get("run_poison_maturity", 0)))
+			for i in range(maturity):
+				draw_circle(at + Vector2(-5 + i * 4, 9), 1.2, Color("a3c46e"))
 		for other in effects.get("chain_with", []):
 			if str(other) < id or not _hero_positions.has(str(other)):
 				continue
@@ -1144,6 +1160,7 @@ func _draw_defender_wards(at: Vector2, scale_factor: float = 1.0, actor_data: Di
 		return
 	var current: Dictionary = game.defender if actor_data.is_empty() else actor_data
 	var radius: float = 30.0 * scale_factor
+	_draw_run_skill_marks(at + Vector2(0, -radius - 14), current)
 	if int(current.get("shield", 0)) > 0:
 		draw_arc(at, radius, 0, TAU, 40, Color(0.46, 0.75, 0.79, 0.8), 2.0 * scale_factor, true)
 		var badge: Vector2 = at + Vector2(radius - 3, -radius + 8)
@@ -1171,6 +1188,30 @@ func _draw_defender_wards(at: Vector2, scale_factor: float = 1.0, actor_data: Di
 			crest + Vector2(-6, 5) * scale_factor, crest,
 			crest + Vector2(6, 5) * scale_factor,
 		]), GOLD, 2.0 * scale_factor, true)
+
+
+func _draw_run_skill_marks(at: Vector2, actor: Dictionary) -> void:
+	var skills: Dictionary = actor.get("effects", {}).get("run_skills", {})
+	var labels := {"creatures_tough_hide": "Ш", "creatures_stubbornness": "У", "creatures_defiance": "Н", "creatures_discipline": "Д", "creatures_hunting_instinct": "О", "creatures_united_pack": "С", "creatures_battle_rhythm": "Р", "lord_last_word": "!", "lord_counterstrike": "↗", "lord_throne_wrath": "Г", "lord_fortified_throne": "Т", "shared_oath_of_the_fallen": "К", "ritual_impulse": "Q", "ritual_barrier": "Б", "ritual_cover": "Щ", "goblins_directed_orders": "П"}
+	var active: Array = []
+	for id in labels:
+		if int(skills.get(id, 0)) > 0:
+			active.append(id)
+	for i in range(active.size()):
+		var id: String = str(active[i])
+		var row: int = i / 5
+		var count: int = mini(5, active.size() - row * 5)
+		var point: Vector2 = at + Vector2((i % 5 - (count - 1) * 0.5) * 17, -row * 18)
+		var color: Color = TEAL if id.begins_with("ritual") else GOLD
+		draw_circle(point, 7, INK)
+		draw_arc(point, 7, 0, TAU, 16, color, 1, true)
+		_center_text(str(labels[id]), point + Vector2(0, 3), 9, color)
+		var charges: int = int(skills[id])
+		if id == "ritual_cover":
+			_center_text(str(charges), point + Vector2(0, 13), 8, color)
+		elif charges > 1:
+			for tick_index in range(mini(4, charges)):
+				draw_circle(point + Vector2((tick_index - (charges - 1) * 0.5) * 3, 10), 1, color)
 
 
 func _text(value: String, at: Vector2, font_size: int, color: Color) -> void:
@@ -1307,6 +1348,8 @@ func _get_tooltip(at_position: Vector2) -> String:
 	result += "Фракция: %s\n" % str(faction.get("name", ""))
 	if int(stats.hp) > 0:
 		result += "Здоровье: %d · урон: %d · броня: %d\n" % [stats.hp, stats.damage, stats.armor]
+	elif str(stats.get("kind", "")) == "poison":
+		result += "Яд: %.2f за тик, %d тиков · до защиты жрицы\n" % [float(stats.get("poison_power_display", stats.get("damage", 0))), int(stats.get("poison_ticks_display", stats.get("poison_ticks", 0)))]
 	elif str(stats.get("kind", "")) in ["shackles", "silence", "rust"]:
 		result += "Длительность: %d боевых т. · эффект в следующем бою\n" % int(stats.get("effect_turns", 0))
 		result += "Прямой удар: %d\n" % int(stats.get("impact_damage", 0))
@@ -1324,6 +1367,16 @@ func _get_tooltip(at_position: Vector2) -> String:
 	for stage in progression.get("stages", []):
 		if int(stage.get("tier", 1)) > 1 and bool(stage.get("chosen", false)):
 			result += "\nРанг %d: %s" % [int(stage.tier), str(stage.get("name", ""))]
+	for actor_data in _slot_actors.get(index, []):
+		var ready: PackedStringArray = []
+		for skill_id in actor_data.get("effects", {}).get("run_skills", {}):
+			var remaining: int = int(actor_data.effects.run_skills[skill_id])
+			if remaining <= 0:
+				continue
+			var skill_name: String = "Приказы знамени" if str(skill_id) == "goblins_directed_orders" else str(game.run_skill_definition(str(skill_id)).get("name", skill_id))
+			ready.append("%s: %d%s" % [skill_name, remaining, " HP щита" if str(skill_id) == "ritual_cover" else ""])
+		if not ready.is_empty():
+			result += "\n%s · %s" % [str(actor_data.get("name", "Защитник")), "; ".join(ready)]
 	var combo: Dictionary = game.room_combo(index)
 	if not combo.is_empty():
 		result += "\nСВЯЗКА · %s\n%s" % [combo.name, combo.description]
