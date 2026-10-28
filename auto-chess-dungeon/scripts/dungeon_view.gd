@@ -51,6 +51,9 @@ var _hero_equipment: Dictionary = {}
 var _hero_effects: Dictionary = {}
 var _slot_actors: Dictionary = {}
 var _room_visual_state: Dictionary = {}
+var _camp_snapshot: Dictionary = {}
+## Retained until the party leaves the exit, including a paused E interruption.
+var _camp_exit_slot: int = -1
 var _defeated_centers: Dictionary = {}
 var _throne_guard_slot: int = -1
 var _actor_positions: Dictionary = {}
@@ -81,6 +84,9 @@ func configure(game_ref, slot: int = -1, room_id: String = "") -> void:
 	if game != game_ref:
 		_last_slot = -2
 		_last_wave = -1
+		_last_phase = ""
+		_camp_exit_slot = -1
+		_camp_snapshot.clear()
 		_waypoints.clear()
 		_last_action_seq = -1
 		_last_event_seq = -1
@@ -123,6 +129,7 @@ func refresh_runtime() -> void:
 	_hero_effects.clear()
 	_room_visual_state.clear()
 	_defeated_centers.clear()
+	_camp_snapshot.clear()
 	if game == null:
 		return
 	var seq_value = game.get("action_seq")
@@ -137,6 +144,13 @@ func refresh_runtime() -> void:
 		_waypoints.clear()
 		_last_wave = -1
 		_last_slot = -2
+		_last_phase = ""
+		_camp_exit_slot = -1
+	if str(game.phase) == "camp":
+		_camp_snapshot = game.camp_status()
+	if not cinematic:
+		# Synchronize phase/route even on pause, before accepting this frame's events.
+		_update_party(0.0)
 	for hero in game.heroes:
 		var gear: Dictionary = {}
 		for item in HeroRules.equipment_summary(hero):
@@ -175,7 +189,7 @@ func refresh_runtime() -> void:
 		_room_visual_state[slot] = state
 	if seq != _last_action_seq:
 		_last_action_seq = seq
-		_hit_flash = 1.0 if str(game.phase) == "raid" else 0.0
+		_hit_flash = 1.0 if str(game.phase) == "raid" and _camp_exit_slot < 0 else 0.0
 		var combat_events = game.get("combat_events")
 		if combat_events is Array:
 			for event in combat_events:
@@ -192,6 +206,12 @@ func refresh_runtime() -> void:
 	queue_redraw()
 
 
+func refresh_camp_time() -> void:
+	# The simulation is frozen between camp pulses; retain room/equipment caches.
+	_camp_snapshot = game.camp_status() if game != null and str(game.phase) == "camp" else {}
+	queue_redraw()
+
+
 func _on_resized() -> void:
 	_cancel_press()
 	# Old pixel coordinates must not survive a phone rotation or a layout change.
@@ -200,6 +220,8 @@ func _on_resized() -> void:
 		_party_position = _position_for_slot(int(game.current_slot))
 		_party_goal = _party_position
 		_last_slot = int(game.current_slot)
+		_hero_positions.clear()
+		_actor_positions.clear()
 	queue_redraw()
 
 
@@ -220,17 +242,22 @@ func _process(delta: float) -> void:
 func _update_party(delta: float) -> void:
 	var phase: String = str(game.phase)
 	var current: int = int(game.current_slot)
-	if int(game.wave) != _last_wave:
+	var new_wave: bool = int(game.wave) != _last_wave or (phase == "raid" and _last_phase == "prepare")
+	if new_wave:
 		_hero_positions.clear()
 		_actor_positions.clear()
 		_events.clear()
-	if int(game.wave) != _last_wave or (phase == "raid" and _last_phase != "raid"):
+		_camp_exit_slot = -1
 		_party_position = Vector2(18, _floor_walk_y(0))
 		_party_direction = 1.0
 		_waypoints.clear()
 		_last_slot = -2
 		_last_wave = int(game.wave)
-	if current != _last_slot:
+	if phase == "camp":
+		_camp_exit_slot = int(_camp_snapshot.get("slot", current))
+	elif current != _camp_exit_slot:
+		_camp_exit_slot = -1
+	if current != _last_slot or (phase == "camp" and _last_phase != "camp"):
 		var goal: Vector2 = _position_for_slot(current)
 		# Preserve pending stairs when simulation advances ahead of the animation.
 		# Empty floors still contribute both landings to the visible route.
@@ -244,7 +271,7 @@ func _update_party(delta: float) -> void:
 		_waypoints.append(goal)
 		_party_goal = goal
 		_last_slot = current
-	if not _waypoints.is_empty():
+	if delta > 0.0 and not _waypoints.is_empty():
 		var remaining_distance: float = 0.0
 		var previous: Vector2 = _party_position
 		for waypoint in _waypoints:
@@ -272,7 +299,7 @@ func _position_for_slot(index: int) -> Vector2:
 	if index >= game.rooms.size():
 		return Vector2(size.x * 0.5 + (0 if compact else 18) - (66 if compact else 80) * _floor_direction(int(game.floor_count)), _floor_walk_y(int(game.floor_count)))
 	var room_rect: Rect2 = _slot_rect(index)
-	var approach: float = 0.5 if compact else (0.30 if _floor_direction(index / 5) > 0.0 else 0.70)
+	var approach: float = 0.5 if compact or index == _camp_exit_slot else (0.30 if _floor_direction(index / 5) > 0.0 else 0.70)
 	return Vector2(room_rect.position.x + room_rect.size.x * approach, _floor_walk_y(index / 5))
 
 
@@ -318,7 +345,8 @@ func _draw() -> void:
 		_draw_floor(floor_index)
 	_draw_combos()
 	_draw_throne()
-	if show_party and str(game.phase) in ["raid", "result", "defeat"]:
+	_draw_camp()
+	if show_party and str(game.phase) in ["raid", "camp", "result", "defeat"]:
 		_draw_party()
 	_draw_event_feedback()
 	if tutorial_slot >= 0 and tutorial_slot < game.rooms.size():
@@ -373,7 +401,7 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 		_draw_compact_chamber(rect, index)
 		return
 	var room: Dictionary = game.rooms[index]
-	var active: bool = str(game.phase) == "raid" and int(game.current_slot) == index
+	var active: bool = str(game.phase) == "raid" and int(game.current_slot) == index and index != _camp_exit_slot
 	var chosen: bool = selected_slot == index
 	var hovered: bool = _hovered_slot == index and str(game.phase) == "prepare"
 	var cleared: bool = str(room.get("status", "")) == "cleared"
@@ -393,6 +421,11 @@ func _draw_chamber(rect: Rect2, index: int) -> void:
 	_text("%02d" % (index % 5 + 1), Vector2(rect.position.x + 10, ceiling + 21), 9, Color("626f69"))
 	if index % 2 == 0:
 		_draw_torch(Vector2(rect.end.x - 17, ceiling + 38), float(index))
+	if index == _camp_exit_slot:
+		# The geometric exit may be empty; it never supplies a camp defender.
+		if not room.is_empty():
+			_draw_rubble(Vector2(center.x, ground), 0.5)
+		return
 	if room.is_empty():
 		if _reserved_snapshot.has(index):
 			_draw_reserved_growth(rect, index)
@@ -452,7 +485,7 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 	# A narrow room separates its label, defender and party into three rows.
 	# Full statistics and branch names remain available in the room inspector.
 	var room: Dictionary = game.rooms[index]
-	var active: bool = str(game.phase) == "raid" and int(game.current_slot) == index
+	var active: bool = str(game.phase) == "raid" and int(game.current_slot) == index and index != _camp_exit_slot
 	var chosen: bool = selected_slot == index
 	var hovered: bool = _hovered_slot == index and str(game.phase) == "prepare"
 	var cleared: bool = str(room.get("status", "")) == "cleared"
@@ -469,6 +502,10 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 	if chosen:
 		draw_rect(rect.grow(-3), TEAL, false, 2.0)
 	_text(str(index % 5 + 1), Vector2(rect.position.x + 7, top + 16), 9, MUTED)
+	if index == _camp_exit_slot:
+		if not room.is_empty():
+			_draw_rubble(Vector2(center_x, top + 81), 0.5)
+		return
 	if room.is_empty():
 		if _reserved_snapshot.has(index):
 			_draw_reserved_growth(rect, index)
@@ -512,6 +549,35 @@ func _draw_compact_chamber(rect: Rect2, index: int) -> void:
 		_bar(Rect2(center_x - bar_width / 2, top + 84, bar_width, 4), float(current_hp) / maxf(1, max_hp), CORAL, 0.4 if cleared else 1.0)
 	if cleared:
 		_draw_cleared_mark(Vector2(center_x, top + 102), MUTED)
+
+
+func _camp_fire_position(slot: int) -> Vector2:
+	var rect: Rect2 = _slot_rect(slot)
+	return Vector2(rect.get_center().x, rect.position.y + 62)
+
+
+func _draw_camp() -> void:
+	if not bool(_camp_snapshot.get("active", false)):
+		return
+	var slot: int = int(_camp_snapshot.get("slot", -1))
+	if slot < 0 or slot >= game.rooms.size():
+		return
+	var rect: Rect2 = _slot_rect(slot)
+	var center_x: float = rect.get_center().x
+	var label_width: float = rect.size.x - 6
+	draw_rect(Rect2(rect.position + Vector2(3, 3), Vector2(rect.size.x - 6, 78)), Color(0.09, 0.10, 0.08, 0.93))
+	draw_rect(rect.grow(-3), Color(GOLD, 0.6), false, 1.5)
+	_center_text_fitted("ПРИВАЛ", Vector2(center_x, rect.position.y + 18), 9 if compact else 11, GOLD, label_width)
+	_center_text_fitted("%.1f с" % float(_camp_snapshot.get("remaining_seconds", 0.0)), Vector2(center_x, rect.position.y + 35), 10 if compact else 12, CREAM, label_width)
+	var fire: Vector2 = _camp_fire_position(slot)
+	draw_ellipse_shadow(fire + Vector2(0, 4), 13)
+	draw_line(fire + Vector2(-10, 3), fire + Vector2(10, -2), Color("725238"), 4, true)
+	draw_line(fire + Vector2(-10, -2), fire + Vector2(10, 3), Color("a97945"), 3, true)
+	_draw_torch(fire + Vector2(0, -5), float(slot), 1.15)
+	_actor_positions["camp"] = fire
+	# Both values are model snapshots. Visual time never completes a healing pulse.
+	var bar_width: float = minf(54.0, rect.size.x - 12)
+	_bar(Rect2(center_x - bar_width / 2, rect.position.y + 73, bar_width, 4), float(_camp_snapshot.get("pulse_progress", 0.0)), GOLD)
 
 
 func _draw_direction_arrow(origin: Vector2, tip: Vector2, color: Color) -> void:
@@ -621,6 +687,8 @@ func _draw_event_feedback() -> void:
 		var progress: float = clampf(float(item.age) / 0.7, 0, 1)
 		var alpha: float = 1.0 - progress
 		var kind: String = str(event.get("kind", ""))
+		if _camp_exit_slot >= 0 and not kind.begins_with("camp_"):
+			continue
 		var target_id: String = str(event.get("target", ""))
 		var actor_id: String = str(event.get("actor", ""))
 		var slot: int = int(event.get("source_slot", game.current_slot))
@@ -630,6 +698,26 @@ func _draw_event_feedback() -> void:
 		var tint := Color(TEAL if "heal" in kind else GOLD if "shield" in kind else CORAL, alpha)
 		var amount: int = int(event.get("amount", 0))
 		var meta: Dictionary = event.get("meta", {})
+		if kind.begins_with("camp_"):
+			var fire: Vector2 = _camp_fire_position(slot)
+			if kind == "camp_heal" and amount > 0:
+				# Only actual, already applied HP is shown; forecasts are never pulses.
+				var label: String = "+%d" % amount
+				var label_size: int = 10 if compact else 12
+				var label_width: float = 28.0 if compact else 32.0
+				while label_size > 6 and _font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x > label_width:
+					label_size -= 1
+				_center_text(label, target + Vector2(0, -26 - progress * 16), label_size, Color(TEAL, alpha))
+				draw_arc(target + Vector2(0, -8), 10 + progress * 3, 0, TAU, 16, Color(TEAL, alpha * 0.65), 1.5, true)
+			elif kind == "camp_interrupt":
+				draw_arc(fire, 11 + progress * 19, 0, TAU, 20, Color(CORAL, alpha), 2, true)
+				var caption_x: float = clampf(fire.x, 52, size.x - 52)
+				_center_text("ПРИВАЛ СОРВАН", Vector2(caption_x, fire.y - 29), 9 if compact else 11, Color(CORAL, alpha))
+			elif kind == "camp_start" and bool(_camp_snapshot.get("active", false)):
+				draw_arc(fire, 12 + progress * 14, 0, TAU, 20, Color(GOLD, alpha * 0.5), 1.5, true)
+			elif kind == "camp_end" and str(meta.get("reason", "")) != "interrupted":
+				_center_text("В ПУТЬ", fire + Vector2(0, -24 - progress * 8), 9 if compact else 11, Color(GOLD, alpha))
+			continue
 		if amount != 0 and kind in ["attack", "heal", "steal_heal", "poison", "cleave", "chain", "bolt"]:
 			_center_text(("+" if "heal" in kind else "−") + str(absi(amount)), target + Vector2(0, -24 - progress * 19), 10 if compact else 12, tint)
 		var special: String = str(meta.get("prepared_kind", meta.get("ability", "")))
@@ -972,8 +1060,8 @@ func _draw_party() -> void:
 			living.append(hero)
 	if living.is_empty():
 		return
-	var walking: bool = _party_position.distance_to(_party_goal) > 5 or not _waypoints.is_empty()
-	if compact:
+	var walking: bool = str(game.phase) != "camp" and (_party_position.distance_to(_party_goal) > 5 or not _waypoints.is_empty())
+	if compact or game.heroes.size() > 3 or _camp_exit_slot == int(game.current_slot):
 		_draw_compact_party(living, walking)
 		return
 	for index in range(living.size() - 1, -1, -1):
@@ -1007,26 +1095,33 @@ func _draw_party() -> void:
 
 
 func _draw_compact_party(living: Array[Dictionary], walking: bool) -> void:
-	var icon_size: float = clampf((_slot_rect(0).size.x - 8) / 3, 12, 18)
-	var stride: float = icon_size + 1
+	# Five separate icons fit in one row even at 280 px. Keeping the row below
+	# defenders avoids hiding them with a second rank inside a 160 px floor.
+	var icon_size: float = 18.0 if compact else 22.0
+	var stride: float = icon_size + 12
+	var group_width: float = (living.size() - 1) * stride + icon_size + 10
+	var center_x: float = clampf(_party_position.x, group_width * 0.5 + 4, size.x - group_width * 0.5 - 4)
 	for index in range(living.size()):
 		var hero: Dictionary = living[index]
-		var column: int = index % 3
-		var row: int = index / 3
-		var row_count: int = mini(3, living.size() - row * 3)
-		var bob: float = sin(_clock * (14 if walking else 2.6) + index) * (1.2 if walking else 0.3)
-		var at: Vector2 = _party_position + Vector2((column - (row_count - 1) * 0.5) * stride * -_party_direction, 20 - row * (icon_size + 5) + bob)
-		at.x = clampf(at.x, icon_size * 0.5 + 2, size.x - icon_size * 0.5 - 2)
-		at = _animated_hero_position(hero, at)
+		var identity: String = str(hero.get("instance_id", hero.id))
+		var resting: bool = str(game.phase) == "camp"
+		var bob: float = 0.0 if resting else sin(_clock * (14 if walking else 2.6) + index) * (1.2 if walking else 0.3)
+		var at := Vector2(center_x + (index - (living.size() - 1) * 0.5) * stride * -_party_direction, _party_position.y + 20 + bob)
+		# Clamp the formation, not each hero. Per-hero clamping collapses ranks
+		# on stairs, and per-hero interpolation crosses HP bars during reordering.
+		_hero_positions[identity] = at
+		var frame := Rect2(at + Vector2(-icon_size * 0.5 - 4, -icon_size - 3), Vector2(icon_size + 8, icon_size + 10))
+		draw_rect(frame, Color(0.04, 0.07, 0.07, 0.9))
+		draw_rect(frame, Color(GOLD if bool(game.get("wave_is_boss")) else MUTED, 0.4), false, 1)
 		_icon(str(hero.id), Rect2(at + Vector2(-icon_size * 0.5, -icon_size), Vector2.ONE * icon_size))
-		EvolutionVisuals.hero_equipment(self, at, icon_size / 35.0, _hero_equipment.get(str(hero.get("instance_id", hero.id)), {}), _hero_effects.get(str(hero.get("instance_id", hero.id)), {}), _clock)
-		_bar(Rect2(at + Vector2(-icon_size * 0.5, 2), Vector2(icon_size, 2)), float(hero.hp) / maxf(1, int(hero.max_hp)), TEAL)
+		EvolutionVisuals.hero_equipment(self, at, icon_size / 35.0, _hero_equipment.get(identity, {}), _hero_effects.get(identity, {}), _clock)
+		_bar(Rect2(at + Vector2(-icon_size * 0.5, 3), Vector2(icon_size, 3)), float(hero.hp) / maxf(1, int(hero.max_hp)), TEAL)
 		if int(hero.get("poison_ticks", 0)) > 0:
 			draw_circle(at + Vector2(icon_size * 0.5 - 1, -icon_size + 1), 2, Color("92b957"))
 		if int(hero.get("silence_ticks", 0)) > 0 or int(hero.get("pending_silence", 0)) > 0:
 			draw_line(at + Vector2(-icon_size * 0.4, -icon_size + 1), at + Vector2(icon_size * 0.4, -1), Color("b4a0d5"), 1.5)
-		if str(game.get("active_target_id")) == str(hero.get("instance_id", "")) and str(game.phase) == "raid":
-			draw_rect(Rect2(at + Vector2(-icon_size * 0.5 - 1, -icon_size - 1), Vector2.ONE * (icon_size + 2)), CORAL, false, 1)
+		if str(game.get("active_target_id")) == identity and str(game.phase) == "raid" and _camp_exit_slot < 0:
+			draw_rect(frame, CORAL, false, 1.5)
 	_draw_party_links(living)
 
 

@@ -70,13 +70,21 @@ func _normalize_actor(g) -> Dictionary:
 	var a: Dictionary = g.defender
 	a.hp = 1000
 	a.max_hp = 1000
+	a.tree_base_hp = 1000.0
+	a.tree_hp_bonus = 0.0
 	a.damage = 20
+	a.tree_base_damage = 20.0
+	a.tree_damage_bonus = 0.0
 	a.armor = 0
 	return a
 
 func _advance(g, count: int) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
 	for _i in range(count):
+		# count describes combat steps; the separate camp clock pauses those steps.
+		if g.phase == "camp":
+			g.advance_camp(float(g.camp_status().remaining_seconds))
+			events.append_array(g.combat_events.duplicate(true))
 		if g.phase != "raid":
 			break
 		g.step()
@@ -117,8 +125,11 @@ func _catalog_and_finite() -> void:
 			_party(g, ["knight", "mage", "priest"])
 			_start(g)
 			var steps: int = 0
-			while g.phase == "raid" and steps < 600:
-				g.step()
+			while g.phase in ["raid", "camp"] and steps < 600:
+				if g.phase == "camp":
+					g.advance_camp(0.5)
+				else:
+					g.step()
 				steps += 1
 			_expect(g.phase in ["result", "defeat"], "finite real encounter and throne result")
 			_expect(g.combat_events.size() <= 128, "event lifetime bounded")
@@ -174,7 +185,16 @@ func _path_effect(path: String, stage: int) -> void:
 			_expect(g._encounter.living_actors().size() >= 1 and not bool(g._encounter.owners[0].rewarded), "offspring fight before room reward")
 		"war_banner":
 			_advance(g, 1)
-			_expect(_pending(g, "banner"), "banner marks next defender's target")
+			var states: Dictionary = g.run_skill_runtime.get("combat_rooms", {})
+			var mark: Dictionary = states.get(g._battle_source(1), {}).get("incoming_banner", {})
+			_expect(str(mark.get("target", "")) == str(g.heroes[0].instance_id) and int(mark.get("source_slot", -1)) == 0, "banner marks next defender's target")
+			_kill(g, a)
+			g._waiting_for_entry = true
+			g.step()
+			_expect(g.current_slot == 1 and not g.defender.is_empty(), "party reaches banner's adjacent recipient")
+			if not g.defender.is_empty():
+				var directed: Dictionary = g._encounter.actor_strike(g, g.defender, g.heroes[1])
+				_expect(str(directed.to.instance_id) == str(g.heroes[0].instance_id), "banner redirects actual ordinary strike to its marked hero")
 		"saboteurs":
 			var hp: int = g.heroes[0].hp
 			_kill(g, a)
@@ -812,7 +832,11 @@ func _servant_regressions() -> void:
 			continue
 		servant.hp = 300 if role == "barbarian" else 1000
 		servant.max_hp = 1000
+		servant.tree_base_hp = 1000.0
+		servant.tree_hp_bonus = 0.0
 		servant.damage = 20
+		servant.tree_base_damage = 20.0
+		servant.tree_damage_bonus = 0.0
 		servant.age = 3 if role in ["mage", "priest"] else 1
 		var attacks: Array[Dictionary] = []
 		g._encounter.plan_actor(g, servant, attacks)

@@ -8,6 +8,10 @@ const HP_CURVE_STEP: float = 0.02469507659595993
 const DAMAGE_CURVE_STEP: float = 0.014889156509221957
 const GAINED_LEVEL_HP: int = 10
 const GAINED_LEVEL_DAMAGE: int = 2
+# Initial boss-party tuning; applied once through the stored group factors.
+const BOSS_PARTY_HP_FACTOR: float = 0.75
+const BOSS_PARTY_DAMAGE_FACTOR: float = 0.75
+const DEVELOPED_PRIEST_LEVEL: int = 5
 const SLOT_IDS: Array[String] = ["weapon", "protection"]
 const SPECIAL_ROLL_CHANCE: float = 0.7 # Initial tuning; the wave limits are hard caps.
 const STARTING_KITS: Dictionary = {
@@ -47,11 +51,18 @@ static func damage_multiplier(wave: int) -> float:
 
 
 static func party_factors(size: int, wave: int) -> Dictionary:
+	if size == 5:
+		return {"hp": BOSS_PARTY_HP_FACTOR, "damage": BOSS_PARTY_DAMAGE_FACTOR}
 	if size >= 3:
 		var progress: float = clampf(float(wave - 8) / 12.0, 0.0, 1.0)
 		return {"hp": lerpf(0.65, 0.8, progress), "damage": lerpf(0.65, 0.75, progress)}
 	var factor: float = 0.75 if size == 2 else 1.0
 	return {"hp": factor, "damage": factor}
+
+
+static func is_developed_priest(hero: Dictionary) -> bool:
+	# Eligibility only: callers decide whether a living priest is available.
+	return str(hero.get("id", "")) == "priest" and int(hero.get("level", 1)) >= DEVELOPED_PRIEST_LEVEL
 
 
 static func scaled_stats(class_base: Dictionary, hero: Dictionary) -> Dictionary:

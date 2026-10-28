@@ -1,6 +1,8 @@
 extends RefCounted
 ## Run-only choices and readable party templates. No state or random draws here.
 
+const BOSS_WAVE_INTERVAL: int = 25
+
 static func blueprint_ids() -> Array[String]:
 	return ["shackles", "silence", "rust", "guardian", "ogre", "war_hound", "wraith", "vampire", "ballista", "blade_floor"]
 
@@ -29,7 +31,24 @@ static func relic(id: String) -> Dictionary:
 	return {}
 
 
+static func is_boss_wave(wave: int) -> bool:
+	return wave > 0 and wave % BOSS_WAVE_INTERVAL == 0
+
+
+static func boss_definition(wave: int) -> Dictionary:
+	if not is_boss_wave(wave):
+		return {}
+	return {
+		"id": "oath_of_the_five",
+		"name": "Босс: Клятва пяти",
+		"description": "Рыцарь прикрывает отряд, следопыт ослабляет ловушки, жрица лечит, чародей и бард готовят заклинания и песни. Награда за особый отряд: +8 золота.",
+		"ids": ["knight", "rogue", "priest", "mage", "bard"],
+	}
+
+
 static func party_templates(wave: int) -> Array[Dictionary]:
+	if is_boss_wave(wave):
+		return [boss_definition(wave)]
 	if wave <= 3:
 		return [
 			{"ids": ["knight"], "name": "Одинокий рыцарь", "description": "Рыцарь силён против телесных существ; духи и ловушки обходят его стойку."},

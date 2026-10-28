@@ -19,6 +19,10 @@ var _wallet: Button
 var _drop_info: String = ""
 var _hint: Label
 var _zoom: Label
+var _zoom_slider: HSlider
+var _navigation: BoxContainer
+var _zoom_controls: HBoxContainer
+var _camera_actions: HBoxContainer
 var _title: Label
 var _category: Label
 var _description: RichTextLabel
@@ -84,6 +88,7 @@ func _ready() -> void:
 	_picker.custom_minimum_size.x = 150
 	_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_picker.fit_to_longest_item = false
+	_picker.clip_text = true
 	_picker.item_selected.connect(_pick_result)
 	toolbar.add_child(_picker)
 	_body = BoxContainer.new()
@@ -98,22 +103,47 @@ func _ready() -> void:
 	map = SkillMap.new()
 	map.custom_minimum_size = Vector2(160, 130)
 	map.node_selected.connect(_select)
-	map.camera_changed.connect(func(value: float):
-		if is_instance_valid(_zoom):
-			_zoom.text = "%d%%" % roundi(value * 100))
+	map.camera_changed.connect(_camera_changed)
 	map_frame.add_child(map)
-	var navigation := HBoxContainer.new()
-	map_frame.add_child(navigation)
-	navigation.add_child(_button("−", func(): map.zoom_by(1.0 / 1.25)))
-	_zoom = _label("55%", 12, MUTED)
-	_zoom.custom_minimum_size.x = 42
+	_navigation = BoxContainer.new()
+	_navigation.add_theme_constant_override("separation", 8)
+	map_frame.add_child(_navigation)
+	_zoom_controls = HBoxContainer.new()
+	_zoom_controls.add_theme_constant_override("separation", 6)
+	_zoom_controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_navigation.add_child(_zoom_controls)
+	var zoom_out: Button = _button("−", func(): map.zoom_by(1.0 / 1.25))
+	zoom_out.custom_minimum_size.x = 36
+	zoom_out.tooltip_text = "Отдалить карту"
+	_zoom_controls.add_child(zoom_out)
+	_zoom_slider = HSlider.new()
+	_zoom_slider.min_value = 0.0
+	_zoom_slider.max_value = 1.0
+	_zoom_slider.step = 0.0
+	_zoom_slider.custom_minimum_size = Vector2(64, 36)
+	_zoom_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_zoom_slider.focus_mode = Control.FOCUS_ALL
+	_zoom_slider.tooltip_text = "Масштаб карты: перетащите ползунок или нажмите ← / →"
+	_zoom_slider.value_changed.connect(_zoom_slider_changed)
+	_zoom_slider.gui_input.connect(_zoom_slider_input)
+	_zoom_controls.add_child(_zoom_slider)
+	var zoom_in: Button = _button("+", func(): map.zoom_by(1.25))
+	zoom_in.custom_minimum_size.x = 36
+	zoom_in.tooltip_text = "Приблизить карту"
+	_zoom_controls.add_child(zoom_in)
+	_zoom = _label("", 12, MUTED)
+	_zoom.custom_minimum_size.x = 54
 	_zoom.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	navigation.add_child(_zoom)
-	navigation.add_child(_button("+", func(): map.zoom_by(1.25)))
-	navigation.add_child(_button("Центр", func(): map.reset_center()))
+	_zoom_controls.add_child(_zoom)
+	_camera_actions = HBoxContainer.new()
+	_camera_actions.alignment = BoxContainer.ALIGNMENT_END
+	_navigation.add_child(_camera_actions)
+	_camera_actions.add_child(_button("Центр", func(): map.reset_center()))
 	_fit_button = _button("Всё дерево", func(): map.fit_all())
 	_fit_button.tooltip_text = "Показать всё дерево"
-	navigation.add_child(_fit_button)
+	_camera_actions.add_child(_fit_button)
+	_camera_changed(map.zoom)
+	map_frame.resized.connect(_layout_navigation)
 	_sidebar = PanelContainer.new()
 	_sidebar.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_body.add_child(_sidebar)
@@ -176,7 +206,7 @@ func _layout() -> void:
 	var portrait: bool = size.x < 760
 	var short_portrait: bool = portrait and size.y < 620
 	_toolbar.visible = size.y >= 300
-	_fit_button.text = "Всё" if size.x < 460 else "Всё дерево"
+
 	_heading.visible = size.x >= 380
 	map.custom_minimum_size.y = 60 if size.y < 300 else 130
 	_detail_toggle.visible = short_portrait
@@ -192,7 +222,49 @@ func _layout() -> void:
 	_hint.visible = size.y > 440
 	_wallet.add_theme_font_size_override("font_size", 13 if size.x < 460 else 17)
 	_picker.custom_minimum_size.x = 135 if portrait else 220
+	_picker.add_theme_font_size_override("font_size", 13 if size.x < 460 else 17)
+	_layout_navigation()
 	_refresh_focus_paths.call_deferred()
+
+func _layout_navigation() -> void:
+	if not is_instance_valid(_navigation):
+		return
+	_fit_button.text = "Всё" if _map_frame.size.x < 460 else "Всё дерево"
+	var row_width: float = _zoom_controls.get_combined_minimum_size().x + _camera_actions.get_combined_minimum_size().x + float(_navigation.get_theme_constant("separation"))
+	_navigation.vertical = _map_frame.size.x < row_width + 24.0
+
+func _zoom_slider_input(event: InputEvent) -> void:
+	var direction: float = 0.0
+	var amount: float = 1.0
+	if event is InputEventKey and event.pressed:
+		match event.keycode:
+			KEY_LEFT: direction = -1.0
+			KEY_RIGHT: direction = 1.0
+			_: return
+	elif event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_RIGHT: direction = 1.0
+			MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT: direction = -1.0
+			_: return
+		amount = absf(event.factor) if event.factor != 0.0 else 1.0
+	else:
+		return
+	# Consume this event before HSlider can apply a second, built-in step.
+	_zoom_slider.accept_event()
+	if is_finite(amount):
+		_zoom_slider.value = clampf(_zoom_slider.value + direction * 0.01 * amount, 0.0, 1.0)
+
+func _zoom_slider_changed(value: float) -> void:
+	var target_zoom: float = exp(lerpf(log(SkillMap.MIN_ZOOM), log(SkillMap.MAX_ZOOM), value))
+	map.set_zoom(target_zoom, Vector2(-1, -1), false)
+
+func _camera_changed(value: float) -> void:
+	if is_instance_valid(_zoom):
+		_zoom.text = "%.1f%%" % (value * 100.0)
+	if is_instance_valid(_zoom_slider):
+		var shown_zoom: float = clampf(value, SkillMap.MIN_ZOOM, SkillMap.MAX_ZOOM)
+		var normalized_zoom: float = (log(shown_zoom) - log(SkillMap.MIN_ZOOM)) / (log(SkillMap.MAX_ZOOM) - log(SkillMap.MIN_ZOOM))
+		_zoom_slider.set_value_no_signal(normalized_zoom)
 
 func _toggle_details() -> void:
 	_details_only = not _details_only
@@ -227,7 +299,7 @@ func _show_details() -> void:
 	if selected_id == "root" or not _by_id.has(selected_id):
 		_category.text = "ОБЩЕЕ ДЕРЕВО"
 		_title.text = "Владыка подземелья"
-		_description.text = "Шесть направлений можно развивать параллельно. Выберите круглый узел, чтобы увидеть его эффект и цену.\n\nПеретаскивайте карту мышью или пальцем. Колесо и жест двумя пальцами меняют масштаб. Мини-карта возвращает к нужному участку.\n\nКаждый навык покупается один раз. Души и изученные навыки сбросятся после забега."
+		_description.text = "Шесть направлений можно развивать параллельно. Выберите круглый узел, чтобы увидеть его эффект и цену.\n\nПеретаскивайте карту мышью или пальцем. Колесо, ползунок и жест двумя пальцами меняют масштаб. Мини-карта возвращает к нужному участку.\n\nКаждый навык покупается один раз. Души и изученные навыки сбросятся после забега."
 		if not _drop_info.is_empty():
 			_description.text += "\n\n" + _drop_info
 		_buy.text = "Выберите навык на карте"
@@ -285,7 +357,7 @@ func _search_changed(query: String) -> void:
 	_picker.disabled = _picker.item_count == 0
 	if _picker.item_count > 0:
 		_picker.select(-1)
-		_picker.text = "Найдено: %d · выбрать" % _picker.item_count
+		_picker.text = "Найдено: %d" % _picker.item_count
 	else:
 		_picker.text = "Нет совпадений"
 
@@ -329,9 +401,9 @@ func _refresh_focus_paths() -> void:
 		var following: NodePath = control.get_path_to(controls[(index + 1) % controls.size()])
 		control.focus_previous = previous
 		control.focus_next = following
-		control.focus_neighbor_left = previous
+		control.focus_neighbor_left = NodePath(".") if control == _zoom_slider else previous
 		control.focus_neighbor_top = previous
-		control.focus_neighbor_right = following
+		control.focus_neighbor_right = NodePath(".") if control == _zoom_slider else following
 		control.focus_neighbor_bottom = following
 
 

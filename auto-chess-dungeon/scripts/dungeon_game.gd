@@ -9,6 +9,7 @@ const Realm = preload("res://scripts/realm_catalog.gd")
 const Evolutions = preload("res://scripts/room_evolution_catalog.gd")
 const HeroRules = preload("res://scripts/hero_rules.gd")
 const EncounterRules = preload("res://scripts/encounter_rules.gd")
+const CampRules = preload("res://scripts/camp_rules.gd")
 const SLOTS_PER_FLOOR: int = 5
 const MAX_LOGS: int = 70
 const RELIC_WAVE_INTERVAL: int = 10
@@ -27,6 +28,9 @@ var _greed_remainder: int = 0
 var _trophy_metal: bool = false
 var _ability_price_snapshot: int = 0
 var _ability_income_snapshot: int = 0
+var _camp_state: Dictionary = {}
+var _camp_processed_floors: Dictionary = {}
+var _camp_interruptions: int = 0
 var phase: String = "prepare"
 var wave: int = 1
 var gold: int = 18
@@ -62,6 +66,8 @@ var total_kills: int = 0
 var cleared_waves: int = 0
 var pending_upgrades: int = 0
 var unlocked_paths: Array[String] = []
+var wave_is_boss: bool = false
+var boss_id: String = ""
 var wave_title: String = ""
 var wave_description: String = ""
 var elite_id: String = ""
@@ -118,6 +124,7 @@ func restart(new_seed: int = 0) -> void:
 	_trophy_metal = false
 	_ability_price_snapshot = 0
 	_ability_income_snapshot = 0
+	_reset_camps()
 	_deal_state.clear()
 	_battle_rooms.clear()
 	_battle_room_indices.clear()
@@ -240,7 +247,7 @@ func ability_status() -> Dictionary:
 	var definition: Dictionary = Lords.get_lord(lord_archetype)
 	var name: String = str(definition.get("ability_name", "Способность Владыки"))
 	var description: String = str(definition.get("ability_description", ""))
-	var next_cast: int = int(run_skill_runtime.get("q_casts", 0)) + 1 if phase == "raid" else 1
+	var next_cast: int = int(run_skill_runtime.get("q_casts", 0)) + 1 if phase in ["raid", "camp"] else 1
 	var next_great: float = 0.2 if next_cast == 2 and has_run_skill("ritual_great_ritual") else 0.0
 	if not _lord_ability_values.is_empty():
 		if lord_archetype == "fallen_knight":
@@ -307,13 +314,13 @@ func _ability_block_reason() -> String:
 
 
 func base_wave_income() -> int:
-	if _ability_income_snapshot > 0 and phase in ["raid", "result", "defeat"]:
+	if _ability_income_snapshot > 0 and phase in ["raid", "camp", "result", "defeat"]:
 		return _ability_income_snapshot
 	return heroes.size() * (3 + floori(float(wave - 1) / 3.0)) + 4
 
 
 func ability_gold_cost() -> int:
-	if _ability_price_snapshot > 0 and phase in ["raid", "result", "defeat"]:
+	if _ability_price_snapshot > 0 and phase in ["raid", "camp", "result", "defeat"]:
 		return _ability_price_snapshot
 	var discounts: int = int(has_run_skill("ritual_economy_1")) + int(has_run_skill("ritual_economy_2")) + int(has_run_skill("ritual_economy_3"))
 	# Integer numerator avoids a spurious extra coin at exact float boundaries.
@@ -1100,6 +1107,7 @@ func start_raid() -> String:
 	_ability_income_snapshot = base_wave_income()
 	_ability_price_snapshot = ability_gold_cost()
 	run_skill_runtime.clear()
+	_reset_camps()
 	_has_started_raid = true
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
@@ -1147,12 +1155,15 @@ func step() -> void:
 		_enter_next_room()
 	else:
 		_combat_step()
+	if phase == "raid" and _waiting_for_entry:
+		_try_start_route_camp()
 
 
 func next_wave() -> String:
 	if phase != "result":
 		return "Текущая волна ещё не завершена."
 	wave += 1
+	_reset_camps()
 	_skill_preparation.clear()
 	_ability_price_snapshot = 0
 	_ability_income_snapshot = 0
@@ -1880,7 +1891,7 @@ func _generate_party() -> void:
 			"elite_modifier": elite_description,
 			"death_processed": false, "group_factor": group_factors.hp,
 			"group_hp_factor": group_factors.hp, "group_damage_factor": group_factors.damage,
-			"soul_special": not elite_id.is_empty(),
+			"soul_special": not elite_id.is_empty(), "boss_id": boss_id, "wave_is_boss": wave_is_boss,
 			"pressure": pressure, "icon": definition.icon, "color": definition.color,
 			"trait": definition.trait,
 		}
@@ -1895,9 +1906,18 @@ func _generate_party() -> void:
 
 
 func _configure_wave() -> void:
+	wave_is_boss = Expedition.is_boss_wave(wave)
+	boss_id = ""
 	elite_id = ""
 	wave_title = "Налёт приключенцев"
 	wave_description = ""
+	if wave_is_boss:
+		var boss: Dictionary = Expedition.boss_definition(wave)
+		boss_id = str(boss.id)
+		elite_id = "boss"
+		wave_title = str(boss.name)
+		wave_description = str(boss.description)
+		return
 	if wave % 5 != 0:
 		return
 	var variant: int = ((wave / 5) - 1) % 3
@@ -2009,6 +2029,8 @@ func next_route_slot(index: int) -> int:
 
 
 func _enter_next_room() -> void:
+	if _try_start_route_camp():
+		return
 	_encounter.enter(self)
 
 
@@ -2286,13 +2308,14 @@ func _recalculate_hero(hero: Dictionary) -> void:
 
 
 func _finish_wave() -> void:
-	if phase != "raid":
+	if phase not in ["raid", "camp"]:
 		return
 	if int(lord.hp) <= 0:
 		_finish_defeat()
 		return
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
+	_camp_state.clear()
 	# Reserve observes the wallet before every completion reward, including saved Q.
 	var reserve: int = mini(3, gold / 20) if has_run_skill("economy_gold_reserve") else 0
 	var tribute: int = int(has_run_skill("economy_tribute_1")) + int(has_run_skill("economy_tribute_2")) + int(has_run_skill("economy_tribute_3"))
@@ -2345,6 +2368,7 @@ func _finish_defeat() -> void:
 	if phase == "defeat":
 		return
 	phase = "defeat"
+	_camp_state.clear()
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
 	_log("Лорд пал. Пережито волн: %d · убито героев: %d." % [cleared_waves, total_kills])
@@ -2487,3 +2511,200 @@ func _log(message: String) -> void:
 	logs.append(message)
 	if logs.size() > MAX_LOGS:
 		logs.pop_front()
+
+
+func _reset_camps() -> void:
+	_camp_state.clear()
+	_camp_processed_floors.clear()
+	_camp_interruptions = 0
+
+
+func _camp_floor_exit(floor_index: int) -> int:
+	return floor_index * SLOTS_PER_FLOOR + (SLOTS_PER_FLOOR - 1 if floor_index % 2 == 0 else 0)
+
+
+func _camp_floor_has_rooms(floor_index: int) -> bool:
+	for slot in range(floor_index * SLOTS_PER_FLOOR, mini((floor_index + 1) * SLOTS_PER_FLOOR, rooms.size())):
+		if not rooms[slot].is_empty():
+			return true
+	return false
+
+
+func _camp_party_needs_healing() -> bool:
+	for hero in heroes:
+		if int(hero.hp) > 0 and int(hero.hp) < int(hero.max_hp):
+			return true
+	return false
+
+
+func _try_start_route_camp() -> bool:
+	if phase != "raid" or not _waiting_for_entry or current_slot >= rooms.size() or int(lord.hp) <= 0 or _living().is_empty():
+		return false
+	# Mirror Encounter.enter's empty/consumed scan without entering a room or
+	# running end_combat: camp time must not clear or advance any combat state.
+	var cursor: int = current_slot
+	while cursor < rooms.size():
+		var next_slot: int = next_route_slot(cursor)
+		if cursor >= 0 and (next_slot >= rooms.size() or cursor / SLOTS_PER_FLOOR != next_slot / SLOTS_PER_FLOOR):
+			var floor_index: int = cursor / SLOTS_PER_FLOOR
+			if not _camp_processed_floors.has(floor_index):
+				_camp_processed_floors[floor_index] = true
+				if _camp_floor_has_rooms(floor_index) and _camp_party_needs_healing():
+					_start_camp(floor_index)
+					return true
+		if next_slot >= rooms.size():
+			return false
+		if not rooms[next_slot].is_empty() and not _encounter.consumed.has(next_slot):
+			return false
+		cursor = next_slot
+	return false
+
+
+func _start_camp(floor_index: int) -> void:
+	# Resolve the highest learned replacement once; status reads use this snapshot.
+	var duration: int = CampRules.duration(learned_skills)
+	for tier in [3, 2, 1]:
+		var id: String = "shared_restless_dungeons_%d" % tier
+		if has_run_skill(id):
+			duration = maxi(1, int(run_skill_definition(id).get("camp_duration_seconds", duration)))
+			break
+	current_slot = _camp_floor_exit(floor_index)
+	_camp_state = {
+		"floor_index": floor_index, "slot": current_slot,
+		"elapsed": 0.0, "duration": duration,
+		"pulses": 0, "carry": {}, "healed_total": 0,
+	}
+	phase = "camp"
+	_waiting_for_entry = true
+	active_target_id = ""
+	var message: String = "Отряд разбивает лагерь на этаже %d: %d секунд." % [floor_index + 1, int(_camp_state.duration)]
+	_log(message)
+	_action("camp_start", "camp", "", 0, message)
+	last_action.meta = {"floor_index": floor_index, "duration": int(_camp_state.duration)}
+
+
+func camp_interrupt_cost() -> int:
+	# Q and E share the immutable ordinary income snapshot, but no discounts or charges.
+	var divisor: float = 4.0 if _camp_interruptions == 0 else 2.0
+	return maxi(1, ceili(float(base_wave_income()) / divisor))
+
+
+func camp_status() -> Dictionary:
+	# A UI read is pure: it never consumes fractions, advances time, or creates state.
+	var active: bool = phase == "camp" and not _camp_state.is_empty()
+	var duration: int = int(_camp_state.get("duration", CampRules.duration(learned_skills)))
+	var elapsed: float = float(_camp_state.get("elapsed", 0.0))
+	var pulses: int = int(_camp_state.get("pulses", 0))
+	var remaining_pulses: int = maxi(0, duration - pulses) if active else 0
+	var carry: Dictionary = _camp_state.get("carry", {})
+	var rows: Array[Dictionary] = []
+	var remaining_total: int = 0
+	var vapors: bool = has_run_skill("poison_caustic_vapors")
+	for hero in heroes:
+		var factor: float = CampRules.healing_factor(hero, heroes, vapors)
+		var remaining: int = CampRules.remaining_healing(hero, float(carry.get(str(hero.instance_id), 0.0)), remaining_pulses, factor)
+		remaining_total += remaining
+		rows.append({
+			"instance_id": str(hero.instance_id), "hp": int(hero.hp), "max_hp": int(hero.max_hp),
+			"healing_factor": factor, "remaining_healing": remaining,
+		})
+	var price: int = camp_interrupt_cost()
+	var reason: String = ""
+	if not active:
+		reason = "Сейчас нет лагеря для срыва."
+	elif int(lord.hp) <= 0 or _living().is_empty():
+		reason = "Отдых уже завершён."
+	elif remaining_total <= 0:
+		reason = "В этом лагере больше нет доступного лечения."
+	elif gold < price:
+		reason = "Не хватает золота: нужно %d." % price
+	return {
+		"active": active, "floor_index": int(_camp_state.get("floor_index", -1)),
+		"slot": int(_camp_state.get("slot", -1)), "elapsed": elapsed, "duration": duration,
+		"remaining_seconds": maxf(0.0, float(duration) - elapsed) if active else 0.0,
+		"remaining_pulses": remaining_pulses, "progress": clampf(elapsed / float(duration), 0.0, 1.0) if active else 0.0,
+		"pulse_progress": clampf(elapsed - float(pulses), 0.0, 1.0) if active else 0.0,
+		"heroes": rows, "remaining_healing": remaining_total, "can_interrupt": reason.is_empty(),
+		"reason": reason, "gold_cost": price, "successful_interruptions": _camp_interruptions,
+	}
+
+
+func advance_camp(delta_game_seconds: float) -> void:
+	if phase != "camp" or _camp_state.is_empty() or not is_finite(delta_game_seconds) or delta_game_seconds <= 0.0:
+		return
+	last_action = {}
+	combat_events.clear()
+	if int(lord.hp) <= 0:
+		_finish_defeat()
+		return
+	if _living().is_empty():
+		_finish_wave()
+		return
+	if not _camp_party_needs_healing():
+		_end_camp("healthy")
+		return
+	var target_elapsed: float = minf(float(_camp_state.duration), float(_camp_state.elapsed) + delta_game_seconds)
+	var due_pulses: int = mini(int(_camp_state.duration), floori(target_elapsed))
+	while phase == "camp" and int(_camp_state.pulses) < due_pulses:
+		_camp_state.pulses = int(_camp_state.pulses) + 1
+		_camp_state.elapsed = float(_camp_state.pulses)
+		_camp_heal_pulse()
+		if not _camp_party_needs_healing() or int(_camp_state.pulses) >= int(_camp_state.duration):
+			_end_camp("healthy" if not _camp_party_needs_healing() else "completed")
+			return
+	_camp_state.elapsed = target_elapsed
+
+
+func _camp_heal_pulse() -> void:
+	var carry: Dictionary = _camp_state.carry
+	var vapors: bool = has_run_skill("poison_caustic_vapors")
+	for hero in heroes:
+		if int(hero.hp) <= 0 or int(hero.hp) >= int(hero.max_hp):
+			continue
+		var identity: String = str(hero.instance_id)
+		var factor: float = CampRules.healing_factor(hero, heroes, vapors)
+		var exact: float = float(carry.get(identity, 0.0)) + CampRules.pulse_power(hero, factor)
+		var whole: int = CampRules.whole_hp(exact)
+		carry[identity] = maxf(0.0, exact - float(whole))
+		var actual: int = mini(int(hero.max_hp) - int(hero.hp), whole)
+		if actual <= 0:
+			continue
+		hero.hp = int(hero.hp) + actual
+		_camp_state.healed_total = int(_camp_state.healed_total) + actual
+		var message: String = "Лагерь: %s восстанавливает %d HP." % [hero.name, actual]
+		_log(message)
+		_action("camp_heal", "camp", identity, actual, message)
+		last_action.meta = {"floor_index": int(_camp_state.floor_index), "pulse": int(_camp_state.pulses), "healing_factor": factor}
+
+
+func interrupt_camp() -> String:
+	var status: Dictionary = camp_status()
+	if not bool(status.can_interrupt):
+		return str(status.reason)
+	# No callback/yield between validation, payment and closing this camp.
+	var price: int = int(status.gold_cost)
+	gold -= price
+	_camp_interruptions += 1
+	last_action = {}
+	combat_events.clear()
+	var message: String = "Лагерь сорван: потрачено %d золота, оставшееся лечение отменено." % price
+	_log(message)
+	_action("camp_interrupt", "lord", "camp", 0, message)
+	last_action.meta = {"floor_index": int(_camp_state.floor_index), "gold_cost": price, "cancelled_healing": int(status.remaining_healing), "successful_interruptions": _camp_interruptions}
+	_end_camp("interrupted")
+	return ""
+
+
+func _end_camp(reason: String) -> void:
+	if phase != "camp" or _camp_state.is_empty():
+		return
+	var floor_index: int = int(_camp_state.floor_index)
+	var elapsed: float = float(_camp_state.elapsed)
+	var healed_total: int = int(_camp_state.healed_total)
+	_camp_state.clear()
+	phase = "raid"
+	_waiting_for_entry = true
+	var message: String = "Отряд покидает лагерь на этаже %d." % (floor_index + 1)
+	_log(message)
+	_action("camp_end", "camp", "", 0, message)
+	last_action.meta = {"floor_index": floor_index, "reason": reason, "elapsed": elapsed, "healed_total": healed_total}

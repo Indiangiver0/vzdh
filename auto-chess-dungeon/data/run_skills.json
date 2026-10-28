@@ -2,6 +2,7 @@
   "schema_version": 1,
   "source": "docs/evolution/skill-tree-decisions.json",
   "layout_source": "docs/evolution/skill-tree-snowflake.json",
+  "extension_sources": ["docs/updates/BOSS_WAVES_AND_CAMPS.md"],
   "purchase_scope": "current_run_global_tree",
   "skills": [
     {
@@ -5441,6 +5442,179 @@
         "any_of": []
       },
       "purchases_per_node": 1
+    },
+    {
+      "id": "shared_restless_dungeons_1",
+      "name": "Беспокойные казематы I",
+      "description": "Привал героев длится 8 секунд: до 8 порций по 5% максимального HP, всего до 40% до штрафов лечения. Эта длительность заменяет предыдущую; сила каждой порции не уменьшается. Яд по-прежнему ослабляет лечение.",
+      "cost": 2,
+      "soul_price": 2,
+      "placement": "optional_side_branch",
+      "parents": [
+        "traps_mechanisms_2"
+      ],
+      "mode": "all",
+      "requires_all": [
+        "traps_mechanisms_2"
+      ],
+      "requires_any": [],
+      "requirements": {
+        "all_of": [
+          "traps_mechanisms_2"
+        ],
+        "any_of": []
+      },
+      "prerequisites": {
+        "all_of": [
+          "traps_mechanisms_2"
+        ],
+        "any_of": []
+      },
+      "required_lord": "",
+      "category": "shared",
+      "branch": "traps",
+      "x": 590.0,
+      "y": 215.0,
+      "minor": true,
+      "purchases_per_node": 1,
+      "effect": "replace_camp_duration_and_healing_cap",
+      "camp_duration_seconds": 8,
+      "maximum_camp_healing_fraction": 0.4,
+      "camp_healing_tick_interval_seconds": 1.0,
+      "camp_healing_fraction_per_tick": 0.05,
+      "stacking": "strongest_only_replace_previous_duration",
+      "applies_to_all_hero_parties": true,
+      "changes_healing_fraction_per_tick": false
+    },
+    {
+      "id": "shared_restless_dungeons_2",
+      "name": "Беспокойные казематы II",
+      "description": "Привал героев длится 6 секунд: до 6 порций по 5% максимального HP, всего до 30% до штрафов лечения. Эта длительность заменяет предыдущую; сила каждой порции не уменьшается. Яд по-прежнему ослабляет лечение.",
+      "cost": 4,
+      "soul_price": 4,
+      "placement": "optional_side_branch_extension",
+      "parents": [
+        "shared_restless_dungeons_1"
+      ],
+      "mode": "all",
+      "requires_all": [
+        "shared_restless_dungeons_1"
+      ],
+      "requires_any": [],
+      "requirements": {
+        "all_of": [
+          "shared_restless_dungeons_1"
+        ],
+        "any_of": []
+      },
+      "prerequisites": {
+        "all_of": [
+          "shared_restless_dungeons_1"
+        ],
+        "any_of": []
+      },
+      "required_lord": "",
+      "category": "shared",
+      "branch": "traps",
+      "x": 740.0,
+      "y": 185.0,
+      "minor": true,
+      "purchases_per_node": 1,
+      "effect": "replace_camp_duration_and_healing_cap",
+      "camp_duration_seconds": 6,
+      "maximum_camp_healing_fraction": 0.3,
+      "camp_healing_tick_interval_seconds": 1.0,
+      "camp_healing_fraction_per_tick": 0.05,
+      "stacking": "strongest_only_replace_previous_duration",
+      "applies_to_all_hero_parties": true,
+      "changes_healing_fraction_per_tick": false
+    },
+    {
+      "id": "shared_restless_dungeons_3",
+      "name": "Беспокойные казематы III",
+      "description": "Привал героев длится 5 секунд: до 5 порций по 5% максимального HP, всего до 25% до штрафов лечения. Эта длительность заменяет предыдущую; сила каждой порции не уменьшается. Яд по-прежнему ослабляет лечение.",
+      "cost": 6,
+      "soul_price": 6,
+      "placement": "optional_side_branch_extension",
+      "parents": [
+        "shared_restless_dungeons_2"
+      ],
+      "mode": "all",
+      "requires_all": [
+        "shared_restless_dungeons_2"
+      ],
+      "requires_any": [],
+      "requirements": {
+        "all_of": [
+          "shared_restless_dungeons_2"
+        ],
+        "any_of": []
+      },
+      "prerequisites": {
+        "all_of": [
+          "shared_restless_dungeons_2"
+        ],
+        "any_of": []
+      },
+      "required_lord": "",
+      "category": "shared",
+      "branch": "traps",
+      "x": 890.0,
+      "y": 125.0,
+      "minor": true,
+      "purchases_per_node": 1,
+      "effect": "replace_camp_duration_and_healing_cap",
+      "camp_duration_seconds": 5,
+      "maximum_camp_healing_fraction": 0.25,
+      "camp_healing_tick_interval_seconds": 1.0,
+      "camp_healing_fraction_per_tick": 0.05,
+      "stacking": "strongest_only_replace_previous_duration",
+      "applies_to_all_hero_parties": true,
+      "changes_healing_fraction_per_tick": false
+    },
+    {
+      "id": "poison_caustic_vapors",
+      "name": "Едкие испарения",
+      "description": "Если отравленный герой отдыхает при живой жрице 5-го уровня или выше, яд уменьшает лечение на привале на 10% вместо 5%. С обычной жрицей штраф остаётся 10%, без живой жрицы — 50%. Навык действует только на привале; боевое лечение и сопротивление ядовитому урону не меняются.",
+      "cost": 4,
+      "soul_price": 4,
+      "placement": "optional_side_branch_extension",
+      "parents": [
+        "poison_bitter_medicine"
+      ],
+      "mode": "all",
+      "requires_all": [
+        "poison_bitter_medicine"
+      ],
+      "requires_any": [],
+      "requirements": {
+        "all_of": [
+          "poison_bitter_medicine"
+        ],
+        "any_of": []
+      },
+      "prerequisites": {
+        "all_of": [
+          "poison_bitter_medicine"
+        ],
+        "any_of": []
+      },
+      "required_lord": "",
+      "category": "poison",
+      "branch": "poison",
+      "x": -230.0,
+      "y": 380.0,
+      "minor": true,
+      "purchases_per_node": 1,
+      "effect": "replace_developed_priest_camp_poison_healing_penalty",
+      "developed_priest_min_level": 5,
+      "developed_priest_camp_healing_penalty": 0.1,
+      "requires_active_poison": true,
+      "requires_living_priest": true,
+      "healing_penalty_stacking": "strongest_only",
+      "changes_ordinary_priest_camp_healing_penalty": false,
+      "changes_camp_healing_penalty_without_priest": false,
+      "affects_combat_healing_or_poison_damage_resistance": false
     }
   ],
   "soul_drop_policy": {

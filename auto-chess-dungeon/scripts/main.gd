@@ -90,6 +90,8 @@ var run_skill_pause_owned: bool = false
 var run_skill_previous_focus: WeakRef
 var mastery_tree_focus: String = ""
 var _live_ui: Array[Dictionary] = []
+var _camp_live_ui: Array[Dictionary] = []
+var _camp_ui_state: Dictionary = {}
 var skill_wallet_button: Button
 var soul_feedback: Control
 
@@ -247,6 +249,8 @@ func _refresh(keep_modal: bool = false) -> void:
 		return
 	refresh_after_touch = false
 	_live_ui.clear()
+	_camp_live_ui.clear()
+	_camp_ui_state = game.camp_status() if game.phase == "camp" else {}
 	if is_instance_valid(floor_scroll):
 		scroll_position = floor_scroll.scroll_vertical
 	floor_scroll = null
@@ -286,7 +290,7 @@ func _refresh(keep_modal: bool = false) -> void:
 		_footer()
 	if is_instance_valid(floor_scroll):
 		floor_scroll.set_deferred("scroll_vertical", scroll_position)
-	if game.phase == "raid":
+	if game.phase in ["raid", "camp"]:
 		var target_floor: int = mini(game.current_slot / 5, game.floor_count)
 		if target_floor != active_floor and game.current_slot >= 0:
 			active_floor = target_floor
@@ -317,6 +321,7 @@ func _live_bar(hp: Callable, maximum: Callable, tint: Color) -> ProgressBar:
 
 
 func _refresh_live_values() -> void:
+	_refresh_camp_values()
 	if is_instance_valid(soul_feedback):
 		soul_feedback.paused = paused or is_instance_valid(modal) or menu_open
 		soul_feedback.speed = float(speed)
@@ -326,6 +331,90 @@ func _refresh_live_values() -> void:
 	if is_instance_valid(dungeon_view):
 		dungeon_view.animation_paused = paused or is_instance_valid(modal) or menu_open
 		dungeon_view.animation_speed = float(speed)
+
+
+func _bind_camp(node: Object, property: String, read: Callable) -> void:
+	_camp_live_ui.append({"node": node, "property": property, "read": read})
+	node.set(property, read.call())
+
+
+func _refresh_camp_values() -> void:
+	# One model snapshot feeds the timer, pulse bars, price and availability.
+	_camp_ui_state = game.camp_status() if game.phase == "camp" else {}
+	for binding in _camp_live_ui:
+		if is_instance_valid(binding.node):
+			binding.node.set(str(binding.property), binding.read.call())
+
+
+func _camp_panel(parent: Control) -> void:
+	var body = _vbox(parent, 3)
+	var timer = _label("", 13, GOLD, true)
+	body.add_child(timer)
+	_bind_camp(timer, "text", func():
+		if short_ui:
+			return _ui_text("Привал · %.1f с · порций: %d · до %d HP" % [
+				float(_camp_ui_state.get("remaining_seconds", 0.0)),
+				int(_camp_ui_state.get("remaining_pulses", 0)),
+				int(_camp_ui_state.get("remaining_healing", 0))])
+		return _ui_text("Привал · этаж %d · ещё %.1f с из %d" % [
+			int(_camp_ui_state.get("floor_index", 0)) + 1,
+			float(_camp_ui_state.get("remaining_seconds", 0.0)),
+			int(_camp_ui_state.get("duration", 0))]))
+	var bars: Control = body
+	if short_ui:
+		bars = HBoxContainer.new()
+		bars.add_theme_constant_override("separation", 6)
+		body.add_child(bars)
+	var total = _bar(0.0, 1.0, GOLD, 7)
+	total.step = 0.001
+	total.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bars.add_child(total)
+	_bind_camp(total, "value", func(): return float(_camp_ui_state.get("progress", 0.0)))
+	var portions = _label("", 12, PAPER, true)
+	portions.visible = not short_ui
+	body.add_child(portions)
+	_bind_camp(portions, "text", func(): return _ui_text("Осталось порций: %d · ещё до %d HP отряду" % [
+		int(_camp_ui_state.get("remaining_pulses", 0)),
+		int(_camp_ui_state.get("remaining_healing", 0))]))
+	var pulse = _bar(0.0, 1.0, GREEN, 4)
+	pulse.step = 0.001
+	pulse.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pulse.tooltip_text = "До следующей порции лечения"
+	bars.add_child(pulse)
+	_bind_camp(pulse, "value", func(): return float(_camp_ui_state.get("pulse_progress", 0.0)))
+	var reason = _label("", 12, MUTED, true)
+	body.add_child(reason)
+	_bind_camp(reason, "text", func():
+		var unavailable: String = str(_camp_ui_state.get("reason", ""))
+		var available: String = "E — срыв за золото · Q недоступна" if short_ui else "E отменит оставшееся лечение; доступна на паузе. Q недоступна."
+		return _ui_text(unavailable if not unavailable.is_empty() else available))
+	_bind_camp(reason, "theme_override_colors/font_color", func(): return RED if not str(_camp_ui_state.get("reason", "")).is_empty() else MUTED)
+
+
+func _camp_interrupt_button() -> Button:
+	var button = _button("", _interrupt_camp)
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button.add_theme_color_override("font_color", GOLD)
+	_bind_camp(button, "text", func(): return _ui_text("E · Сорвать привал · %d зол." % int(_camp_ui_state.get("gold_cost", 0))))
+	_bind_camp(button, "disabled", func(): return not bool(_camp_ui_state.get("can_interrupt", false)))
+	_bind_camp(button, "tooltip_text", func(): return _ui_text("Отменить ещё до %d HP лечения за %d зол. Уже полученные HP остаются. Доступна на паузе.\n%s" % [
+		int(_camp_ui_state.get("remaining_healing", 0)),
+		int(_camp_ui_state.get("gold_cost", 0)),
+		str(_camp_ui_state.get("reason", ""))]))
+	return button
+
+
+func _wave_summary() -> String:
+	return "%s · отряд: %d" % [game.wave_title, game.heroes.size()]
+
+
+func _combat_guidance() -> String:
+	if not message.is_empty():
+		return message
+	if game.phase == "camp":
+		return "Герои отдыхают. Пауза останавливает привал; E срывает его за золото."
+	var action: String = str(game.last_action.get("text", ""))
+	return action if not action.is_empty() else "Группа спускается в подземелье."
 
 
 func _refresh_raid() -> void:
@@ -354,9 +443,13 @@ func _build_mobile_game() -> void:
 	numbers.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	numbers.add_child(_live_label(func(): return "Волна %d  ·  %d зол." % [game.wave, game.gold], 16, GOLD))
 	numbers.add_child(_live_label(func(): return "Лорд %d/%d HP · Q: %d зол." % [maxi(0, game.lord.hp), game.lord.max_hp, int(game.ability_status().get("gold_cost", 0))], 12, PAPER))
-	var talents = _icon_button("res://assets/icons/lord.svg", "Навыки · душ: %d" % game.run_souls, _show_talents)
+	var talents = _button("", _show_talents)
+	talents.custom_minimum_size = Vector2(82, 44)
+	talents.autowrap_mode = TextServer.AUTOWRAP_OFF
+	talents.set_meta("accessible_label", "Навыки")
 	skill_wallet_button = talents
-	_bind_live(talents, "text", func(): return "Навыки · %d" % game.run_souls)
+	_bind_live(talents, "text", func(): return "Навыки\n%d" % game.run_souls)
+	_bind_live(talents, "tooltip_text", func(): return "Навыки · душ: %d" % game.run_souls)
 	if game.run_souls > 0:
 		talents.add_theme_stylebox_override("normal", _style(Color("#353025"), GOLD, 8, 6))
 	header.add_child(talents)
@@ -372,7 +465,7 @@ func _build_mobile_game() -> void:
 	if tutorial.active() and tutorial.target().begins_with("shop:"):
 		shop_button.add_theme_stylebox_override("normal", _style(Color("#353025"), GOLD, 8, 8))
 	tools.add_child(shop_button)
-	tools.add_child(_icon_button("res://assets/icons/knight.svg", "Герои", _show_party))
+	tools.add_child(_icon_button("res://assets/icons/knight.svg", "Герои · отряд: %d" % game.heroes.size(), _show_party))
 	var heal_button = _heal_button()
 	heal_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tools.add_child(heal_button)
@@ -380,6 +473,7 @@ func _build_mobile_game() -> void:
 		var menu_button = _button("Меню", _open_menu)
 		menu_button.custom_minimum_size.x = 64
 		tools.add_child(menu_button)
+	page.add_child(_label(_wave_summary(), 13, GOLD if game.wave_is_boss else MUTED, true))
 	if tutorial.active():
 		_tutorial_banner(page)
 	var body = HBoxContainer.new()
@@ -433,6 +527,8 @@ func _show_room_details() -> void:
 	_room_details(body, selected_slot)
 
 func _mobile_actions() -> void:
+	if game.phase == "camp":
+		_camp_panel(page)
 	var row = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	page.add_child(row)
@@ -447,7 +543,7 @@ func _mobile_actions() -> void:
 		start.add_theme_color_override("font_color", INK)
 		row.add_child(start)
 		_tutorial_mark(start, "start")
-	elif game.phase == "raid":
+	elif game.phase in ["raid", "camp"]:
 		var pause_button = _button("Далее" if paused else "Пауза", _toggle_pause)
 		pause_button.custom_minimum_size.x = 68
 		pause_button.disabled = not tutorial.allows("pause")
@@ -456,6 +552,12 @@ func _mobile_actions() -> void:
 		speed_button.custom_minimum_size.x = 44
 		speed_button.disabled = not tutorial.allows("speed")
 		row.add_child(speed_button)
+		if game.phase == "camp":
+			var interrupt = _camp_interrupt_button()
+			interrupt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			interrupt.add_theme_font_size_override("font_size", 13)
+			row.add_child(interrupt)
+			return
 		var ability: Dictionary = game.ability_status()
 		var cast = _button("%s · %d/%d" % [ability.name, ability.charges, ability.max_charges], _cast_lord_ability, not bool(ability.can_cast))
 		_bind_ability_button(cast, false)
@@ -471,6 +573,8 @@ func _mobile_actions() -> void:
 		row.add_child(result)
 
 func _cycle_speed() -> void:
+	if menu_open or is_instance_valid(modal) or game.phase not in ["raid", "camp"]:
+		return
 	_set_speed(2 if speed == 1 else 4 if speed == 2 else 1)
 
 
@@ -561,6 +665,41 @@ func _party_panel(parent: Control) -> void:
 	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_party_contents(side)
 
+func _party_overview_columns() -> int:
+	return 3 if get_viewport_rect().size.x >= 390.0 else 2
+
+
+func _party_overview(parent: Control) -> void:
+	var grid = GridContainer.new()
+	grid.columns = _party_overview_columns()
+	grid.set_meta("party_overview", true)
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	parent.add_child(grid)
+	for hero in game.heroes:
+		var card = _panel(grid)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_stylebox_override("panel", _style(TILE, LINE, 6, 5))
+		var body = _vbox(card, 3)
+		var definition: Dictionary = Content.hero(str(hero.id))
+		var portrait = _icon(str(definition.get("icon", "")), 24)
+		body.add_child(portrait)
+		_bind_live(portrait, "modulate", func(): return Color(1, 1, 1, 1.0 if hero.hp > 0 else 0.3))
+		body.add_child(_label(str(definition.get("name", hero.id)), 13, PAPER, true))
+		body.add_child(_live_bar(func(): return hero.hp, func(): return hero.max_hp, RED))
+		body.add_child(_live_label(func(): return "%d / %d HP" % [maxi(0, hero.hp), hero.max_hp], 13, MUTED, true))
+
+
+func _hero_camp_text(hero: Dictionary) -> String:
+	for state in _camp_ui_state.get("heroes", []):
+		if str(state.get("instance_id", "")) == str(hero.get("instance_id", "")):
+			return "Привал: ещё до %d HP · сила лечения %d%%" % [
+				int(state.get("remaining_healing", 0)),
+				roundi(float(state.get("healing_factor", 1.0)) * 100.0)]
+	return ""
+
+
 func _party_contents(side: Control, show_lord: bool = true) -> void:
 	side.add_child(_eyebrow("РАЗВЕДКА"))
 	side.add_child(_label("Приключенцы", 23))
@@ -570,6 +709,10 @@ func _party_contents(side: Control, show_lord: bool = true) -> void:
 	var expedition_label = _label(expedition, 12, GOLD, true)
 	expedition_label.tooltip_text = _ui_text(game.wave_description)
 	side.add_child(expedition_label)
+	if game.wave_is_boss:
+		side.add_child(_label(game.wave_description, 12, GOLD, true))
+	if compact_ui and game.heroes.size() >= 5:
+		_party_overview(side)
 	var party_scroll = ScrollContainer.new()
 	party_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	party_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -595,11 +738,13 @@ func _party_contents(side: Control, show_lord: bool = true) -> void:
 		names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		names.add_theme_constant_override("separation", 1)
 		row.add_child(names)
-		names.add_child(_label(str(definition.get("name", hero.id)), 14 if compact else 16, PAPER if hero.hp > 0 else MUTED))
+		names.add_child(_label(str(definition.get("name", hero.id)), 14 if compact else 16, PAPER if hero.hp > 0 else MUTED, true))
 		names.add_child(_live_label(func(): return "Уровень %d" % hero.level, 11, VIOLET))
 		_bind_live(portrait, "modulate", func(): return Color(1, 1, 1, 1.0 if hero.hp > 0 else 0.3))
 		inner.add_child(_live_bar(func(): return hero.hp, func(): return hero.max_hp, RED))
-		inner.add_child(_live_label(func(): return "%d/%d HP    Урон %d  ·  Броня %d" % [maxi(0, hero.hp), hero.max_hp, hero.damage, game.effective_hero_armor(hero)], 11, MUTED))
+		inner.add_child(_live_label(func(): return "%d/%d HP    Урон %d  ·  Броня %d" % [maxi(0, hero.hp), hero.max_hp, hero.damage, game.effective_hero_armor(hero)], 11, MUTED, true))
+		if game.phase == "camp":
+			inner.add_child(_live_label(func(): return _hero_camp_text(hero), 12, GREEN, true))
 		_equipment_row(inner, hero)
 		_bind_live(card, "tooltip_text", func(): return _ui_text(str(definition.get("trait", "")) + "\n" + _hero_status(hero, definition)))
 		var status_label = _live_label(func(): return _hero_status(hero, definition), 10 if compact else 11, MUTED, true)
@@ -654,20 +799,18 @@ func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
 		guidance = "Разместить: %s. Выберите пустую комнату." % Content.room(selected_room).name
 	elif selected_slot >= 0 and game.phase == "prepare":
 		guidance = "Двойное нажатие: улучшить. Другое место: перенести." if compact_ui else "Выберите другое место для переноса."
-	elif game.phase == "raid":
-		guidance = str(game.last_action.get("text", "Группа спускается в подземелье."))
-		if guidance.is_empty():
-			guidance = "Группа спускается в подземелье."
+	elif game.phase in ["raid", "camp"]:
+		guidance = _combat_guidance()
 	if short_ui:
 		title.text = _ui_text(guidance if not guidance.is_empty() else "Этажей: %d" % game.floor_count)
 		title.add_theme_font_size_override("font_size", 13)
 		title.max_lines_visible = 2
 		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	var caption = _label(guidance, 12, GOLD if game.phase == "raid" else MUTED, true)
-	if game.phase == "raid":
-		_bind_live(title if short_ui else caption, "text", func(): return _ui_text(str(game.last_action.get("text", "Группа спускается в подземелье."))))
+	var caption = _label(guidance, 12, GOLD if game.phase in ["raid", "camp"] else MUTED, true)
+	if game.phase in ["raid", "camp"]:
+		_bind_live(title if short_ui else caption, "text", func(): return _ui_text(_combat_guidance()))
 	caption.custom_minimum_size.y = 0
-	if not short_ui and (not guidance.is_empty() or game.phase == "raid"):
+	if not short_ui and (not guidance.is_empty() or game.phase in ["raid", "camp"]):
 		caption.max_lines_visible = 2 if compact_ui else -1
 		caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		center.add_child(caption)
@@ -691,6 +834,7 @@ func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
 	dungeon_view.tutorial_slot = _tutorial_slot()
 	var floor_button = _button("+ Этаж · %d зол." % game.floor_cost() if compact_ui else "+ УГЛУБИТЬ ПОДЗЕМЕЛЬЕ · %d зол." % game.floor_cost(), _buy_floor, game.phase != "prepare" or game.gold < game.floor_cost())
 	floor_button.custom_minimum_size.y = 44 if compact_ui else 38
+	floor_button.visible = not (compact_ui and game.phase == "camp")
 	floor_button.tooltip_text = _ui_text("Пять новых комнат и выбор свойства этажа: лаборатория, казармы или мастерская.")
 	var floor_price: Dictionary = game.floor_price_details()
 	if int(floor_price.saving) > 0:
@@ -871,6 +1015,8 @@ func _room_role(definition: Dictionary) -> String:
 	return str(definition.get("description", "")).get_slice(". ", 0)
 
 func _footer() -> void:
+	if game.phase == "camp":
+		_camp_panel(page)
 	var row = HBoxContainer.new()
 	page.add_child(row)
 	var desc = _label("Подготовка · Q: %d зол. за применение" % int(game.ability_status().get("gold_cost", 0)) if game.phase == "prepare" else "Защита действует автоматически", 13, MUTED, true)
@@ -886,9 +1032,15 @@ func _footer() -> void:
 		start.add_theme_color_override("font_hover_color", GOLD)
 		row.add_child(start)
 		_tutorial_mark(start, "start")
-	elif game.phase == "raid":
+	elif game.phase in ["raid", "camp"]:
 		row.add_child(_button("Продолжить" if paused else "Пауза", _toggle_pause))
 		row.add_child(_button("x%d" % speed, _cycle_speed))
+		if game.phase == "camp":
+			desc.text = _ui_text("Пробел — пауза · E — сорвать привал")
+			var interrupt = _camp_interrupt_button()
+			interrupt.custom_minimum_size = Vector2(300, 42)
+			row.add_child(interrupt)
+			return
 		var ability: Dictionary = game.ability_status()
 		desc.text = _ui_text("Пробел — пауза · Q — сила Лорда" if bool(ability.can_cast) else str(ability.reason))
 		var cast = _button("Q · %s · %d/%d" % [ability.name, ability.charges, ability.max_charges], _cast_lord_ability, not bool(ability.can_cast))
@@ -902,30 +1054,58 @@ func _footer() -> void:
 		row.add_child(_button(_phase_action_text(), _show_phase_modal))
 
 func _process(delta: float) -> void:
+	var suspended: bool = paused or is_instance_valid(modal) or menu_open
 	if is_instance_valid(soul_feedback):
-		soul_feedback.paused = paused or is_instance_valid(modal) or menu_open
+		soul_feedback.paused = suspended
 		soul_feedback.speed = float(speed)
+	if is_instance_valid(dungeon_view):
+		dungeon_view.animation_paused = suspended
 	layout_poll += delta
 	if layout_poll >= 0.5:
 		layout_poll = 0.0
 		if _screen_css_size() != layout_size:
 			_request_screen_layout()
-	if menu_open or game.phase != "raid" or paused or is_instance_valid(modal):
-		if is_instance_valid(dungeon_view):
-			dungeon_view.animation_paused = paused or is_instance_valid(modal) or menu_open
+	if suspended or game.phase not in ["raid", "camp"]:
 		return
-	if is_instance_valid(dungeon_view):
-		dungeon_view.animation_paused = false
-	accumulator += delta * speed
+	if game.phase == "camp":
+		# Camp time is independent of combat ticks and never carries into a raid step.
+		accumulator = 0.0
+		game.advance_camp(delta * float(speed))
+		if is_instance_valid(dungeon_view):
+			if game.phase != "camp" or not game.combat_events.is_empty():
+				# Consume events before advance_camp clears them next frame.
+				dungeon_view.refresh_runtime()
+			else:
+				# Between healing pulses only the camp clock has changed.
+				dungeon_view.refresh_camp_time()
+		if game.phase != "camp":
+			message = ""
+			if game.phase != "raid":
+				_sound("lose" if game.phase == "defeat" else "win")
+				_update_record()
+			_refresh()
+		elif not game.combat_events.is_empty():
+			_refresh_live_values()
+		else:
+			_refresh_camp_values()
+		return
+	accumulator += delta * float(speed)
 	if accumulator >= 0.5:
 		accumulator -= 0.5
+		message = ""
 		game.step()
-		_sound("hit" if game.phase == "raid" else ("lose" if game.phase == "defeat" else "win"))
-		if game.phase != "raid":
-			_update_record()
-			_refresh()
-		else:
+		if game.phase == "raid":
+			_sound("hit")
 			_refresh_raid()
+		else:
+			accumulator = 0.0
+			if is_instance_valid(dungeon_view):
+				# A touch can defer _refresh; capture camp_start before the next frame.
+				dungeon_view.refresh_runtime()
+			if game.phase != "camp":
+				_sound("lose" if game.phase == "defeat" else "win")
+				_update_record()
+			_refresh()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
@@ -945,9 +1125,19 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_Q or event.physical_keycode == KEY_Q:
-			_cast_lord_ability()
-		if event.keycode == KEY_SPACE and not menu_open and game.phase == "raid" and not is_instance_valid(modal):
+			if not menu_open and not is_instance_valid(modal):
+				_cast_lord_ability()
+				get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_E or event.physical_keycode == KEY_E:
+			if not menu_open and not is_instance_valid(modal):
+				_interrupt_camp()
+				get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_SPACE and not menu_open and game.phase in ["raid", "camp"] and not is_instance_valid(modal):
 			_toggle_pause()
+			get_viewport().set_input_as_handled()
+			return
 		if event.keycode == KEY_ESCAPE:
 			if is_instance_valid(modal):
 				_modal_back()
@@ -962,6 +1152,7 @@ func _input(event: InputEvent) -> void:
 				_cancel_selection()
 			else:
 				_open_menu()
+			get_viewport().set_input_as_handled()
 
 func _flush_touch_refresh() -> void:
 	if refresh_after_touch and touch_points.is_empty():
@@ -1097,11 +1288,35 @@ func _cast_lord_ability() -> void:
 			paused = false
 			accumulator = 0.0
 		_sound("hit")
-		if game.phase != "raid":
+		if game.phase not in ["raid", "camp"]:
 			_update_record()
+		if game.phase != "raid":
+			accumulator = 0.0
 	_refresh()
 
+func _interrupt_camp() -> void:
+	if menu_open or is_instance_valid(modal) or game.phase != "camp":
+		return
+	var error: String = game.interrupt_camp()
+	if not error.is_empty():
+		message = error
+		_refresh_camp_values()
+		return
+	accumulator = 0.0
+	message = "Привал сорван."
+	for event in game.combat_events:
+		if str(event.get("kind", "")) == "camp_interrupt":
+			message = str(event.get("text", message))
+			break
+	if is_instance_valid(dungeon_view):
+		dungeon_view.refresh_runtime()
+	_sound("click")
+	_refresh()
+
+
 func _start() -> void:
+	if menu_open or is_instance_valid(modal) or game.phase != "prepare":
+		return
 	if not _tutorial_allow("start"):
 		return
 	selected_slot = -1
@@ -1128,6 +1343,8 @@ func _set_speed(value: int) -> void:
 	_refresh()
 
 func _toggle_pause() -> void:
+	if menu_open or is_instance_valid(modal) or game.phase not in ["raid", "camp"]:
+		return
 	if not _tutorial_allow("pause"):
 		return
 	paused = not paused
@@ -1227,9 +1444,11 @@ func _show_help() -> void:
 		var hero: Dictionary = Content.hero(str(id))
 		_disclosure(content, str(hero.name), str(hero.get("trait", "")))
 	_disclosure(content, "Типы угроз", "Телесные существа уязвимы к рыцарю и варвару. Духи — к чародею. Следопыт ослабляет все ловушки и первый удар засад. Жрица защищает группу от яда. Бард усиливает весь отряд. Признаки комнаты указаны в её подсказке.")
-	_disclosure(content, "Навыки и души", "Души иногда сохраняются после гибели героев. После двух неудач следующая награда гарантирована. Кнопка «Навыки» открывает общее дерево: один узел — одна покупка за забег. Покупать можно в подготовке; в бою карта ставит игру на паузу. Души и дерево сбрасываются после забега, Печати Владыки сохраняются.")
+	_disclosure(content, "Навыки и души", "Души иногда сохраняются после гибели героев. После двух неудач следующая награда гарантирована. Кнопка «Навыки» открывает общее дерево: один узел — одна покупка за забег. Покупать можно в подготовке; в бою и на привале карта ставит игру на паузу, закрытие возвращает прежнюю паузу. Души и дерево сбрасываются после забега, Печати Владыки сохраняются.")
 	_disclosure(content, "Способность Q", "Два заряда на волну. Каждое применение стоит половину базового дохода этой волны, без бонусов заработка. Цена видна заранее и не меняется в бою; неудачное нажатие ничего не списывает.")
-	_disclosure(content, "Управление", "Магазин > пустое место. Комната > другой слот для переноса. Пробел — пауза, Q — сила Лорда, Esc — меню, F11 — полный экран.")
+	_disclosure(content, "Босс-отряд", "Каждые 25 волн приходит «Босс: Клятва пяти»: пять разных классов. Состав, индивидуальные HP и снаряжение заранее видны в разведке.")
+	_disclosure(content, "Привал и E", "После непустого этажа раненые герои отдыхают. Таймер, оставшиеся порции и возможное лечение показаны у кнопки E. Пауза, меню и окна останавливают отдых. E за золото отменяет оставшееся лечение текущего привала и работает на паузе. Лимита зарядов нет: первое успешное применение за волну стоит 25% базового дохода, следующие — 50%. Неудача ничего не списывает. Q на привале недоступна.")
+	_disclosure(content, "Управление", "Магазин > пустое место. Комната > другой слот для переноса. Пробел — пауза, Q — сила Лорда, E — сорвать текущий привал, Esc — меню, F11 — полный экран.")
 	_disclosure(content, "Улучшение комнат", "Нажмите «Улучшить» в сведениях о комнате. Первый выбор усиления откроется сразу после прокачки; следующие - на рангах 5 и 15. На телефоне сведения открываются двойным нажатием. После «Назад» тот же выбор доступен без доплаты.")
 	content.add_child(_button("Пройти обучение в игре", _request_tutorial))
 
@@ -1346,6 +1565,7 @@ func _new_modal(width: int = 560, compact: bool = false) -> VBoxContainer:
 	var back = _button("Назад", _modal_back)
 	back.custom_minimum_size.x = 76
 	navigation.add_child(back)
+	_focus_modal_control.call_deferred(weakref(back))
 	modal_scroll = ScrollContainer.new()
 	modal_scroll.follow_focus = true
 	modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1361,6 +1581,14 @@ func _new_modal(width: int = 560, compact: bool = false) -> VBoxContainer:
 	_resize_modal()
 	_resize_modal.call_deferred()
 	return modal_content
+
+
+func _focus_modal_control(reference: WeakRef) -> void:
+	var control: Control = reference.get_ref() as Control
+	# A modal can close before the deferred focus request reaches the next frame.
+	if is_instance_valid(control) and control.is_inside_tree() and control.is_visible_in_tree() and not control.is_queued_for_deletion():
+		control.grab_focus()
+
 
 func _resize_modal() -> void:
 	if not is_instance_valid(modal) or not is_instance_valid(modal_content):
@@ -1399,7 +1627,9 @@ func _adapt_modal_controls(node: Node) -> void:
 		return
 	if node is BoxContainer and node.has_meta("responsive_box"):
 		node.vertical = compact_ui
-	if node is GridContainer and node.has_meta("responsive_columns"):
+	if node is GridContainer and node.has_meta("party_overview"):
+		node.columns = _party_overview_columns()
+	elif node is GridContainer and node.has_meta("responsive_columns"):
 		node.columns = 1 if compact_ui else int(node.get_meta("responsive_columns"))
 	if node is Label and node.has_meta("original_font_size"):
 		var original: int = int(node.get_meta("original_font_size"))
@@ -1745,7 +1975,7 @@ func _build_mobile_menu() -> void:
 	var record = _label("Рекорд %d" % int(profile.get("wave", 0)), 13, MUTED)
 	record.custom_minimum_size.x = 80
 	header.add_child(record)
-	page.add_child(_label("НАВЫКИ ЗА ДУШИ · " + str(ProjectSettings.get_setting("application/config/version", "2.1.0")), 10, MUTED))
+	page.add_child(_label("ПОХОД ГЕРОЕВ · " + str(ProjectSettings.get_setting("application/config/version", "2.1.1")), 10, MUTED))
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1843,7 +2073,7 @@ func _build_mobile_lords() -> void:
 func _build_menu() -> void:
 	var topline = HBoxContainer.new()
 	page.add_child(topline)
-	var edition = _eyebrow("NO HERO RETURNS     /     НАВЫКИ ЗА ДУШИ · " + str(ProjectSettings.get_setting("application/config/version", "2.1.0")))
+	var edition = _eyebrow("NO HERO RETURNS     /     ПОХОД ГЕРОЕВ · " + str(ProjectSettings.get_setting("application/config/version", "2.1.1")))
 	edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	topline.add_child(edition)
 	topline.add_child(_label("ПЕЧАТИ  %d" % int(lords_profile.souls), 12, VIOLET))
@@ -2234,11 +2464,11 @@ func _begin_run() -> void:
 func _open_menu() -> void:
 	if menu_open:
 		return
+	_close_modal()
 	resume_paused = paused
 	paused = true
 	menu_open = true
 	menu_section = "home"
-	_close_modal()
 	_refresh()
 
 func _resume_run() -> void:
