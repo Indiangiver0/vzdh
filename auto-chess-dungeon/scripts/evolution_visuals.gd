@@ -17,7 +17,7 @@ const WEB = Color("c9d3c2")
 static func chamber(c: CanvasItem, rect: Rect2, path: String, tier: int, clock: float, cleared: bool, state: Dictionary = {}) -> void:
 	if path.is_empty():
 		return
-	c.draw_set_transform(rect.position, 0, rect.size / Vector2(120, 84))
+	_transform(c, rect.position, 0, rect.size / Vector2(120, 84))
 	var growth: int = 1 if tier < 5 else 2 if tier < 15 else 3
 	var dim: float = 0.36 if cleared else 1.0
 	var stone := Color(STONE, dim)
@@ -301,12 +301,12 @@ static func chamber(c: CanvasItem, rect: Rect2, path: String, tier: int, clock: 
 			c.draw_line(Vector2(9, 56), Vector2(55, 70), wood, 8)
 			for i in range(growth):
 				_bone(c, Vector2(16 + i * 12, 53 + i * 4), web)
-	c.draw_set_transform(Vector2.ZERO)
+	_transform(c, Vector2.ZERO)
 
 
 static func actor(c: CanvasItem, at: Vector2, scale_factor: float, path: String, phase: String, effects: Dictionary, clock: float) -> bool:
 	# Return true only when this form replaces the base creature portrait.
-	c.draw_set_transform(at, 0, Vector2.ONE * scale_factor)
+	_transform(c, at, 0, Vector2.ONE * scale_factor)
 	var drawn := true
 	var spectral: bool = bool(effects.get("spirit", false))
 	var pale := Color("c4d9f0", 0.5) if spectral else WEB
@@ -353,12 +353,12 @@ static func actor(c: CanvasItem, at: Vector2, scale_factor: float, path: String,
 				c.draw_circle(Vector2(x, -23), 5, VENOM)
 	else:
 		drawn = false
-	c.draw_set_transform(Vector2.ZERO)
+	_transform(c, Vector2.ZERO)
 	return drawn
 
 
 static func hero_equipment(c: CanvasItem, at: Vector2, scale_factor: float, equipment: Dictionary, effects: Dictionary, clock: float) -> void:
-	c.draw_set_transform(at, 0, Vector2.ONE * scale_factor)
+	_transform(c, at, 0, Vector2.ONE * scale_factor)
 	var weapon: String = str(equipment.get("weapon", ""))
 	var protection: String = str(equipment.get("protection", ""))
 	var metal: Color = Color("a579b2") if bool(effects.get("weapon_swap", false)) else STEEL
@@ -423,7 +423,7 @@ static func hero_equipment(c: CanvasItem, at: Vector2, scale_factor: float, equi
 		_cup(c, Vector2(-17, -12), 0.45, GOLD, int(cup.get("uses", 0)))
 		for i in range(int(cup.get("uses_to_bite", 3))):
 			c.draw_circle(Vector2(-23 + i * 4, 1), 1.2, BLOOD if i < int(cup.get("uses", 0)) else GOLD)
-	c.draw_set_transform(Vector2.ZERO)
+	_transform(c, Vector2.ZERO)
 
 
 static func _spider(c: CanvasItem, p: Vector2, s: float, body: Color, accent: Color, clock: float) -> void:
@@ -601,3 +601,11 @@ static func _mouth(c: CanvasItem, p: Vector2, radius: float) -> void:
 		var x: float = (i - 2) * radius * 0.3
 		_tri(c, p + Vector2(x, -radius * 0.65), radius * 0.11, radius * 0.5, WEB)
 		_tri(c, p + Vector2(x, radius * 0.65), radius * 0.11, -radius * 0.5, WEB)
+
+
+static func _transform(c: CanvasItem, at: Vector2, rotation: float = 0.0, scale_factor: Vector2 = Vector2.ONE) -> void:
+	# Keep the host camera when a form draws in its own local coordinates.
+	if c.has_method("_visual_transform"):
+		c.call("_visual_transform", at, rotation, scale_factor)
+	else:
+		c.draw_set_transform(at, rotation, scale_factor)

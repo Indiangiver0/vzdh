@@ -10,6 +10,7 @@ const Evolutions = preload("res://scripts/room_evolution_catalog.gd")
 const HeroRules = preload("res://scripts/hero_rules.gd")
 const EncounterRules = preload("res://scripts/encounter_rules.gd")
 const CampRules = preload("res://scripts/camp_rules.gd")
+const LabyrinthRules = preload("res://scripts/labyrinth_rules.gd")
 const SLOTS_PER_FLOOR: int = 5
 const MAX_LOGS: int = 70
 const RELIC_WAVE_INTERVAL: int = 10
@@ -33,7 +34,7 @@ var _camp_processed_floors: Dictionary = {}
 var _camp_interruptions: int = 0
 var phase: String = "prepare"
 var wave: int = 1
-var gold: int = 18
+var gold: int = LabyrinthRules.STARTING_GOLD
 var floor_count: int = 1
 var floor_traits: Array[String] = ["plain"]
 var pending_floor: int = -1
@@ -83,6 +84,20 @@ var selected_relics: Array[String] = []
 var blueprint_offers: Array[String] = []
 var relic_offers: Array[String] = []
 var tutorial_run: bool = false
+var labyrinth_enabled: bool = true
+var current_place: int = -1
+var visit_id: int = 0
+var _route_from_place: int = -1
+var movement_mode: String = "exploring"
+var last_completed_wave: int = 0
+var last_defended_wave: int = 0
+var defended_waves: Array[int] = []
+var defeated_special_waves: Array[int] = []
+var _labyrinth = LabyrinthRules.new()
+var _loot_shares: Dictionary = {}
+var _treasury_robbed: bool = false
+var _departure_checked: bool = false
+var _camp_processed_places: Dictionary = {}
 
 var _waiting_for_entry: bool = true
 var _instance_counter: int = 0
@@ -129,6 +144,19 @@ func restart(new_seed: int = 0) -> void:
 	_battle_rooms.clear()
 	_battle_room_indices.clear()
 	tutorial_run = false
+	labyrinth_enabled = true
+	_labyrinth.reset_layout()
+	current_place = -1
+	visit_id = 0
+	_route_from_place = -1
+	movement_mode = "exploring"
+	last_completed_wave = 0
+	last_defended_wave = 0
+	defended_waves.clear()
+	defeated_special_waves.clear()
+	_loot_shares.clear()
+	_treasury_robbed = false
+	_departure_checked = false
 	selected_blueprints.clear()
 	selected_relics.clear()
 	blueprint_offers.clear()
@@ -139,12 +167,12 @@ func restart(new_seed: int = 0) -> void:
 	_echo_floors.clear()
 	phase = "prepare"
 	wave = 1
-	gold = 18
+	gold = LabyrinthRules.STARTING_GOLD
 	floor_count = 1
 	floor_traits.assign(["plain"])
 	pending_floor = -1
 	rooms.clear()
-	for _slot in range(SLOTS_PER_FLOOR):
+	for _slot in range(_labyrinth.positions.size()):
 		rooms.append({})
 	heroes.clear()
 	lord = {
@@ -167,6 +195,7 @@ func restart(new_seed: int = 0) -> void:
 	current_slot = -1
 	defender = {}
 	defenders.clear()
+	_encounter = EncounterRules.new()
 	combat_events.clear()
 	action_seq = 0
 	tick = 0
@@ -186,10 +215,27 @@ func restart(new_seed: int = 0) -> void:
 	_log("Подземелье открыто. Постройте защиту и запустите первую волну.")
 
 
+func prepare_linear_showcase() -> void:
+	# Caller has just restarted a disposable title-screen/capture run.
+	labyrinth_enabled = false
+	floor_count = 1
+	floor_traits.assign(["plain"])
+	pending_floor = -1
+	current_slot = -1
+	current_place = -1
+	rooms.clear()
+	for _slot in range(SLOTS_PER_FLOOR):
+		rooms.append({})
+
+
 func begin_tutorial() -> void:
 	# A disposable run: the caller must exclude it from permanent rewards.
 	restart(7102026)
 	tutorial_run = true
+	labyrinth_enabled = false
+	rooms.clear()
+	for _slot in range(SLOTS_PER_FLOOR):
+		rooms.append({})
 	unlocked_paths.clear()
 	gold = 90
 	configure_lord("fallen_knight")
@@ -458,6 +504,8 @@ func buy_room(index: int, id: String) -> String:
 		return "Строительство доступно между волнами."
 	if not _valid_slot(index):
 		return "Выберите строительный слот."
+	if is_treasury_slot(index) or is_throne_slot(index):
+		return "Казна и трон занимают отдельные места."
 	if not rooms[index].is_empty():
 		return "Этот слот уже занят. Выберите пустое место."
 	if reserved_room_slots().has(index):
@@ -481,7 +529,7 @@ func buy_room(index: int, id: String) -> String:
 		"specialization": "",
 	}
 	_consume_building_discounts(rooms[index])
-	_log("%s: построено, этаж %d · место %d." % [definition.name, index / 5 + 1, index % 5 + 1])
+	_log("%s: построено в клетке %s." % [definition.name, str(_labyrinth.positions[index])] if labyrinth_enabled else "%s: построено, этаж %d · место %d." % [definition.name, index / 5 + 1, index % 5 + 1])
 	return ""
 
 
@@ -490,6 +538,8 @@ func move_room(from_index: int, to_index: int) -> String:
 		return "Перестановка доступна между волнами."
 	if not _valid_slot(from_index) or not _valid_slot(to_index):
 		return "Выберите два строительных слота."
+	if is_treasury_slot(to_index) or is_throne_slot(to_index) or is_treasury_slot(from_index) or is_throne_slot(from_index):
+		return "Переместите казну или трон отдельным действием."
 	if rooms[from_index].is_empty():
 		return "Сначала выберите построенную комнату."
 	if from_index == to_index:
@@ -554,6 +604,8 @@ func sell_room(index: int) -> String:
 
 
 func buy_floor() -> String:
+	if labyrinth_enabled:
+		return buy_depth_access()
 	if phase != "prepare":
 		return "Этаж можно купить между волнами."
 	var price: int = floor_cost()
@@ -867,10 +919,11 @@ func reserved_room_slots() -> Dictionary:
 			continue
 		var stage: int = int(rooms[slot].get("evolution_stage", 2))
 		var limit: int = 2 if stage >= 15 else (1 if stage >= 5 else 0)
-		for n in [slot - 1, slot + 1]:
+		var neighbors: Array = layout_neighbors(slot) if labyrinth_enabled else [slot - 1, slot + 1]
+		for n in neighbors:
 			if limit <= 0:
 				break
-			if n < 0 or n >= rooms.size() or n / 5 != slot / 5 or not rooms[n].is_empty() or result.has(n):
+			if n < 0 or n >= rooms.size() or layout_effect_scope(n) != layout_effect_scope(slot) or is_treasury_slot(n) or is_throne_slot(n) or not rooms[n].is_empty() or result.has(n):
 				continue
 			result[n] = slot
 			limit -= 1
@@ -880,15 +933,22 @@ func reserved_room_slots() -> Dictionary:
 func throne_guard_room_slot() -> int:
 	var selected: int = -1
 	var strongest: float = -1.0
-	var slot: int = next_route_slot(-1)
-	while slot < rooms.size():
+	var candidates: Array[int] = []
+	if labyrinth_enabled:
+		for index in range(rooms.size()):
+			candidates.append(index)
+	else:
+		var cursor: int = next_route_slot(-1)
+		while cursor < rooms.size():
+			candidates.append(cursor)
+			cursor = next_route_slot(cursor)
+	for slot in candidates:
 		if not rooms[slot].is_empty() and str(rooms[slot].get("evolution_path", "")) == "wraith_throne_guardian":
 			var stats: Dictionary = room_stats(slot)
 			var strength: float = float(stats.hp) * float(stats.get("evolution_params", {}).get("reserve_hp_factor", 1.0))
 			if strength > strongest:
 				strongest = strength
 				selected = slot
-		slot = next_route_slot(slot)
 	return selected
 
 
@@ -1048,6 +1108,8 @@ func buy_deal_room(index: int) -> String:
 		return "Сейчас нет доступной сделки."
 	if not _valid_slot(index) or not rooms[index].is_empty():
 		return "Для сделки выберите пустое место."
+	if is_treasury_slot(index) or is_throne_slot(index):
+		return "Казна и трон занимают отдельные места."
 	if reserved_room_slots().has(index):
 		return "Это место занимает пасть живой комнаты."
 	var price: int = _discounted_room_price(int(_deal_state.price))
@@ -1101,6 +1163,10 @@ func start_raid() -> String:
 		return "Сначала завершите текущую волну и выберите усиления."
 	if int(lord.hp) <= 0:
 		return "Лорд погиб. Начните новый забег."
+	if labyrinth_enabled:
+		var layout_error: String = _layout_validation_error()
+		if not layout_error.is_empty():
+			return layout_error
 	migrate_legacy_talents()
 	# Unspent points are banked; they are not a pending reward on the next wave.
 	_talent_reward_pending = false
@@ -1124,6 +1190,15 @@ func start_raid() -> String:
 	last_action = {}
 	active_target_id = ""
 	_reset_report()
+	current_place = -1
+	visit_id = 0
+	_route_from_place = -1
+	movement_mode = "exploring"
+	_loot_shares.clear()
+	_treasury_robbed = false
+	_departure_checked = false
+	if labyrinth_enabled:
+		_labyrinth.begin_wave(seed_value, wave, heroes)
 	_begin_battle_room_report()
 	for hero in heroes:
 		hero.disarm_charges = int(hero.get("disarm_max", 2 if str(hero.id) == "rogue" else 0))
@@ -1151,6 +1226,7 @@ func step() -> void:
 	if _living().is_empty():
 		_finish_wave()
 		return
+	_encounter.advance_recovery(self)
 	if _waiting_for_entry:
 		_enter_next_room()
 	else:
@@ -1163,12 +1239,16 @@ func next_wave() -> String:
 	if phase != "result":
 		return "Текущая волна ещё не завершена."
 	wave += 1
+	current_place = -1
+	movement_mode = "exploring"
 	_reset_camps()
 	_skill_preparation.clear()
 	_ability_price_snapshot = 0
 	_ability_income_snapshot = 0
 	_encounter.next_wave(self)
 	_clear_defender_effects(defender)
+	defenders.clear()
+	_encounter = EncounterRules.new()
 	ability_charges = 2 if not _lord_ability_values.is_empty() else 0
 	current_slot = -1
 	defender = {}
@@ -1236,7 +1316,7 @@ func run_skill_state(id: String) -> Dictionary:
 	node.mode = str(node.get("mode", "any" if all_of.is_empty() and not any_of.is_empty() else "all"))
 	node.cost = int(node.get("cost", node.get("soul_price", 0)))
 	node.required_lord = str(node.get("required_lord", ""))
-	node.description = str(node.get("description", ""))
+	node.description = _layout_skill_description(id, str(node.get("description", "")))
 	node.category = str(node.get("category", ""))
 	node.x = float(node.get("x", 0.0))
 	node.y = float(node.get("y", 0.0))
@@ -1245,6 +1325,8 @@ func run_skill_state(id: String) -> Dictionary:
 	var reason: String = ""
 	if bool(node.learned):
 		reason = "Уже изучено в этом забеге."
+	elif labyrinth_enabled and id == "traps_hidden_drive":
+		reason = "Скрытый привод временно недоступен: его новый эффект после переделки обезвреживания ещё не выбран."
 	elif phase != "prepare":
 		reason = "Покупка навыков доступна между волнами."
 	elif not str(node.required_lord).is_empty() and str(node.required_lord) != lord_archetype:
@@ -1320,6 +1402,8 @@ func talent_preview(id: String) -> Dictionary:
 func _progression_snapshot() -> Variant:
 	# No restart, random draw, save operation or reference to live mutable data.
 	var snapshot: Variant = get_script().new(false)
+	snapshot.labyrinth_enabled = labyrinth_enabled
+	_labyrinth.copy_layout_to(snapshot._labyrinth)
 	snapshot.phase = phase
 	snapshot.wave = wave
 	snapshot.floor_count = floor_count
@@ -1351,7 +1435,7 @@ func _progression_metrics() -> Dictionary:
 		"lord_damage": int(lord.damage), "lord_armor": int(lord.armor),
 		"floor_cost": floor_cost(), "heal_cost": heal_cost(),
 		"kill_gold": maxi(0, ceili(float(base_coins) * (1.0 + float(modifiers.kill_gold)))),
-		"poison_ticks": _scaled_poison_duration(6),
+		"poison_ticks": _scaled_poison_duration(8),
 		"opening_strikes": int(modifiers.opening_strikes),
 		"opening_damage": ceili(float(lord.damage) * opening_multiplier),
 		"modifiers": modifiers, "rooms": room_values,
@@ -1378,7 +1462,7 @@ func _advance_reward_choice() -> void:
 			if not available.has(relic_offers[index]):
 				relic_offers.remove_at(index)
 		if relic_offers.is_empty():
-			relic_offers.assign(_draw_run_choices(available))
+			relic_offers.assign(_draw_relic_choices())
 		if not relic_offers.is_empty():
 			phase = "relic"
 			return
@@ -1447,19 +1531,63 @@ func _available_relic_ids() -> Array[String]:
 	var available: Array[String] = []
 	for definition in Expedition.relics():
 		var id: String = str(definition.id)
-		if not selected_relics.has(id):
+		if str(definition.get("kind", "passive")) == "instant" or not selected_relics.has(id):
 			available.append(id)
 	return available
+
+
+func _draw_relic_choices() -> Array[String]:
+	var passives: Array[String] = []
+	var instants: Array[String] = []
+	for definition in Expedition.relics():
+		var id: String = str(definition.id)
+		if str(definition.get("kind", "passive")) == "instant":
+			# Filter only while drawing. Reading an issued offer never replaces it.
+			if str(definition.get("effect", "")) == "lord_heal" and _instant_relic_amount(definition) <= 0:
+				continue
+			instants.append(id)
+		elif not selected_relics.has(id):
+			passives.append(id)
+	var choices: Array[String] = []
+	for _offer in range(mini(2, passives.size())):
+		var index: int = expedition_rng.randi_range(0, passives.size() - 1)
+		choices.append(passives[index])
+		passives.remove_at(index)
+	while choices.size() < 3 and not instants.is_empty():
+		var index: int = expedition_rng.randi_range(0, instants.size() - 1)
+		choices.append(instants[index])
+		instants.remove_at(index)
+	return choices
+
+
+func _instant_relic_amount(definition: Dictionary) -> int:
+	match str(definition.get("effect", "")):
+		"gold", "run_souls":
+			return maxi(0, int(definition.get("amount", 0)))
+		"lord_heal":
+			if int(lord.get("hp", 0)) <= 0:
+				return 0
+			var capacity: int = maxi(0, int(lord.max_hp) - int(lord.hp))
+			return mini(capacity, ceili(float(lord.max_hp) * float(definition.get("heal_fraction", 0.0))))
+	return 0
 
 
 func relic_options() -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
 	for id in relic_offers:
-		if selected_relics.has(id):
-			continue
 		var definition: Dictionary = Expedition.relic(id)
-		if not definition.is_empty():
-			options.append(definition)
+		if definition.is_empty():
+			continue
+		var kind: String = str(definition.get("kind", "passive"))
+		if kind == "passive" and selected_relics.has(id):
+			continue
+		definition.kind = kind
+		definition.status = "offered"
+		if kind == "instant":
+			definition.actual_amount = _instant_relic_amount(definition)
+			if str(definition.get("effect", "")) == "lord_heal":
+				definition.description = "Сразу восстановить %d HP Владыки: до 50%% максимума с округлением вверх, без превышения максимального HP. Не воскрешает." % int(definition.actual_amount)
+		options.append(definition)
 	return options
 
 
@@ -1468,11 +1596,32 @@ func choose_relic(id: String) -> String:
 		return "Сейчас нет доступной реликвии."
 	if not relic_offers.has(id) or not _available_relic_ids().has(id):
 		return "Выберите одну из предложенных реликвий."
-	selected_relics.append(id)
+	var definition: Dictionary = Expedition.relic(id)
+	var instant: bool = str(definition.get("kind", "passive")) == "instant"
+	var effect: String = str(definition.get("effect", ""))
+	if instant and effect not in ["gold", "lord_heal", "run_souls"]:
+		return "У этой реликвии нет доступного эффекта."
+	if instant and effect == "lord_heal" and int(lord.hp) <= 0:
+		return "Кубок не может воскресить погибшего Владыку."
+	var amount: int = _instant_relic_amount(definition) if instant else 0
+	# Consume this saved offer before mutation/signals: a repeated selection cannot pay twice.
 	relic_offers.clear()
 	_pending_relic = false
-	var definition: Dictionary = Expedition.relic(id)
-	_log("Реликвия «%s». %s" % [definition.name, definition.description])
+	if instant:
+		match effect:
+			"gold":
+				gold += amount
+				_log("%s: +%d золота." % [definition.name, amount])
+			"lord_heal":
+				lord.hp = int(lord.hp) + amount
+				_log("%s: восстановлено %d HP Владыки." % [definition.name, amount])
+			"run_souls":
+				run_souls += amount
+				_log("%s: +%d души текущего забега." % [definition.name, amount])
+				run_souls_changed.emit(run_souls, amount)
+	else:
+		selected_relics.append(id)
+		_log("Реликвия «%s». %s" % [definition.name, definition.description])
 	_advance_reward_choice()
 	return ""
 
@@ -1499,6 +1648,13 @@ func room_combo(index: int) -> Dictionary:
 
 
 func _previous_route_slot(index: int) -> int:
+	if labyrinth_enabled:
+		if phase in ["raid", "camp"] and index == current_slot:
+			if _valid_slot(_route_from_place) and _labyrinth.neighbors(current_place).has(_route_from_place) and layout_effect_scope(current_place) == layout_effect_scope(_route_from_place):
+				var source: int = int(reserved_room_slots().get(_route_from_place, _route_from_place))
+				return source if source != index else -1
+			return -1
+		return layout_previous_neighbor(index)
 	if not _valid_slot(index):
 		return -1
 	var floor_index: int = index / SLOTS_PER_FLOOR
@@ -1509,8 +1665,8 @@ func _previous_route_slot(index: int) -> int:
 func _outgoing_combo(index: int) -> Dictionary:
 	if not _valid_slot(index) or rooms[index].is_empty():
 		return {}
-	var following: int = next_route_slot(index)
-	if not _valid_slot(following) or rooms[following].is_empty() or index / SLOTS_PER_FLOOR != following / SLOTS_PER_FLOOR:
+	var following: int = layout_next_neighbor(index) if labyrinth_enabled else next_route_slot(index)
+	if not _valid_slot(following) or rooms[following].is_empty() or layout_effect_scope(index) != layout_effect_scope(following):
 		return {}
 	for definition in combo_catalog():
 		if str(rooms[index].id) == str(definition.first) and str(rooms[following].id) == str(definition.second):
@@ -1581,10 +1737,10 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	hp_factor += float(faction.get("monster_hp", 0.0)) + float(evolution.get("hp_bonus", 0.0))
 	var damage_factor: float = 1.0
 	damage_factor += float(faction.get("monster_damage" if is_monster else "trap_damage", 0.0)) + float(evolution.get("damage_bonus", 0.0))
-	var floor_index: int = index / SLOTS_PER_FLOOR
+	var floor_index: int = layout_effect_scope(index)
 	var floor_trait: String = floor_traits[floor_index] if floor_index < floor_traits.size() else "plain"
 	var specialization: String = str(state.get("specialization", ""))
-	var duration: int = 6 + int(evolution.get("poison_turns", 0))
+	var duration: int = (8 if str(state.id) == "poison" else 6) + int(evolution.get("poison_turns", 0))
 	if floor_trait == "laboratory":
 		hp_factor *= 0.85
 		duration += 2
@@ -1621,6 +1777,8 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	result.hp = ceili(float(result.tree_base_hp) * (1.0 + float(result.tree_hp_bonus))) if is_monster else 0
 	result.max_hp = result.hp
 	result.tree_base_damage = float(result.damage) * rank_factor * damage_factor
+	if str(state.id) in ["spikes", "ballista", "blade_floor"]:
+		result.tree_base_damage *= 1.10
 	if specialization == "virulent":
 		result.tree_base_damage = float(result.tree_base_damage) + 1.0
 	result.tree_damage_bonus = float(modifiers.monster_damage) if is_monster else _direct_trap_bonus(index, state, result)
@@ -1646,6 +1804,7 @@ func _room_stats_for_state(index: int, state: Dictionary) -> Dictionary:
 	result.specialization = specialization
 	result.branch = str(branch_names.get(specialization, ""))
 	result.floor_trait = floor_trait
+	result.deadly_corridor_receiver = labyrinth_enabled and has_run_skill("traps_deadly_corridor") and _is_direct_trap(state) and _last_layout_trap(index)
 	result.poison_ticks = duration
 	result.poison_ticks_display = poison_application_duration(duration)
 	result.impact_damage = 0
@@ -1725,6 +1884,8 @@ func _is_direct_trap(state: Dictionary) -> bool:
 
 
 func _last_direct_trap_on_floor(index: int) -> bool:
+	if labyrinth_enabled:
+		return _last_layout_trap(index)
 	var candidate: int = next_route_slot(index)
 	while candidate < rooms.size() and candidate / SLOTS_PER_FLOOR == index / SLOTS_PER_FLOOR:
 		if _is_direct_trap(rooms[candidate]):
@@ -1757,6 +1918,8 @@ func hero_room_xp(base_xp: int) -> int:
 
 
 func floor_price_details() -> Dictionary:
+	if labyrinth_enabled:
+		return depth_access_price_details()
 	var next_floor: int = floor_count + 1
 	var base: int = 5 * next_floor * next_floor
 	var price: int = maxi(1, ceili(float(base) * (1.0 + float(talent_modifiers().floor_cost))))
@@ -1966,12 +2129,20 @@ func _reorder_party(room_kind: String, announce: bool = true) -> void:
 		_log("%s ведёт группу: %s." % [leader.name, "бой с защитником" if room_kind == "monster" else "проверка ловушки"])
 
 
-func _spend_disarm() -> bool:
-	for hero in _living():
+func _spend_disarm(preferred_hero: Dictionary = {}) -> bool:
+	var candidates: Array[Dictionary] = _living()
+	if not preferred_hero.is_empty():
+		candidates.clear()
+		for hero in _living():
+			if str(hero.instance_id) == str(preferred_hero.get("instance_id", "")):
+				candidates.append(hero)
+				break
+	for hero in candidates:
 		if str(hero.id) == "rogue" and int(hero.get("disarm_charges", 0)) > 0:
 			hero.disarm_charges = int(hero.disarm_charges) - 1
-			_log("Следопыт ослабляет ловушку. Зарядов осталось: %d." % int(hero.disarm_charges))
-			_action("disarm", str(hero.instance_id), _defender_actor(), 1, "Следопыт ослабляет ловушку")
+			var message: String = "Следопыт пытается обезвредить ловушку" if labyrinth_enabled else "Следопыт ослабляет ловушку"
+			_log("%s. Инструментов осталось: %d." % [message, int(hero.disarm_charges)])
+			_action("disarm_attempt" if labyrinth_enabled else "disarm", str(hero.instance_id), _defender_actor(), 1, message)
 			return true
 	return false
 
@@ -2012,6 +2183,13 @@ func _action(kind: String, actor: String, target: String, amount: int, message: 
 
 
 func next_route_slot(index: int) -> int:
+	if labyrinth_enabled:
+		if index < 0:
+			return _labyrinth.entrance_slot
+		if index >= rooms.size():
+			return rooms.size()
+		var following: int = layout_next_neighbor(index)
+		return following if following >= 0 else rooms.size()
 	# Slots keep their physical left-to-right IDs; traversal alternates per floor.
 	if index < 0:
 		return 0
@@ -2035,7 +2213,7 @@ func _enter_next_room() -> void:
 
 
 func _trigger_trap(stats: Dictionary, disarmed: bool) -> void:
-	var floor_index: int = current_slot / SLOTS_PER_FLOOR
+	var floor_index: int = layout_effect_scope(current_slot)
 	var echo: bool = selected_relics.has("trap_echo") and not _echo_floors.has(floor_index)
 	if echo:
 		_echo_floors.append(floor_index)
@@ -2196,7 +2374,7 @@ func _apply_poison() -> void:
 func _trigger_plague_focus(victim: Dictionary) -> void:
 	if not has_run_skill("poison_plague_focus") or int(victim.get("poison_ticks", 0)) <= 0 or bool(run_skill_runtime.get("plague_burst_active", false)):
 		return
-	var floor_index: int = clampi(current_slot / SLOTS_PER_FLOOR, 0, floor_count - 1)
+	var floor_index: int = layout_effect_scope(current_slot)
 	var key: String = "plague_floor_%d" % floor_index
 	if bool(run_skill_runtime.get(key, false)):
 		return
@@ -2218,8 +2396,9 @@ func _process_deaths() -> void:
 func _reward_dead_heroes() -> void:
 	var changed: bool = false
 	for hero in heroes:
-		if int(hero.hp) > 0 or bool(hero.death_processed):
+		if int(hero.hp) > 0 or bool(hero.death_processed) or bool(hero.get("escaped", false)):
 			continue
+		_settle_stolen_gold(hero, false)
 		hero.death_processed = true
 		changed = true
 		hero.items = []
@@ -2307,7 +2486,7 @@ func _recalculate_hero(hero: Dictionary) -> void:
 	hero.items = [str(hero.equipment.get("weapon", "")), str(hero.equipment.get("protection", ""))]
 
 
-func _finish_wave() -> void:
+func _finish_wave(outcome: String = "defended") -> void:
 	if phase not in ["raid", "camp"]:
 		return
 	if int(lord.hp) <= 0:
@@ -2316,6 +2495,20 @@ func _finish_wave() -> void:
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
 	_camp_state.clear()
+	last_completed_wave = wave
+	report.outcome = outcome
+	if outcome == "robbed":
+		_pending_blueprint = false
+		_pending_relic = false
+		_grant_lord_levels()
+		phase = "result"
+		_log("Отряд отступил, добыча возвращена." if int(report.get("escaped_gold", 0)) == 0 else "Отряд скрылся с добычей: унесено %d золота." % int(report.escaped_gold))
+		return
+	last_defended_wave = wave
+	if not defended_waves.has(wave):
+		defended_waves.append(wave)
+	if not elite_id.is_empty() and not defeated_special_waves.has(wave):
+		defeated_special_waves.append(wave)
 	# Reserve observes the wallet before every completion reward, including saved Q.
 	var reserve: int = mini(3, gold / 20) if has_run_skill("economy_gold_reserve") else 0
 	var tribute: int = int(has_run_skill("economy_tribute_1")) + int(has_run_skill("economy_tribute_2")) + int(has_run_skill("economy_tribute_3"))
@@ -2339,13 +2532,7 @@ func _finish_wave() -> void:
 			report.unlock = str(unlock.id)
 			_log("Открыто для будущих забегов: %s!" % unlock.name)
 	cleared_waves += 1
-	while int(lord.xp) >= 10 + 6 * (int(lord.level) - 1):
-		lord.xp = int(lord.xp) - (10 + 6 * (int(lord.level) - 1))
-		var previous_max_hp: int = int(lord.max_hp)
-		var previous_damage: int = int(lord.damage)
-		lord.level = int(lord.level) + 1
-		_recalculate_lord()
-		_log("Лорд достиг уровня %d! +%d HP и +%d урона." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
+	_grant_lord_levels()
 	_pending_blueprint = wave % BLUEPRINT_WAVE_INTERVAL == 0 and not _available_blueprint_ids().is_empty()
 	_pending_relic = wave % RELIC_WAVE_INTERVAL == 0 and not _available_relic_ids().is_empty()
 	if tutorial_run and wave == 1:
@@ -2364,10 +2551,21 @@ func _finish_wave() -> void:
 	_log("Волна %d отражена! +4 золота за защиту." % wave)
 
 
+func _grant_lord_levels() -> void:
+	while int(lord.xp) >= 10 + 6 * (int(lord.level) - 1):
+		lord.xp = int(lord.xp) - (10 + 6 * (int(lord.level) - 1))
+		var previous_max_hp: int = int(lord.max_hp)
+		var previous_damage: int = int(lord.damage)
+		lord.level = int(lord.level) + 1
+		_recalculate_lord()
+		_log("Лорд достиг уровня %d! +%d HP и +%d урона." % [lord.level, int(lord.max_hp) - previous_max_hp, int(lord.damage) - previous_damage])
+
+
 func _finish_defeat() -> void:
 	if phase == "defeat":
 		return
 	phase = "defeat"
+	report.outcome = "defeat"
 	_camp_state.clear()
 	_clear_defender_effects(defender)
 	_clear_defender_effects(lord)
@@ -2377,7 +2575,7 @@ func _finish_defeat() -> void:
 func _living() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for hero in heroes:
-		if int(hero.hp) > 0:
+		if int(hero.hp) > 0 and not bool(hero.get("escaped", false)):
 			result.append(hero)
 	return result
 
@@ -2392,7 +2590,7 @@ func _most_wounded(survivors: Array[Dictionary]) -> Dictionary:
 
 
 func _mark_room_held() -> void:
-	if _valid_slot(current_slot) and not rooms[current_slot].is_empty():
+	if _valid_slot(current_slot) and not rooms[current_slot].is_empty() and str(rooms[current_slot].get("status", "")) != "retreated":
 		rooms[current_slot].status = "held"
 
 
@@ -2504,7 +2702,7 @@ func _reward_hero_souls(hero: Dictionary) -> void:
 
 
 func _reset_report() -> void:
-	report = {"killed": 0, "gold": 0, "xp": 0, "lord_damage": 0, "hero_levels": 0, "items": 0, "unlock": "", "skill_points": 0, "souls": 0}
+	report = {"killed": 0, "gold": 0, "xp": 0, "lord_damage": 0, "hero_levels": 0, "items": 0, "unlock": "", "skill_points": 0, "souls": 0, "outcome": "", "stolen_gold": 0, "returned_gold": 0, "escaped_gold": 0}
 
 
 func _log(message: String) -> void:
@@ -2516,6 +2714,7 @@ func _log(message: String) -> void:
 func _reset_camps() -> void:
 	_camp_state.clear()
 	_camp_processed_floors.clear()
+	_camp_processed_places.clear()
 	_camp_interruptions = 0
 
 
@@ -2538,6 +2737,8 @@ func _camp_party_needs_healing() -> bool:
 
 
 func _try_start_route_camp() -> bool:
+	if labyrinth_enabled:
+		return _try_start_labyrinth_camp()
 	if phase != "raid" or not _waiting_for_entry or current_slot >= rooms.size() or int(lord.hp) <= 0 or _living().is_empty():
 		return false
 	# Mirror Encounter.enter's empty/consumed scan without entering a room or
@@ -2568,24 +2769,28 @@ func _start_camp(floor_index: int) -> void:
 		if has_run_skill(id):
 			duration = maxi(1, int(run_skill_definition(id).get("camp_duration_seconds", duration)))
 			break
-	current_slot = _camp_floor_exit(floor_index)
+	if not labyrinth_enabled:
+		current_slot = _camp_floor_exit(floor_index)
 	_camp_state = {
-		"floor_index": floor_index, "slot": current_slot,
+		"floor_index": floor_index, "slot": current_place if labyrinth_enabled else current_slot, "place": current_place,
 		"elapsed": 0.0, "duration": duration,
 		"pulses": 0, "carry": {}, "healed_total": 0,
 	}
 	phase = "camp"
 	_waiting_for_entry = true
 	active_target_id = ""
-	var message: String = "Отряд разбивает лагерь на этаже %d: %d секунд." % [floor_index + 1, int(_camp_state.duration)]
+	var message: String = "Отряд отдыхает в клетке %s: %d секунд." % [str(_labyrinth.positions[current_place]), duration] if labyrinth_enabled else "Отряд разбивает лагерь на этаже %d: %d секунд." % [floor_index + 1, duration]
 	_log(message)
 	_action("camp_start", "camp", "", 0, message)
 	last_action.meta = {"floor_index": floor_index, "duration": int(_camp_state.duration)}
 
 
 func camp_interrupt_cost() -> int:
-	# Q and E share the immutable ordinary income snapshot, but no discounts or charges.
-	var divisor: float = 4.0 if _camp_interruptions == 0 else 2.0
+	# Only successful interruptions advance the wave-local price step.
+	# Q and paid E share the immutable ordinary income snapshot, without discounts.
+	if _camp_interruptions == 0:
+		return 0
+	var divisor: float = 4.0 if _camp_interruptions == 1 else 2.0
 	return maxi(1, ceili(float(base_wave_income()) / divisor))
 
 
@@ -2704,7 +2909,405 @@ func _end_camp(reason: String) -> void:
 	_camp_state.clear()
 	phase = "raid"
 	_waiting_for_entry = true
-	var message: String = "Отряд покидает лагерь на этаже %d." % (floor_index + 1)
+	var message: String = "Отряд продолжает путь из клетки %s." % str(_labyrinth.positions[current_place]) if labyrinth_enabled else "Отряд покидает лагерь на этаже %d." % (floor_index + 1)
 	_log(message)
 	_action("camp_end", "camp", "", 0, message)
 	last_action.meta = {"floor_index": floor_index, "reason": reason, "elapsed": elapsed, "healed_total": healed_total}
+
+
+# Grid coordinates and room indexes are distinct. Appending a cell never moves an ID.
+func layout_snapshot() -> Dictionary:
+	var places: Array[Dictionary] = []
+	var edges: Array[Dictionary] = []
+	var reserved: Dictionary = reserved_room_slots() if labyrinth_enabled else {}
+	for slot in range(_labyrinth.positions.size()):
+		var kind: String = "throne" if is_throne_slot(slot) else ("treasury" if is_treasury_slot(slot) else "room")
+		places.append({"slot": slot, "position": _labyrinth.positions[slot], "type": kind, "combat_slot": rooms.size() if kind == "throne" else int(reserved.get(slot, slot))})
+	for boundary in _labyrinth.boundaries.values():
+		edges.append(boundary.duplicate(true))
+	var expansion: Array[Vector2i] = []
+	for position in _labyrinth.expansion_cells():
+		if position.y < floor_count * LabyrinthRules.LAYER_HEIGHT:
+			expansion.append(position)
+	return {
+		"places": places, "boundaries": edges, "expansion_cells": expansion,
+		"validation_error": _layout_validation_error(), "throne_slot": _labyrinth.throne_slot,
+		"entrance_position": _labyrinth.entrance_position, "current_place": current_place,
+		"depth_layers": floor_count, "depth_layer_height": LabyrinthRules.LAYER_HEIGHT,
+		"next_depth_y": floor_count * LabyrinthRules.LAYER_HEIGHT,
+		"recovering_vampires": _encounter.recovery_snapshot(),
+	}
+
+
+func _layout_validation_error() -> String:
+	var error: String = _labyrinth.validation_error(rooms.size())
+	if not error.is_empty():
+		return error
+	if not rooms[_labyrinth.treasury_slot].is_empty() or not rooms[_labyrinth.throne_slot].is_empty():
+		return "Казна и трон не могут занимать место другой комнаты."
+	return ""
+
+
+func set_boundary_state(id: String, opened: bool) -> String:
+	if not labyrinth_enabled or phase != "prepare":
+		return "Проходы меняются между волнами."
+	if not _labyrinth.boundaries.has(id):
+		return "Такой общей границы нет."
+	_labyrinth.boundaries[id].open = opened
+	return ""
+
+
+func is_treasury_slot(index: int) -> bool:
+	return labyrinth_enabled and index >= 0 and index == _labyrinth.treasury_slot
+
+
+func is_throne_slot(index: int) -> bool:
+	return labyrinth_enabled and index >= 0 and index == _labyrinth.throne_slot
+
+
+func _special_place_error(index: int) -> String:
+	if not labyrinth_enabled or phase != "prepare":
+		return "Казна и трон перемещаются между волнами."
+	if not _valid_slot(index) or not rooms[index].is_empty() or reserved_room_slots().has(index):
+		return "Выберите свободное место."
+	return ""
+
+
+func set_treasury_slot(index: int) -> String:
+	var error: String = _special_place_error(index)
+	if not error.is_empty():
+		return error
+	if is_throne_slot(index):
+		return "Трон и казна должны стоять отдельно."
+	_labyrinth.treasury_slot = index
+	return ""
+
+
+func set_throne_slot(index: int) -> String:
+	var error: String = _special_place_error(index)
+	if not error.is_empty():
+		return error
+	if is_treasury_slot(index):
+		return "Трон и казна должны стоять отдельно."
+	_labyrinth.throne_slot = index
+	return ""
+
+
+func grid_expansion_cost() -> int:
+	return LabyrinthRules.EXPANSION_BASE_COST
+
+
+func expand_grid_at(position: Vector2i) -> String:
+	if not labyrinth_enabled or phase != "prepare":
+		return "Раскопка доступна между волнами."
+	if position.y < 0:
+		return "Выше входного слоя копать нельзя."
+	if position.y >= floor_count * LabyrinthRules.LAYER_HEIGHT:
+		return "Сначала откройте следующий слой глубины."
+	if not _labyrinth.expansion_cells().has(position):
+		return "Выберите новую клетку рядом с подземельем."
+	var price: int = grid_expansion_cost()
+	if gold < price:
+		return "Не хватает золота: нужно %d." % price
+	var slot: int = _labyrinth.append_cell(position)
+	if slot < 0:
+		return "Это место уже недоступно для раскопки."
+	rooms.append({})
+	gold -= price
+	_log("Раскопана клетка %s: −%d золота." % [str(position), price])
+	return ""
+
+
+func depth_layer_for_slot(slot: int) -> int:
+	if not labyrinth_enabled:
+		return maxi(0, slot / SLOTS_PER_FLOOR)
+	var real_slot: int = _labyrinth.throne_slot if slot == rooms.size() else slot
+	if real_slot < 0 or real_slot >= _labyrinth.positions.size():
+		return 0
+	return _labyrinth.positions[real_slot].y / LabyrinthRules.LAYER_HEIGHT
+
+
+func layout_effect_scope(slot: int) -> int:
+	return depth_layer_for_slot(slot)
+
+
+func depth_access_price_details() -> Dictionary:
+	# Retain the existing depth-access curve and its skill discounts.
+	var next_layer: int = floor_count + 1
+	var base: int = LabyrinthRules.depth_access_base_cost(next_layer)
+	var price: int = maxi(1, ceili(float(base) * (1.0 + float(talent_modifiers().floor_cost))))
+	return {"base": base, "price": price, "saving": base - price}
+
+
+func depth_access_cost() -> int:
+	return int(depth_access_price_details().price)
+
+
+func buy_depth_access() -> String:
+	if not labyrinth_enabled or phase != "prepare":
+		return "Доступ к глубине покупают между волнами."
+	var price: int = depth_access_cost()
+	if gold < price:
+		return "Не хватает золота: нужно %d." % price
+	gold -= price
+	floor_count += 1
+	floor_traits.append("plain")
+	pending_floor = floor_count - 1
+	if has_run_skill("economy_construction_contract") and not bool(_skill_preparation.get("contract_granted", false)):
+		_skill_preparation.contract_granted = true
+		_skill_preparation.contract_available = true
+	phase = "floor_choice"
+	_log("Открыт слой глубины %d. Новые клетки раскапываются отдельно." % floor_count)
+	return ""
+
+
+func layout_neighbors(slot: int) -> Array[int]:
+	var result: Array[int] = []
+	if not labyrinth_enabled:
+		for other in [slot - 1, slot + 1]:
+			if _valid_slot(other) and layout_effect_scope(slot) == layout_effect_scope(other):
+				result.append(other)
+		return result
+	for other in _labyrinth.neighbors(slot):
+		if _valid_slot(other):
+			result.append(other)
+	return result
+
+
+func layout_next_neighbor(slot: int) -> int:
+	if not labyrinth_enabled:
+		var following: int = next_route_slot(slot)
+		return following if _valid_slot(following) and layout_effect_scope(slot) == layout_effect_scope(following) else -1
+	return _layout_directional_neighbor(slot, true)
+
+
+func layout_previous_neighbor(slot: int) -> int:
+	if not labyrinth_enabled:
+		if not _valid_slot(slot):
+			return -1
+		var previous: int = slot - (1 if (slot / SLOTS_PER_FLOOR) % 2 == 0 else -1)
+		return previous if _valid_slot(previous) and layout_effect_scope(slot) == layout_effect_scope(previous) else -1
+	return _layout_directional_neighbor(slot, false)
+
+
+func _layout_directional_neighbor(slot: int, forward: bool) -> int:
+	var distances: Dictionary = _labyrinth.distances_from_entrance()
+	if not distances.has(slot):
+		return -1
+	var selected: int = -1
+	var source_distance: int = int(distances[slot])
+	for other in layout_neighbors(slot):
+		if not distances.has(other) or layout_effect_scope(other) != layout_effect_scope(slot):
+			continue
+		var distance: int = int(distances[other])
+		var follows: bool = distance > source_distance or (distance == source_distance and other > slot)
+		if follows != forward:
+			continue
+		if selected < 0:
+			selected = other
+			continue
+		var selected_distance: int = int(distances[selected])
+		var nearer_order: bool = distance < selected_distance or (distance == selected_distance and other < selected)
+		if nearer_order == forward:
+			selected = other
+	return selected
+
+
+func _last_layout_trap(index: int) -> bool:
+	var distances: Dictionary = _labyrinth.distances_from_entrance()
+	var selected: int = -1
+	var farthest: int = -1
+	for slot in range(rooms.size()):
+		if not distances.has(slot) or layout_effect_scope(slot) != layout_effect_scope(index) or not _is_direct_trap(rooms[slot]):
+			continue
+		# Ascending stable slots retain the first candidate on equal distance.
+		if int(distances[slot]) > farthest:
+			farthest = int(distances[slot])
+			selected = slot
+	return selected == index
+
+
+func vampire_retreat_destination(from_place: int, source_slot: int = -1) -> int:
+	if not labyrinth_enabled or not _valid_slot(from_place):
+		return -1
+	var distances: Dictionary = _labyrinth.distances_from_entrance()
+	var reserved: Dictionary = reserved_room_slots()
+	var layer: int = depth_layer_for_slot(from_place)
+	var destination: int = -1
+	var farthest: int = -1
+	for slot in range(rooms.size()):
+		if slot == from_place or slot == current_place or slot == source_slot or is_treasury_slot(slot) or is_throne_slot(slot) or reserved.has(slot):
+			continue
+		if depth_layer_for_slot(slot) != layer or not distances.has(slot):
+			continue
+		# Ascending stable slots keep the lowest ID on equal entrance distance.
+		if int(distances[slot]) > farthest:
+			farthest = int(distances[slot])
+			destination = slot
+	return destination
+
+
+func labyrinth_disarm_roll() -> bool:
+	return _labyrinth.disarm_roll()
+
+
+func _advance_labyrinth_route() -> bool:
+	if phase != "raid" or not _waiting_for_entry:
+		return false
+	var previous: int = current_place
+	var destination: int = _labyrinth.next_place(self, current_place, movement_mode == "returning")
+	if not _labyrinth.neighbors(previous).has(destination):
+		# Topology is frozen during raids; this guard never teleports a party.
+		_log("Отряд не может перейти через закрытую границу.")
+		return false
+	_route_from_place = previous
+	current_place = destination
+	visit_id += 1
+	current_slot = rooms.size() if is_throne_slot(destination) else destination
+	active_target_id = ""
+	defender = {}
+	var message: String = "Отряд выходит из подземелья." if destination < 0 else "Отряд переходит в клетку %s." % str(_labyrinth.positions[destination])
+	_log(message)
+	_action("move", "party", "place_%d" % destination, 0, message)
+	last_action.meta = {"from_place": previous, "to_place": destination, "visit_id": visit_id, "boundary_id": LabyrinthRules.boundary_key(previous, destination), "movement_mode": movement_mode}
+	if destination < 0:
+		for hero in _living():
+			_settle_stolen_gold(hero, true)
+			hero.escaped = true
+		movement_mode = "escaped"
+		_finish_wave("robbed")
+		return false
+	if is_treasury_slot(destination):
+		_rob_treasury()
+		return false
+	if is_throne_slot(destination):
+		return true
+	var reserved: Dictionary = reserved_room_slots()
+	if reserved.has(destination):
+		current_slot = int(reserved[destination])
+	if _encounter.has_coffin_at(current_place):
+		return true
+	if rooms[current_slot].is_empty() or _encounter.consumed.has(current_slot):
+		return false
+	if _labyrinth.is_false_treasury(self, current_slot) and _labyrinth.reveal_mimic(int(rooms[current_slot].instance_id)):
+		_log("Ложная сокровищница раскрылась: отряд вступает в бой с мимиком. Казна не затронута.")
+		_action("mimic_revealed", _battle_source(current_slot), "party", 0, "Вместо сокровищ — мимик")
+	return true
+
+
+func _rob_treasury() -> void:
+	if _treasury_robbed:
+		return
+	_treasury_robbed = true
+	var party: Array[Dictionary] = []
+	for uid in _labyrinth.roster_ids:
+		for hero in _living():
+			if str(hero.instance_id) == uid:
+				party.append(hero)
+	if party.is_empty():
+		return
+	var stolen: int = gold / 2
+	gold -= stolen
+	report.stolen_gold = stolen
+	var share: int = stolen / party.size()
+	var remainder: int = stolen % party.size()
+	for index in range(party.size()):
+		_loot_shares[str(party[index].instance_id)] = share + (1 if index < remainder else 0)
+	_log("Казна ограблена: отряд забрал %d золота." % stolen)
+	_action("treasury_robbed", "party", "treasury", stolen, "Герои забрали половину золота из казны")
+	# No gold means no departure roll and no withdrawal caused by the robbery.
+	if stolen <= 0:
+		return
+	if not _departure_checked:
+		_departure_checked = true
+		if _labyrinth.departure_roll(party):
+			movement_mode = "returning"
+			_log("Отряд поворачивает к выходу с добычей.")
+		else:
+			_log("Отряд продолжает поход с добычей.")
+
+
+func _settle_stolen_gold(hero: Dictionary, escaped: bool) -> void:
+	var uid: String = str(hero.get("instance_id", ""))
+	if not _loot_shares.has(uid):
+		return
+	var amount: int = int(_loot_shares[uid])
+	_loot_shares.erase(uid)
+	if escaped:
+		report.escaped_gold = int(report.get("escaped_gold", 0)) + amount
+	else:
+		gold += amount
+		report.returned_gold = int(report.get("returned_gold", 0)) + amount
+		if amount > 0:
+			_log("%s потерял добычу: возвращено %d золота." % [hero.name, amount])
+			_action("loot_returned", uid, "treasury", amount, "Доля погибшего возвращена в казну")
+
+
+func _try_start_labyrinth_camp() -> bool:
+	if phase != "raid" or not _waiting_for_entry or current_place < 0 or is_throne_slot(current_place) or int(lord.hp) <= 0 or _living().is_empty():
+		return false
+	if _encounter.has_coffin_at(current_place):
+		return false
+	if _camp_processed_places.has(current_place) or not _camp_party_needs_healing():
+		return false
+	var room_slot: int = int(reserved_room_slots().get(current_place, current_place))
+	if not rooms[room_slot].is_empty():
+		var is_monster: bool = str(Content.room(str(rooms[room_slot].id)).kind) == "monster"
+		if is_monster and not _encounter.consumed.has(room_slot):
+			return false
+		var empty_magazine: bool = str(rooms[room_slot].get("evolution_path", "")) == "ballista_reserve_magazine" and int(rooms[room_slot].get("evolution_memory", {}).get("ammo", 0)) <= 0
+		if not is_monster and not empty_magazine and not bool(_encounter.disarmed.get(room_slot, false)) and not _encounter.consumed.has(room_slot):
+			return false
+	var junction: bool = _labyrinth.neighbors(current_place).size() >= 3
+	var critically_wounded: bool = false
+	for hero in _living():
+		if int(hero.hp) < float(hero.max_hp) * LabyrinthRules.LOW_HP_FRACTION:
+			critically_wounded = true
+			break
+	if not junction and not critically_wounded:
+		return false
+	_camp_processed_places[current_place] = true
+	_start_camp(layout_effect_scope(current_place))
+	return true
+
+
+func progression_reward_facts() -> Dictionary:
+	return {
+		"defended_waves": defended_waves.duplicate(),
+		"defeated_special_waves": defeated_special_waves.duplicate(),
+		"last_completed_wave": last_completed_wave, "last_defended_wave": last_defended_wave,
+		"kills": total_kills, "outcome": str(report.get("outcome", "")),
+	}
+
+
+func _layout_skill_description(id: String, original: String) -> String:
+	if not labyrinth_enabled:
+		return original
+	if id == "traps_deadly_corridor":
+		return "Одна ударная ловушка каждого слоя получает +15% урона: самая дальняя от входа по открытым проходам. При равенстве выбирается место с меньшим постоянным номером. Недостижимые ловушки не участвуют."
+	if id == "traps_hidden_drive":
+		return "Временно недоступен: новый эффект после переделки обезвреживания ещё не выбран."
+	if id in ["economy_building_estimate", "economy_building_estimate_2"]:
+		return "Доступ к следующему слою глубины дешевле на 5%. Сметы складываются, цена округляется вверх, минимум 1 золото. Раскопка отдельной клетки стоит 4 золота."
+	if id == "economy_construction_contract":
+		return "После покупки доступа к глубине одна следующая новая комната в этой подготовке дешевле на 2 золота, минимум 1. Один купон на подготовку; раскопка клетки его не выдаёт. Отмена постройки возвращает право."
+	if id == "shared_fire_support":
+		return "Баллиста в следующем соседнем месте поддерживает бой с существом перед ней: один настоящий выстрел на орудие за волну в том же слое. Болт расходуется; следопыт может обезвредить орудие с шансом 50%, при провале выстрел полный."
+	if id == "traps_tension":
+		return "+12% прямого урона баллисты всех форм. Следопыт может выключить её до конца волны с шансом 50% за один инструмент; при провале урон полный."
+	return original.replace("этажа", "слоя глубины").replace("этаже", "слое глубины").replace("этажей", "слоёв глубины").replace("этажи", "слои глубины").replace("этаж", "слой глубины")
+
+
+func layout_runtime_snapshot() -> Dictionary:
+	# Cheap observation only: no topology search, random draw, or lazy combat state.
+	var disabled_slots: Array[int] = []
+	if phase in ["raid", "camp", "result"]:
+		for key in _encounter.disarmed:
+			var slot: int = int(key)
+			if bool(_encounter.disarmed[key]) and _valid_slot(slot) and not rooms[slot].is_empty() and str(Content.room(str(rooms[slot].id)).kind) != "monster":
+				disabled_slots.append(slot)
+	disabled_slots.sort()
+	var carried_gold: int = 0
+	for amount in _loot_shares.values():
+		carried_gold += int(amount)
+	return {"current_place": current_place, "movement_mode": movement_mode, "loot_shares": _loot_shares.duplicate(true), "disabled_slots": disabled_slots, "carried_gold": carried_gold, "recovering_vampires": _encounter.recovery_snapshot()}

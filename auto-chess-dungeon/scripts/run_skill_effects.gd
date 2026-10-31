@@ -57,6 +57,10 @@ static func heal_amount(g, amount: float, mass: bool = false) -> int:
 	return maxi(0, ceili(amount * (1.0 + bonus)))
 
 
+static func linked_in_layer(g, source: int, target: int) -> bool:
+	return source >= 0 and target >= 0 and source < g.rooms.size() and target < g.rooms.size() and g.layout_effect_scope(source) == g.layout_effect_scope(target) and g.layout_neighbors(source).has(target)
+
+
 static func actor_spawn(g, actor: Dictionary) -> void:
 	var slot: int = int(actor.source_slot)
 	var state: Dictionary = room(g, slot)
@@ -73,7 +77,7 @@ static func actor_spawn(g, actor: Dictionary) -> void:
 	if not bool(state.get("entered", false)):
 		state.entered = true
 		var prev: int = g._previous_route_slot(slot)
-		if has(g, "creatures_discipline") and prev >= 0 and prev < g.rooms.size() and prev / 5 == slot / 5 and not g.rooms[prev].is_empty() and str(g.room_stats(prev).kind) == "monster" and str(g.rooms[prev].get("status", "")) == "cleared":
+		if has(g, "creatures_discipline") and linked_in_layer(g, prev, slot) and not g.rooms[prev].is_empty() and str(g.room_stats(prev).kind) == "monster" and str(g.rooms[prev].get("status", "")) == "cleared":
 			state.discipline = 2
 	mark(actor, "creatures_discipline", int(state.get("discipline", 0)))
 	mark(actor, "creatures_united_pack", int(state.get("pack", 0)))
@@ -236,7 +240,7 @@ static func trap_bonus(g, slot: int, target: Dictionary, extra: float = 0.0) -> 
 	var state: Dictionary = room(g, slot)
 	var bonus: float = extra
 	var previous: int = g._previous_route_slot(slot)
-	if has(g, "traps_cascade") and previous >= 0 and previous < g.rooms.size() and previous / 5 == slot / 5 and not g.rooms[previous].is_empty() and bool(room(g, previous).get("direct_damage", false)) and str(g.room_stats(previous).kind) != "monster" and once(state, "cascade"):
+	if has(g, "traps_cascade") and linked_in_layer(g, previous, slot) and not g.rooms[previous].is_empty() and bool(room(g, previous).get("direct_damage", false)) and str(g.room_stats(previous).kind) != "monster" and once(state, "cascade"):
 		bonus += value(g, "traps_cascade", "first_direct_hit_damage_bonus")
 	if has(g, "traps_finishing_mechanisms") and int(target.hp) * 10 < int(target.max_hp) * 3 and once(state, "finishing"):
 		bonus += value(g, "traps_finishing_mechanisms", "hit_damage_bonus")
@@ -269,12 +273,16 @@ static func healing_factor(g, hero: Dictionary, amount: int) -> float:
 
 
 static func transfer_neighbor(g, slot: int, skill_id: String) -> int:
-	var next: int = g.next_route_slot(slot)
-	if next >= g.rooms.size() or next / 5 != slot / 5:
+	# Each boundary contributes to one deterministic recipient, never every branch.
+	var next: int = g.layout_next_neighbor(slot)
+	if not linked_in_layer(g, slot, next):
 		return -1
 	if g.rooms[next].is_empty() and has(g, skill_id):
-		next = g.next_route_slot(next)
-	if next >= g.rooms.size() or next / 5 != slot / 5 or g.rooms[next].is_empty() or str(g.room_stats(next).kind) != "monster":
+		var gap: int = next
+		next = g.layout_next_neighbor(gap)
+		if next == slot or not linked_in_layer(g, gap, next):
+			return -1
+	if next < 0 or next >= g.rooms.size() or g.rooms[next].is_empty() or str(g.room_stats(next).kind) != "monster":
 		return -1
 	return next
 

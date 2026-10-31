@@ -172,7 +172,7 @@ func refresh_runtime() -> void:
 					_defeated_centers[int(actor_data.get("source_slot", -1))] = true
 				continue
 			var slot: int = int(actor_data.get("display_slot", actor_data.get("source_slot", game.current_slot)))
-			if str(actor_data.get("phase_id", "")) == "throne_guard" or str(actor_data.get("id", "")) == "lord":
+			if str(actor_data.get("phase_id", "")) == "throne_guard" or str(actor_data.get("id", "")) == "lord" or (game.labyrinth_enabled and game.is_throne_slot(slot)):
 				slot = game.rooms.size()
 			if not _slot_actors.has(slot):
 				_slot_actors[slot] = []
@@ -200,7 +200,7 @@ func refresh_runtime() -> void:
 				_events.append({"event": event.duplicate(true), "age": 0.0})
 				if str(event.get("kind", "")) in ["soul", "soul_shatter"]:
 					var origin: Vector2 = _hero_positions.get(str(event.get("actor", "")), _party_position) + Vector2(0, -20)
-					soul_visual_requested.emit(get_global_transform() * origin, int(event.get("amount", 0)))
+					soul_visual_requested.emit(visual_to_global(origin), int(event.get("amount", 0)))
 			while _events.size() > 24:
 				_events.pop_front()
 	queue_redraw()
@@ -1158,9 +1158,9 @@ func _draw_party_links(living: Array[Dictionary]) -> void:
 
 
 func draw_ellipse_shadow(at: Vector2, radius: float) -> void:
-	draw_set_transform(at, 0, Vector2(1, 0.32))
+	_visual_transform(at, 0, Vector2(1, 0.32))
 	draw_circle(Vector2.ZERO, radius, Color(0, 0, 0, 0.23))
-	draw_set_transform(Vector2.ZERO)
+	_visual_transform(Vector2.ZERO)
 
 
 func _draw_cinematic() -> void:
@@ -1496,3 +1496,11 @@ func _draw_combos() -> void:
 		draw_circle(center, 4 if compact else 8, INK)
 		draw_arc(center, 4 if compact else 8, 0, TAU, 20, GOLD, 1.0 if compact else 1.5, true)
 		_center_text("+", center + Vector2(0, 3 if compact else 4), 8 if compact else 12, GOLD)
+
+
+func visual_to_global(at: Vector2) -> Vector2:
+	return get_global_transform() * at
+
+
+func _visual_transform(at: Vector2, rotation: float = 0.0, scale_factor: Vector2 = Vector2.ONE) -> void:
+	draw_set_transform(at, rotation, scale_factor)

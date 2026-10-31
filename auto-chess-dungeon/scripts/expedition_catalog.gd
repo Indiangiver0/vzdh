@@ -1,7 +1,10 @@
 extends RefCounted
 ## Run-only choices and readable party templates. No state or random draws here.
 
-const BOSS_WAVE_INTERVAL: int = 25
+const BOSS_WAVE_INTERVAL: int = 50
+const INSTANT_GOLD_REWARD: int = 30
+const INSTANT_LORD_HEAL_FRACTION: float = 0.5
+const INSTANT_RUN_SOULS_REWARD: int = 3
 
 static func blueprint_ids() -> Array[String]:
 	return ["shackles", "silence", "rust", "guardian", "ogre", "war_hound", "wraith", "vampire", "ballista", "blade_floor"]
@@ -17,10 +20,13 @@ static func combos() -> Array[Dictionary]:
 
 static func relics() -> Array[Dictionary]:
 	return [
-		{"id": "trap_echo", "name": "Эхо механизмов", "description": "Первая подходящая ловушка каждого этажа за волну даёт слабое эхо: 40% урона или тика яда (не менее 1); временный контроль действует на 1 тик дольше (до 6). Цепь, весы, совместный караул, костедробилка, Чёрная месса и Переплавка сохраняют заряд для следующей подходящей ловушки.", "icon": "res://assets/icons/spikes.svg"},
-		{"id": "war_banner", "name": "Знамя засады", "description": "Первый удар каждого существа в каждой волне наносит на 15% больше урона. На Владыку не действует.", "icon": "res://assets/icons/executioner.svg"},
-		{"id": "tithe_seal", "name": "Печать дани", "description": "За каждую следующую отражённую волну: ещё 2 золота.", "icon": "res://assets/icons/goblin.svg"},
-		{"id": "guardian_oath", "name": "Клятва склепа", "description": "Все стражи склепа получают +1 брони. Работает также у купленных позже стражей.", "icon": "res://assets/icons/guardian.svg"},
+		{"id": "trap_echo", "kind": "passive", "name": "Эхо механизмов", "description": "Первая подходящая ловушка каждого этажа за волну даёт слабое эхо: 40% урона или тика яда (не менее 1); временный контроль действует на 1 тик дольше (до 6). Цепь, весы, совместный караул, костедробилка, Чёрная месса и Переплавка сохраняют заряд для следующей подходящей ловушки.", "icon": "res://assets/icons/spikes.svg"},
+		{"id": "war_banner", "kind": "passive", "name": "Знамя засады", "description": "Первый удар каждого существа в каждой волне наносит на 15% больше урона. На Владыку не действует.", "icon": "res://assets/icons/executioner.svg"},
+		{"id": "tithe_seal", "kind": "passive", "name": "Печать дани", "description": "За каждую следующую отражённую волну: ещё 2 золота.", "icon": "res://assets/icons/goblin.svg"},
+		{"id": "guardian_oath", "kind": "passive", "name": "Клятва склепа", "description": "Все стражи склепа получают +1 брони. Работает также у купленных позже стражей.", "icon": "res://assets/icons/guardian.svg"},
+		{"id": "instant_gold_cache", "kind": "instant", "name": "Золотой тайник", "effect": "gold", "amount": INSTANT_GOLD_REWARD, "description": "Сразу получить %d золота." % INSTANT_GOLD_REWARD, "icon": "res://assets/icons/goblin.svg"},
+		{"id": "instant_lord_restoration", "kind": "instant", "name": "Кубок восстановления", "effect": "lord_heal", "heal_fraction": INSTANT_LORD_HEAL_FRACTION, "description": "Сразу восстановить до 50% максимального HP Владыки, не превышая максимум. Не воскрешает.", "icon": "res://assets/icons/guardian.svg"},
+		{"id": "instant_run_souls", "kind": "instant", "name": "Сгусток душ", "effect": "run_souls", "amount": INSTANT_RUN_SOULS_REWARD, "description": "Сразу получить %d души текущего забега для навыков." % INSTANT_RUN_SOULS_REWARD, "icon": "res://assets/icons/wraith.svg"},
 	]
 
 

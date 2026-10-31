@@ -140,6 +140,44 @@ static func reward(cleared: int, kills: int, previous_best: int) -> Dictionary:
 	}
 
 
+static func reward_from_facts(facts: Dictionary, previous_best: int, claimed_milestones: Variant = null) -> Dictionary:
+	var defended: Array[int] = _wave_ids(facts.get("defended_waves", []))
+	var special: Array[int] = _wave_ids(facts.get("defeated_special_waves", []))
+	var claimed: Array[int] = _wave_ids(claimed_milestones)
+	# A missing old field means earlier milestones were already paid. An explicit
+	# empty array belongs to the new schema and must stay empty even after a record.
+	if claimed_milestones == null:
+		for milestone in range(5, maxi(0, previous_best) + 1, 5):
+			claimed.append(milestone)
+	var earned_milestones: Array[int] = []
+	var special_count: int = 0
+	for completed in defended:
+		if special.has(completed):
+			special_count += 1
+		if completed % 5 == 0 and not claimed.has(completed):
+			earned_milestones.append(completed)
+	var wave_reward: int = 2 * defended.size()
+	var kill_reward: int = maxi(0, _safe_int(facts.get("kills", 0))) / 3
+	var elite_reward: int = 5 * special_count
+	var milestone_reward: int = 10 * earned_milestones.size()
+	return {
+		"waves": wave_reward, "kills": kill_reward, "elites": elite_reward,
+		"milestones": milestone_reward, "milestone_waves": earned_milestones,
+		"total": wave_reward + kill_reward + elite_reward + milestone_reward,
+	}
+
+
+static func _wave_ids(value: Variant) -> Array[int]:
+	var result: Array[int] = []
+	if value is Array:
+		for candidate in value:
+			var number: int = _safe_int(candidate)
+			if number > 0 and not result.has(number):
+				result.append(number)
+	result.sort()
+	return result
+
+
 static func _safe_int(value: Variant, fallback: int = 0) -> int:
 	if value is int:
 		return int(value)

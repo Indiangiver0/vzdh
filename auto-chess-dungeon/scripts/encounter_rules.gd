@@ -10,6 +10,12 @@ var owners: Dictionary = {}
 var consumed: Dictionary = {}
 var disarmed: Dictionary = {}
 var spent: Dictionary = {}
+# Physical trap visits are distinct from wave-wide support and skill charges.
+var trap_visits: Dictionary = {}
+var encounter_open: bool = false
+var last_entry_visit: int = -1
+# Relocated vampires keep the same actor, source-room owner, and wave charges.
+var recovering: Dictionary = {}
 var pending: Array[Dictionary] = []
 var throne_guards: Array[Dictionary] = []
 var spirit_cover: Dictionary = {}
@@ -26,6 +32,10 @@ func start_wave(g) -> void:
 	consumed.clear()
 	disarmed.clear()
 	spent.clear()
+	trap_visits.clear()
+	encounter_open = false
+	last_entry_visit = -1
+	recovering.clear()
 	pending.clear()
 	throne_guards.clear()
 	spirit_cover.clear()
@@ -48,7 +58,7 @@ func start_wave(g) -> void:
 		if str(stats.get("evolution_path", "")) == "wraith_twilight_hall":
 			var destination: int = next_neighbor(g, slot)
 			if int(stats.evolution_stage) >= 15 and str(g.rooms[slot].get("spirit_direction", "next")) == "previous":
-				destination = g._previous_route_slot(slot)
+				destination = g.layout_previous_neighbor(slot)
 			if same_floor(g, slot, destination) and not g.rooms[destination].is_empty() and str(g.room_stats(destination).kind) == "monster" and g.room_stats(destination).tags.has("corporeal"):
 				spirit_cover[destination] = slot
 		if str(stats.get("evolution_path", "")) == "wraith_throne_guardian":
@@ -82,11 +92,12 @@ func params(actor: Dictionary) -> Dictionary:
 
 
 func same_floor(g, a: int, b: int) -> bool:
-	return a >= 0 and b >= 0 and a < g.rooms.size() and b < g.rooms.size() and a / 5 == b / 5
+	# Depth layers retain their biome/once-per-layer rules; array positions do not.
+	return a >= 0 and b >= 0 and a < g.rooms.size() and b < g.rooms.size() and g.layout_effect_scope(a) == g.layout_effect_scope(b)
 
 
 func next_neighbor(g, slot: int) -> int:
-	var n: int = g.next_route_slot(slot)
+	var n: int = g.layout_next_neighbor(slot)
 	return n if same_floor(g, slot, n) else -1
 
 
@@ -175,20 +186,47 @@ func sync_primary(g) -> void:
 				alive.append(actor)
 	if not alive.is_empty():
 		g.defender = alive[0]
+		# Publication follows the encounter owner without reordering attacks.
+		for actor in alive:
+			var owns_encounter: bool = str(actor.get("actor_id", "")) == "lord" if g.current_slot == g.rooms.size() else int(actor.source_slot) == g.current_slot and str(actor.get("phase_id", "")) != "appendage"
+			if owns_encounter:
+				g.defender = actor
+				break
+	elif g.labyrinth_enabled:
+		g.defender = {}
 	g.defenders = actors
 	for actor in actors:
 		Skills.publish(g, actor)
 		var slot: int = int(actor.source_slot)
-		if slot >= 0 and slot < g.rooms.size() and not g.rooms[slot].is_empty():
+		# A living chamber has one vulnerable heart; its untargetable mouths
+		# keep their own actor state without replacing the room's displayed HP.
+		if slot >= 0 and slot < g.rooms.size() and not g.rooms[slot].is_empty() and str(actor.get("phase_id", "")) != "appendage":
 			g.rooms[slot].current_hp = int(actor.hp)
 
 
 func enter(g) -> void:
-	end_combat(g)
-	var slot: int = g.next_route_slot(g.current_slot)
-	while slot < g.rooms.size() and (g.rooms[slot].is_empty() or consumed.has(slot)):
-		slot = g.next_route_slot(slot)
-	g.current_slot = mini(slot, g.rooms.size())
+	if g.labyrinth_enabled:
+		# A route step may visit an empty place, treasury, or defeated room.
+		# It never skips physical visits or recreates an unfinished encounter.
+		if not g._waiting_for_entry:
+			return
+		if encounter_open:
+			end_combat(g)
+		if not g._advance_labyrinth_route():
+			return
+		if last_entry_visit == int(g.visit_id):
+			return
+		last_entry_visit = int(g.visit_id)
+		if g.current_slot < g.rooms.size() and consumed.has(g.current_slot) and not has_coffin_at(g.current_place):
+			g._waiting_for_entry = true
+			return
+	else:
+		end_combat(g)
+		var slot: int = g.next_route_slot(g.current_slot)
+		while slot < g.rooms.size() and (g.rooms[slot].is_empty() or consumed.has(slot)):
+			slot = g.next_route_slot(slot)
+		g.current_slot = mini(slot, g.rooms.size())
+	encounter_open = true
 	g.combat_tick = 0
 	g.rage = 0
 	actors.clear()
@@ -206,20 +244,24 @@ func enter(g) -> void:
 		hero.equipment_state = state
 	if g.current_slot == g.rooms.size():
 		g._reorder_party("monster")
+		# Keep the established guard/Lord order; reinforcements join behind them.
 		for guard in throne_guards:
 			add_actor(g, guard)
 		add_actor(g, make_actor(g, g.rooms.size(), g.lord))
+		join_ready_vampires(g)
 		g._battle_visit("lord")
 		begin_combat(g)
 		return
-	var stats: Dictionary = g.room_stats(g.current_slot)
-	g.rooms[g.current_slot].status = "active"
-	g._battle_visit(g._battle_source())
-	g._reorder_party(str(stats.kind))
-	if str(stats.kind) == "monster":
+	var has_room: bool = not g.rooms[g.current_slot].is_empty() and not consumed.has(g.current_slot)
+	var stats: Dictionary = g.room_stats(g.current_slot) if has_room else {}
+	if has_room:
+		g.rooms[g.current_slot].status = "active"
+		g._battle_visit(g._battle_source())
+		g._reorder_party(str(stats.kind))
+	if has_room and str(stats.kind) == "monster":
 		add_actor(g, make_actor(g, g.current_slot, stats))
 		var gallery: Dictionary = take_pending("gallery", g.current_slot)
-		if not gallery.is_empty():
+		if not gallery.is_empty() and not consumed.has(int(gallery.second)) and int(gallery.second) != g.current_slot:
 			var second: int = int(gallery.second)
 			var ally: Dictionary = make_actor(g, second, g.room_stats(second))
 			ally.delay = int(gallery.get("delay", 0))
@@ -227,14 +269,26 @@ func enter(g) -> void:
 			consumed[second] = true
 			g.rooms[second].status = "active"
 			g._battle_visit(g._battle_source(second))
+		catch_coffins(g)
+		join_ready_vampires(g)
 		begin_combat(g)
-	else:
+	elif has_room:
+		catch_coffins(g)
 		var disabled: bool = disarm(g, g.current_slot)
 		trigger_trap(g, g.current_slot, stats, disabled)
 		if not trap_sequence.is_empty():
 			g._waiting_for_entry = false
 			return
 		finish_trap(g)
+	else:
+		# A coffin can occupy a physically empty or already defeated room.
+		catch_coffins(g)
+		if not living_actors().is_empty():
+			g._reorder_party("monster")
+			join_ready_vampires(g)
+			begin_combat(g)
+		else:
+			g._waiting_for_entry = true
 
 
 func finish_trap(g) -> void:
@@ -247,7 +301,19 @@ func finish_trap(g) -> void:
 		g._mark_room_held()
 		g._finish_wave()
 	else:
-		g.rooms[g.current_slot].status = "cleared"
+		complete_trap_visit(g)
+
+
+func complete_trap_visit(g) -> void:
+	g.rooms[g.current_slot].status = "cleared"
+	if not living_actors().is_empty():
+		# The trap resolves first; an intercepted coffin then holds the party.
+		g.combat_tick = 0
+		g.rage = 0
+		g._reorder_party("monster")
+		join_ready_vampires(g)
+		begin_combat(g)
+	else:
 		g._waiting_for_entry = true
 
 
@@ -260,11 +326,29 @@ func take_pending(kind: String, slot: int) -> Dictionary:
 	return {}
 
 
-func disarm(g, slot: int) -> bool:
+func disarm(g, slot: int, preferred_hero: Dictionary = {}) -> bool:
 	if disarmed.has(slot):
 		return bool(disarmed[slot])
-	var result: bool = g._spend_disarm()
+	# Creature explosives keep their existing counterplay; the new roll belongs
+	# to actual traps. The tutorial also keeps its original weakening rules.
+	if not g.labyrinth_enabled or str(g.room_stats(slot).kind) == "monster":
+		var weakened: bool = g._spend_disarm()
+		disarmed[slot] = weakened
+		return weakened
+	var scout: Dictionary = preferred_hero
+	if scout.is_empty():
+		for hero in g._living():
+			if str(hero.id) == "rogue" and int(hero.get("disarm_charges", 0)) > 0:
+				scout = hero
+				break
+	# No available tool is not a failed roll and does not consume the attempt.
+	if scout.is_empty() or not g._spend_disarm(scout):
+		return false
+	var result: bool = g.labyrinth_disarm_roll()
 	disarmed[slot] = result
+	var message: String = "Следопыт обезвредил ловушку до конца волны." if result else "Следопыт не смог обезвредить ловушку: повторной попытки не будет."
+	event(g, "disarm", str(scout.instance_id), "room_%d" % slot, 1, message, slot)
+	g.last_action.meta = {"success": result, "tools_spent": 1, "room_instance_id": int(g.rooms[slot].get("instance_id", slot)), "wave_id": g.wave, "visit_id": g.visit_id}
 	return result
 
 
@@ -303,12 +387,116 @@ func poison(g, hero: Dictionary, damage: float, duration: int, source: String, e
 	g._apply_hero_poison(hero, maxf(0.0, damage), g._scaled_poison_duration(maxi(1, duration)), source, extra_bonus)
 
 
+func has_coffin_at(place_id: int) -> bool:
+	for record in recovering.values():
+		if int(record.place_id) == place_id and int(record.actor.hp) > 0:
+			return true
+	return false
+
+
+func recovery_snapshot() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for record in recovering.values():
+		var actor: Dictionary = record.actor
+		if int(actor.hp) <= 0:
+			continue
+		result.append({"actor_id": str(actor.actor_id), "source_slot": int(actor.source_slot), "place_id": int(record.place_id), "hp": int(actor.hp), "max_hp": int(actor.max_hp), "remaining_steps": int(record.remaining_steps), "ready": bool(record.ready), "in_combat": bool(record.in_combat)})
+	return result
+
+
+func advance_recovery(g) -> void:
+	# Called exactly once at the beginning of a model raid step, never by UI/camp.
+	if not g.labyrinth_enabled or g.phase != "raid":
+		return
+	for identity in recovering.keys():
+		var record: Dictionary = recovering[identity]
+		var actor: Dictionary = record.actor
+		if int(actor.hp) <= 0 or bool(record.ready):
+			continue
+		record.remaining_steps = maxi(0, int(record.remaining_steps) - 1)
+		actor.effects.ritual_ticks = int(record.remaining_steps)
+		if int(record.remaining_steps) > 0:
+			continue
+		wake_vampire(g, actor)
+		record.ready = true
+		event(g, "coffin_ready", str(actor.actor_id), "place_%d" % int(record.place_id), int(actor.hp) - int(actor.effects.body_hp), "Вампир завершает восстановление в гробу", int(actor.source_slot))
+		g.last_action.meta = {"actor_id": str(actor.actor_id), "source_slot": int(actor.source_slot), "place_id": int(record.place_id), "remaining_steps": 0, "in_combat": bool(record.in_combat), "healed": int(actor.hp) - int(actor.effects.body_hp)}
+		if bool(record.in_combat):
+			# An intercepted coffin wakes in its current encounter, without a copy.
+			recovering.erase(identity)
+
+
+func wake_vampire(g, actor: Dictionary) -> void:
+	actor.effects.erase("release_coffin")
+	actor.phase_id = "base"
+	actor.max_hp = int(actor.effects.body_max)
+	actor.hp = mini(int(actor.max_hp), int(actor.effects.body_hp) + Skills.heal_amount(g, actor.max_hp * float(params(actor).get("heal_fraction", 0.35))))
+	actor.charges.empowered_bite = tier(int(actor.stage)) == 3
+
+
+func retreat_vampire(g, actor: Dictionary) -> bool:
+	if not g.labyrinth_enabled:
+		return false
+	var destination: int = g.vampire_retreat_destination(g.current_place, int(actor.source_slot))
+	if destination < 0:
+		return false
+	var slot: int = int(actor.source_slot)
+	actor.display_slot = destination
+	actor.relocated = true
+	recovering[str(actor.actor_id)] = {"actor": actor, "place_id": destination, "remaining_steps": int(actor.effects.ritual_ticks), "ready": false, "in_combat": false, "origin_visit_id": int(g.visit_id), "combat_closed": false}
+	actors.erase(actor)
+	consumed[slot] = true
+	owners[slot].flags.relocated = true
+	g.rooms[slot].status = "retreated"
+	event(g, "bat_retreat", str(actor.actor_id), "place_%d" % destination, 0, "Вампир улетает в гроб в другой комнате", slot)
+	g.last_action.meta = {"actor_id": str(actor.actor_id), "source_slot": slot, "from_place": int(g.current_place), "to_place": destination, "remaining_steps": int(actor.effects.ritual_ticks)}
+	return true
+
+
+func catch_coffins(g) -> void:
+	if not g.labyrinth_enabled:
+		return
+	for identity in recovering.keys():
+		var record: Dictionary = recovering[identity]
+		var actor: Dictionary = record.actor
+		if int(record.place_id) != int(g.current_place) or int(actor.hp) <= 0 or bool(record.in_combat):
+			continue
+		record.in_combat = true
+		actor.display_slot = int(g.current_place)
+		actors.append(actor)
+		g._battle_visit(str(actor.source_room_uid))
+		if bool(record.ready):
+			recovering.erase(identity)
+			event(g, "reinforcement", str(actor.actor_id), "place_%d" % int(g.current_place), int(actor.hp), "Восстановившийся вампир встречает отряд у своего гроба", int(actor.source_slot))
+			g.last_action.meta = {"actor_id": str(actor.actor_id), "source_slot": int(actor.source_slot), "from_place": int(record.place_id), "to_place": int(g.current_place), "intercepted": true}
+		g.defenders = actors
+
+
+func join_ready_vampires(g) -> void:
+	if not g.labyrinth_enabled:
+		return
+	for identity in recovering.keys():
+		var record: Dictionary = recovering[identity]
+		var actor: Dictionary = record.actor
+		if not bool(record.ready) or bool(record.in_combat) or int(actor.hp) <= 0:
+			continue
+		var previous: int = int(record.place_id)
+		recovering.erase(identity)
+		actor.display_slot = int(g.current_place)
+		actors.append(actor)
+		g._battle_visit(str(actor.source_room_uid))
+		event(g, "reinforcement", str(actor.actor_id), "place_%d" % int(g.current_place), int(actor.hp), "Восстановившийся вампир вступает в следующий бой", int(actor.source_slot))
+		g.last_action.meta = {"actor_id": str(actor.actor_id), "source_slot": int(actor.source_slot), "from_place": previous, "to_place": int(g.current_place)}
+	g.defenders = actors
+
+
 func begin_combat(g) -> void:
 	sync_primary(g)
 	g._waiting_for_entry = false
 	g._begin_combat_effects()
 	for actor in actors.duplicate():
-		setup_actor(g, actor)
+		if not bool(actor.get("relocated", false)):
+			setup_actor(g, actor)
 	for index in range(pending.size() - 1, -1, -1):
 		var p: Dictionary = pending[index]
 		if int(p.get("slot", g.current_slot)) != g.current_slot:
@@ -363,7 +551,8 @@ func begin_combat(g) -> void:
 			event(g, "echo", str(p.source), "", int(p.damage), "Отзвук баньши проходит по залу")
 		pending.remove_at(index)
 	for actor in actors:
-		support_from_future(g, actor)
+		if not bool(actor.get("relocated", false)):
+			support_from_future(g, actor)
 	sync_primary(g)
 	if not g._living().is_empty():
 		g.active_target_id = str(g._living()[0].instance_id)
@@ -415,8 +604,19 @@ func has_class(g, id: String) -> bool:
 	return false
 
 
-func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
-	if spent.has(slot):
+func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool, physical_visit: bool = true) -> void:
+	if g.labyrinth_enabled:
+		if physical_visit:
+			if int(trap_visits.get(slot, -1)) == int(g.visit_id):
+				return
+			trap_visits[slot] = int(g.visit_id)
+			var state: Dictionary = Skills.room(g, slot)
+			state.shot_ids = []
+			state.shot_visit_id = int(g.visit_id)
+		if disabled:
+			event(g, "trap_disabled", "room_%d" % slot, "", 0, "Обезвреженная ловушка пропускает отряд.", slot)
+			return
+	elif spent.has(slot):
 		return
 	spent[slot] = true
 	var path: String = str(stats.get("evolution_path", ""))
@@ -451,9 +651,10 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 				for hero in party.slice(1):
 					trap_hit(g, slot, stats, hero, Skills.base_damage(stats) * float(p.get("surge_factor", 0.4)), power, Skills.value(g, "traps_runic_volley", "post_kill_volley_damage_bonus"))
 		"poison_fog_crypt":
-			pending.append({"kind": "fog", "damage": hit, "charges": 1 if disabled else int(p.get("pulses", 2)) + int(Skills.value(g, "poison_gas_reserve", "extra_cloud_pulses")), "battles": int(p.get("battles", 1)), "source": source})
+			var poison_ticks: int = int(p.get("poison_ticks", 3))
+			pending.append({"kind": "fog", "damage": hit, "charges": 1 if disabled else int(p.get("pulses", 2)) + int(Skills.value(g, "poison_gas_reserve", "extra_cloud_pulses")), "battles": int(p.get("battles", 1)), "poison_ticks": poison_ticks, "source": source})
 			for hero in party:
-				poison(g, hero, hit, 2, source)
+				poison(g, hero, hit, poison_ticks, source)
 		"poison_spore_garden":
 			front.spore = {"attacks": int(p.get("attacks_to_burst", 3)), "damage": hit, "duration": int(p.get("poison_ticks", 4)), "on_death": bool(p.get("death_burst", false)), "source": source}
 		"poison_distiller":
@@ -488,7 +689,7 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 				other.hp = int(other.hp) + transfer
 		"shackles_garrison_gallery":
 			var second: int = next_neighbor(g, n) if n >= 0 else -1
-			if monster_next and second >= 0 and not g.rooms[second].is_empty() and str(g.room_stats(second).kind) == "monster" and path_at(g, second) != "wraith_throne_guardian":
+			if monster_next and second >= 0 and second != slot and not consumed.has(n) and not consumed.has(second) and not g.rooms[second].is_empty() and str(g.room_stats(second).kind) == "monster" and path_at(g, second) != "wraith_throne_guardian":
 				pending.append({"kind": "gallery", "slot": n, "second": second, "delay": int(p.get("join_delay_rounds", 0)) + (int(p.get("disarmed_extra_rounds", 2)) if disabled else 0)})
 		"silence_black_mass":
 			pending.append({"kind": "mass", "fraction": float(p.get("redirect_fraction", 0.5)) * (0.5 if disabled else 1.0), "source": source})
@@ -543,7 +744,7 @@ func trigger_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
 
 
 func apply_trap_echo(g, slot: int, stats: Dictionary, party: Array[Dictionary], before_hp: Dictionary, pending_start: int, power: float) -> void:
-	var floor_index: int = slot / 5
+	var floor_index: int = g.layout_effect_scope(slot)
 	if not g.selected_relics.has("trap_echo") or g._echo_floors.has(floor_index):
 		return
 	var path: String = str(stats.get("evolution_path", ""))
@@ -608,8 +809,7 @@ func step(g) -> void:
 			g._finish_wave()
 		elif int(trap_sequence.remaining) <= 0:
 			trap_sequence.clear()
-			g.rooms[g.current_slot].status = "cleared"
-			g._waiting_for_entry = true
+			complete_trap_visit(g)
 		return
 	for actor in actors:
 		if int(actor.get("delay", 0)) > 0:
@@ -621,7 +821,7 @@ func step(g) -> void:
 	var fog: Dictionary = effects.get("fog", {})
 	if not fog.is_empty() and int(fog.charges) > 0 and g.combat_tick % 2 == 1:
 		for hero in g._living():
-			poison(g, hero, float(fog.damage), 2, str(fog.source))
+			poison(g, hero, float(fog.damage), int(fog.get("poison_ticks", 3)), str(fog.source))
 		fog.charges = int(fog.charges) - 1
 	g._apply_poison()
 	process_hero_deaths(g)
@@ -982,6 +1182,8 @@ func plan_actor(g, actor: Dictionary, strikes: Array[Dictionary]) -> void:
 	if str(actor.phase_id) == "throne_guard":
 		return
 	if str(actor.phase_id) == "sarcophagus":
+		if bool(actor.get("relocated", false)):
+			return
 		actor.effects.ritual_ticks = int(actor.effects.get("ritual_ticks", 3)) - 1
 		if int(actor.effects.ritual_ticks) <= 0:
 			actor.effects.release_coffin = true
@@ -1166,17 +1368,13 @@ func resolve_strikes(g, strikes: Array[Dictionary]) -> void:
 			after_actor_hit(g, strike)
 		elif not bool(strike.hero_target):
 			after_hero_hit(g, strike)
-	for actor in actors:
+	for actor in actors.duplicate():
 		if int(actor.hp) <= 0:
 			continue
 		var path: String = str(actor.path_id)
 		var t: int = tier(int(actor.stage))
 		if bool(actor.effects.get("release_coffin", false)):
-			actor.effects.erase("release_coffin")
-			actor.phase_id = "base"
-			actor.max_hp = int(actor.effects.body_max)
-			actor.hp = mini(int(actor.max_hp), int(actor.effects.body_hp) + Skills.heal_amount(g, actor.max_hp * float(params(actor).get("heal_fraction", 0.35))))
-			actor.charges.empowered_bite = t == 3
+			wake_vampire(g, actor)
 			event(g, "transform", str(actor.actor_id), "", int(actor.hp), "Вампир покидает саркофаг", int(actor.source_slot))
 		if int(actor.effects.get("pending_heal", 0)) > 0:
 			var gain: int = mini(int(actor.max_hp) - int(actor.hp), Skills.heal_amount(g, float(actor.effects.pending_heal)))
@@ -1205,7 +1403,8 @@ func resolve_strikes(g, strikes: Array[Dictionary]) -> void:
 			actor.phase_id = "sarcophagus"
 			actor.max_hp = maxi(1, ceili(float(actor.get("tree_base_hp", actor.max_hp)) * float(params(actor).get("coffin_hp_factor", 0.2)) * (1.0 + float(actor.get("tree_hp_bonus", 0.0)) + Skills.value(g, "creatures_sturdy_lid", "coffin_hp_bonus"))))
 			actor.hp = actor.max_hp
-			event(g, "transform", str(actor.actor_id), "", 3, "Вампир скрывается в саркофаге", int(actor.source_slot))
+			if not retreat_vampire(g, actor):
+				event(g, "transform", str(actor.actor_id), "", int(actor.effects.ritual_ticks), "Вампир скрывается в саркофаге", int(actor.source_slot))
 		if path == "mimic_false_treasury" and t >= 2 and float(actor.hp) / actor.max_hp < float(params(actor).get("relocate_hp_fraction", 0.5)) and not bool(actor.charges.get("second_shell", false)):
 			actor.charges.second_shell = true
 			actor.charges.decoys = 0 if has_class(g, "rogue") else 1
@@ -1404,6 +1603,7 @@ func resolve_actor_deaths(g) -> void:
 			event(g, "revive", str(actor.actor_id), str(actor.actor_id), int(actor.hp), "Метка возвращает защитника", int(actor.source_slot))
 			continue
 		actor.finalized = true
+		recovering.erase(str(actor.actor_id))
 		var slot: int = int(actor.source_slot)
 		var path: String = str(actor.path_id)
 		var t: int = tier(int(actor.stage))
@@ -1469,6 +1669,9 @@ func resolve_actor_deaths(g) -> void:
 
 
 func owner_alive(slot: int) -> bool:
+	for record in recovering.values():
+		if int(record.actor.source_slot) == slot and int(record.actor.hp) > 0:
+			return true
 	for actor in actors:
 		if int(actor.source_slot) == slot and int(actor.hp) > 0:
 			return true
@@ -1500,17 +1703,18 @@ func finish_owners(g) -> void:
 		Skills.room_defeated(g, int(slot))
 		if int(slot) >= g.rooms.size():
 			continue
-		g.rooms[int(slot)].status = "cleared"
+		g.rooms[int(slot)].status = "retreated" if bool(owner.flags.get("relocated", false)) else "cleared"
 		consumed[int(slot)] = true
 		var reward: Dictionary = owner.stats.duplicate(true)
 		var n: int = next_neighbor(g, int(slot))
 		if path_at(g, n) == "blade_floor_corpse_reclaimer":
 			var weak: bool = disarm(g, n)
 			spent[n] = true
-			var fraction: float = float(params(g.room_stats(n)).get("xp_reduction_fraction", 0.2)) * (0.5 if weak else 1.0)
-			var withheld: int = mini(maxi(0, int(reward.xp) - 1), floori(reward.xp * fraction))
-			reward.xp = int(reward.xp) - withheld
-			event(g, "reclaim", "room_%d" % n, str(slot), withheld, "Мельница костей: −%d XP героям" % withheld, n)
+			if not (g.labyrinth_enabled and weak):
+				var fraction: float = float(params(g.room_stats(n)).get("xp_reduction_fraction", 0.2)) * (0.5 if weak else 1.0)
+				var withheld: int = mini(maxi(0, int(reward.xp) - 1), floori(reward.xp * fraction))
+				reward.xp = int(reward.xp) - withheld
+				event(g, "reclaim", "room_%d" % n, str(slot), withheld, "Мельница костей: −%d XP героям" % withheld, n)
 		g._award_room_loot(reward)
 
 
@@ -1524,12 +1728,19 @@ func support_from_future(g, actor: Dictionary) -> void:
 	while n >= 0 and g.rooms[n].is_empty() and gap < 2:
 		gap += 1
 		n = next_neighbor(g, n)
-	if gap <= 0 or n < 0 or path_at(g, n) != "ballista_clear_sight" or spent.has(n):
+	if gap <= 0 or n < 0 or path_at(g, n) != "ballista_clear_sight" or (not g.labyrinth_enabled and spent.has(n)):
+		return
+	var state: Dictionary = Skills.room(g, n)
+	if g.labyrinth_enabled and bool(state.get("support", false)):
 		return
 	var stats: Dictionary = g.room_stats(n)
 	if gap > int(params(stats).get("max_empty_slots", 1)):
 		return
 	var disabled: bool = disarm(g, n)
+	if g.labyrinth_enabled:
+		state.support = true
+		if disabled:
+			return
 	spent[n] = true
 	if not g._living().is_empty():
 		var target: Dictionary = g._living()[-1]
@@ -1550,7 +1761,13 @@ func try_sapper_shot(g, hero: Dictionary) -> void:
 	if bool(state.get("wave:sapper", false)):
 		return
 	var n: int = next_neighbor(g, g.current_slot)
-	if n < 0 or g.rooms[n].is_empty() or str(g.room_stats(n).kind) == "monster" or spent.has(n) or disarmed.has(n):
+	if n < 0 or g.rooms[n].is_empty() or str(g.room_stats(n).kind) == "monster" or (not g.labyrinth_enabled and spent.has(n)) or disarmed.has(n):
+		return
+	if g.labyrinth_enabled:
+		disarm(g, n, hero)
+		if disarmed.has(n):
+			state["wave:sapper"] = true
+			hero.equipment_state = state
 		return
 	hero.disarm_charges = int(hero.disarm_charges) - 1
 	state["wave:sapper"] = true
@@ -1649,6 +1866,9 @@ func decay(g) -> void:
 
 
 func end_combat(g) -> void:
+	if g.labyrinth_enabled and not encounter_open:
+		return
+	encounter_open = false
 	var fog: Dictionary = effects.get("fog", {})
 	if not fog.is_empty():
 		for next in pending:
@@ -1667,6 +1887,17 @@ func end_combat(g) -> void:
 		g._clear_defender_effects(actor)
 		for key in ["run_impulse_count", "run_edge_bonus", "run_barrier", "run_cover_shield"]:
 			actor.erase(key)
+	for record in recovering.values():
+		if bool(record.in_combat) or bool(record.combat_closed) or int(record.origin_visit_id) != int(g.visit_id):
+			continue
+		# Leaving the actor list cannot extend temporary effects beyond its fight.
+		# Body/ritual state and the actor's wave-wide charges survive this cleanup.
+		var actor: Dictionary = record.actor
+		g._clear_defender_effects(actor)
+		for key in actor.effects.keys():
+			if str(key) not in ["body_hp", "body_max", "ritual_ticks"]:
+				actor.effects.erase(key)
+		record.combat_closed = true
 
 
 func clear_ended_duels(g) -> void:
@@ -1703,7 +1934,7 @@ func trap_hit(g, slot: int, stats: Dictionary, target: Dictionary, raw: float, p
 		return 0
 	var bonus: float = Skills.trap_bonus(g, slot, target, extra)
 	# Hidden drive reduces the amount prevented, never the remaining damage.
-	if power < 1.0 and Skills.has(g, "traps_hidden_drive"):
+	if not g.labyrinth_enabled and power < 1.0 and Skills.has(g, "traps_hidden_drive"):
 		power = 1.0 - (1.0 - power) * Skills.value(g, "traps_hidden_drive", "prevented_direct_damage_multiplier")
 	var amount: int = maxi(1, ceili(raw * (1.0 + float(stats.get("tree_damage_bonus", 0.0)) + bonus) * power))
 	var before: int = int(target.hp)
@@ -1713,6 +1944,8 @@ func trap_hit(g, slot: int, stats: Dictionary, target: Dictionary, raw: float, p
 
 
 func trigger_plain_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void:
+	if g.labyrinth_enabled and disabled:
+		return
 	var party: Array[Dictionary] = g._living()
 	if party.is_empty():
 		return
@@ -1721,7 +1954,7 @@ func trigger_plain_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void
 	var before_hp: Dictionary = {}
 	for hero in party:
 		before_hp[str(hero.instance_id)] = int(hero.hp)
-	var echo: bool = g.selected_relics.has("trap_echo") and not g._echo_floors.has(slot / 5)
+	var echo: bool = g.selected_relics.has("trap_echo") and not g._echo_floors.has(g.layout_effect_scope(slot))
 	if kind == "spikes":
 		var targets: Array[Dictionary] = party.duplicate()
 		var group: bool = str(stats.specialization) == "volley" or (str(stats.id) == "blade_floor" and str(stats.specialization) != "piercing")
@@ -1746,7 +1979,7 @@ func trigger_plain_trap(g, slot: int, stats: Dictionary, disabled: bool) -> void
 			duration = maxi(duration, mini(int(stats.effect_turns), int(stats.disarm_control_floor)))
 		if echo:
 			duration = mini(6, duration + 1)
-			g._echo_floors.append(slot / 5)
+			g._echo_floors.append(g.layout_effect_scope(slot))
 		for hero in party:
 			var key: String = "pending_" + kind
 			if duration >= int(hero.get(key, 0)):
@@ -1767,7 +2000,7 @@ func fire_support(g, actor: Dictionary) -> void:
 	if not Skills.has(g, "shared_fire_support") or str(actor.actor_id) == "lord":
 		return
 	var slot: int = next_neighbor(g, int(actor.source_slot))
-	if slot < 0 or g.rooms[slot].is_empty() or str(g.rooms[slot].id) != "ballista" or spent.has(slot) or g._living().is_empty():
+	if slot < 0 or g.rooms[slot].is_empty() or str(g.rooms[slot].id) != "ballista" or (not g.labyrinth_enabled and spent.has(slot)) or g._living().is_empty():
 		return
 	var state: Dictionary = Skills.room(g, slot)
 	if bool(state.get("support", false)):
@@ -1780,15 +2013,18 @@ func fire_support(g, actor: Dictionary) -> void:
 			return
 		state.support = true
 		var disabled: bool = disarm(g, slot)
+		if g.labyrinth_enabled and disabled:
+			return
 		var hero: Dictionary = g._living()[0]
 		var dealt: int = trap_hit(g, slot, stats, hero, Skills.base_damage(stats) * float(params(stats).get("shot_factor", 0.8)), 0.4 if disabled else 1.0)
-		state.shot_ids = [str(hero.instance_id)]
+		if not g.labyrinth_enabled:
+			state.shot_ids = [str(hero.instance_id)]
 		memory.ammo = int(memory.ammo) - 1
 		g.rooms[slot].evolution_memory = memory
 		event(g, "bolt", "room_%d" % slot, str(hero.instance_id), dealt, "Огневая поддержка расходует запасной болт", slot)
 	else:
 		state.support = true
-		trigger_trap(g, slot, stats, disarm(g, slot))
+		trigger_trap(g, slot, stats, disarm(g, slot), false)
 	sync_primary(g)
 	process_hero_deaths(g)
 
