@@ -1,0 +1,25 @@
+{
+  "version": "2.1.1",
+  "name": "Поход героев",
+  "source_commit": "7510b57ca3362489b44303952708a67f304e9d5f",
+  "source_tag": "v2.1.1",
+  "engine": "4.7.2.stable.official.ed1daf0bf",
+  "engine_runtime_source": "gh-pages 2fe09935d9f55499d982c811b7f424665881d875 (same Godot engine build; version confirmed in WebAssembly)",
+  "built_at_utc": "2026-10-28T07:38:41.578797+00:00",
+  "pack": "game-v2.1.1-7510b57.pck",
+  "pack_bytes": 839464,
+  "pack_sha256": "be9596c319bd76f0f0c69dbfdd1d8fc5089f0c06327750cd2a797e4c4c7214cd",
+  "content": [
+    "Five-hero boss party every 25 waves at 75% HP and damage",
+    "Hero camps after nonempty floors, with poison and priest healing rules",
+    "Paid repeatable camp interruption with E",
+    "124 one-time run skills including four camp skills",
+    "Smooth zoom, cursor anchoring, panning and responsive skill-map controls"
+  ],
+  "verification": {
+    "import": "exit 0, no reported errors",
+    "pack_export": "exit 0, no reported errors",
+    "pack_start": "120 headless frames, exit 0, no reported errors",
+    "prior_checks": "Native gameplay, progression and UI checks are documented in tests/README.md; long-run balance and physical touch devices were not measured"
+  }
+}
