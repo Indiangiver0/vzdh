@@ -1,14 +1,14 @@
 {
-  "version": "2.2.0",
-  "name": "Лабиринт",
-  "source_commit": "18db3fe65763e174e8ed3f9b05c0ed5615626c9c",
-  "source_tag": "v2.2.0",
+  "version": "2.2.1",
+  "name": "Крепость",
+  "source_commit": "e2253b1897daff4d72efdf514476565780779c24",
+  "source_tag": "v2.2.1",
   "engine": "4.7.2.stable.official.ed1daf0bf",
-  "engine_runtime_source": "7d2d9ebe39c42ba46b7f2df14c346bf9f91ce6da",
-  "built_at_utc": "2026-10-31T20:57:44.199611+00:00",
-  "pack": "game-v2.2.0-18db3fe.pck",
-  "pack_bytes": 905360,
-  "pack_sha256": "9487bd8fb4ad21f9ab9f93049a775c72179222d35e15bf9a95c7fd0ec99873a7",
+  "engine_runtime_source": "7fa12787d4a7e293cf091a293f7686305b1dfa56",
+  "built_at_utc": "2026-11-04T17:38:05.390640+00:00",
+  "pack": "game-v2.2.1-e2253b1.pck",
+  "pack_bytes": 83465868,
+  "pack_sha256": "cdcda7e732589addb76568c149a1cd36f80ab43692ab321c631c13f3227b4b5d",
   "previous_version_url": "https://indiangiver0.github.io/vzdh/versions/2.1.1/",
   "verification": {
     "build_steps": [
@@ -24,6 +24,6 @@
       }
     ],
     "gameplay_tests": "not run for this release",
-    "visual_review": "Native empty-start screen reviewed before release; physical touch and combat not verified"
+    "comparison_archive": "unchanged"
   }
 }
