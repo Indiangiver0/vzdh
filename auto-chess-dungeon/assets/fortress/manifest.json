@@ -1,0 +1,4660 @@
+{
+  "version": 1,
+  "sheets": {
+    "terrain-and-core": {
+      "path": "res://assets/fortress/terrain-and-core.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-goblin-spider": {
+      "path": "res://assets/fortress/rooms-goblin-spider.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-executioner-guardian": {
+      "path": "res://assets/fortress/rooms-executioner-guardian.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-ogre-war_hound": {
+      "path": "res://assets/fortress/rooms-ogre-war_hound.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-poison-mimic": {
+      "path": "res://assets/fortress/rooms-poison-mimic.png",
+      "width": 1536,
+      "height": 1024
+    },
+    "rooms-wraith-vampire": {
+      "path": "res://assets/fortress/rooms-wraith-vampire.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-spikes-shackles": {
+      "path": "res://assets/fortress/rooms-spikes-shackles.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-silence-rust": {
+      "path": "res://assets/fortress/rooms-silence-rust.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-ballista-blade_floor": {
+      "path": "res://assets/fortress/rooms-ballista-blade_floor.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "actors-1": {
+      "path": "res://assets/fortress/actors-1.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "actors-2": {
+      "path": "res://assets/fortress/actors-2.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "actors-3": {
+      "path": "res://assets/fortress/actors-3.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "actors-4": {
+      "path": "res://assets/fortress/actors-4.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "actors-5": {
+      "path": "res://assets/fortress/actors-5.png",
+      "width": 1402,
+      "height": 1122
+    },
+    "rooms-executioner-guardian-wide-v2": {
+      "path": "res://assets/fortress/rooms-executioner-guardian-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "rooms-goblin-spider-wide-v2": {
+      "path": "res://assets/fortress/rooms-goblin-spider-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "rooms-ogre-war_hound-wide-v2": {
+      "path": "res://assets/fortress/rooms-ogre-war_hound-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "rooms-wraith-vampire-wide-v2": {
+      "path": "res://assets/fortress/rooms-wraith-vampire-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "rooms-poison-mimic-wide-v2": {
+      "path": "res://assets/fortress/rooms-poison-mimic-wide-v3.png",
+      "width": 2172,
+      "height": 724
+    },
+    "rooms-ballista-blade_floor-wide-v2": {
+      "path": "res://assets/fortress/rooms-ballista-blade_floor-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "rooms-silence-rust-wide-v2": {
+      "path": "res://assets/fortress/rooms-silence-rust-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "rooms-spikes-shackles-wide-v2": {
+      "path": "res://assets/fortress/rooms-spikes-shackles-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    },
+    "terrain-and-core-wide-v2": {
+      "path": "res://assets/fortress/terrain-and-core-wide-v2.png",
+      "width": 1983,
+      "height": 793
+    }
+  },
+  "backgrounds": {
+    "rock-1": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        4,
+        2,
+        388,
+        194
+      ]
+    },
+    "rock-2": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ]
+    },
+    "rock-3": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ]
+    },
+    "rock-4": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ]
+    },
+    "rock-5": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ]
+    },
+    "rock-6": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ]
+    },
+    "rock-7": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ]
+    },
+    "rock-8": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ]
+    },
+    "empty-1": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ]
+    },
+    "empty-2": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ]
+    },
+    "empty-3": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ]
+    },
+    "empty-4": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ]
+    },
+    "empty-5": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ]
+    },
+    "empty-6": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ]
+    },
+    "empty-7": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ]
+    },
+    "empty-8": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ]
+    },
+    "treasury": {
+      "path": "res://assets/fortress/room-treasury-wide.png"
+    },
+    "throne": {
+      "path": "res://assets/fortress/room-throne-wide.png"
+    },
+    "entry": {
+      "sheet": "terrain-and-core-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ]
+    },
+    "passage": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1814,
+        545,
+        354,
+        177
+      ],
+      "room_id": "passage"
+    },
+    "goblin": {
+      "path": "res://assets/fortress/room-goblin-wide.png"
+    },
+    "war_banner": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Военный лагерь",
+      "path_id": "war_banner",
+      "room_id": "goblin"
+    },
+    "war_banner:5": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Знаменосец",
+      "path_id": "war_banner",
+      "room_id": "goblin"
+    },
+    "war_banner:15": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Чёрный штандарт",
+      "path_id": "war_banner",
+      "room_id": "goblin"
+    },
+    "saboteurs": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Подрывники",
+      "path_id": "saboteurs",
+      "room_id": "goblin"
+    },
+    "saboteurs:5": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Пороховая мастерская",
+      "path_id": "saboteurs",
+      "room_id": "goblin"
+    },
+    "saboteurs:15": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Пороховой погреб",
+      "path_id": "saboteurs",
+      "room_id": "goblin"
+    },
+    "pickpockets": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Карманники",
+      "path_id": "pickpockets",
+      "room_id": "goblin"
+    },
+    "pickpockets:5": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Шайка грабителей",
+      "path_id": "pickpockets",
+      "room_id": "goblin"
+    },
+    "pickpockets:15": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Воровской король",
+      "path_id": "pickpockets",
+      "room_id": "goblin"
+    },
+    "spider": {
+      "path": "res://assets/fortress/spider-room-wide.png"
+    },
+    "venom_hunter": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Ядовитый хищник",
+      "path_id": "venom_hunter",
+      "room_id": "spider"
+    },
+    "venom_hunter:5": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Кислотный охотник",
+      "path_id": "venom_hunter",
+      "room_id": "spider"
+    },
+    "venom_hunter:15": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Чумной пожиратель",
+      "path_id": "venom_hunter",
+      "room_id": "spider"
+    },
+    "cocoon_weaver": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Прядильщик",
+      "path_id": "cocoon_weaver",
+      "room_id": "spider"
+    },
+    "cocoon_weaver:5": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Ловчая паутина",
+      "path_id": "cocoon_weaver",
+      "room_id": "spider"
+    },
+    "cocoon_weaver:15": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Коконщик",
+      "path_id": "cocoon_weaver",
+      "room_id": "spider"
+    },
+    "brood_mother": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Матка выводка",
+      "path_id": "brood_mother",
+      "room_id": "spider"
+    },
+    "brood_mother:5": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Двойная кладка",
+      "path_id": "brood_mother",
+      "room_id": "spider"
+    },
+    "brood_mother:15": {
+      "sheet": "rooms-goblin-spider-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Королева гнезда",
+      "path_id": "brood_mother",
+      "room_id": "spider"
+    },
+    "executioner": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        4,
+        2,
+        388,
+        194
+      ],
+      "name": "executioner",
+      "room_id": "executioner"
+    },
+    "guillotine": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Гильотинёр",
+      "path_id": "guillotine",
+      "room_id": "executioner"
+    },
+    "guillotine:5": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Эшафот",
+      "path_id": "guillotine",
+      "room_id": "executioner"
+    },
+    "guillotine:15": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Красная гильотина",
+      "path_id": "guillotine",
+      "room_id": "executioner"
+    },
+    "duelist": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Дуэлянт",
+      "path_id": "duelist",
+      "room_id": "executioner"
+    },
+    "duelist:5": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Арена суда",
+      "path_id": "duelist",
+      "room_id": "executioner"
+    },
+    "duelist:15": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Чёрный судья",
+      "path_id": "duelist",
+      "room_id": "executioner"
+    },
+    "cleaver": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Перерубатель",
+      "path_id": "cleaver",
+      "room_id": "executioner"
+    },
+    "cleaver:5": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Широкий тесак",
+      "path_id": "cleaver",
+      "room_id": "executioner"
+    },
+    "cleaver:15": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Багровый мясник",
+      "path_id": "cleaver",
+      "room_id": "executioner"
+    },
+    "guardian": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ],
+      "name": "guardian",
+      "room_id": "guardian"
+    },
+    "guardian_parry": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Караульный",
+      "path_id": "guardian_parry",
+      "room_id": "guardian"
+    },
+    "guardian_parry:5": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Щитоносец",
+      "path_id": "guardian_parry",
+      "room_id": "guardian"
+    },
+    "guardian_parry:15": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Капитан караула",
+      "path_id": "guardian_parry",
+      "room_id": "guardian"
+    },
+    "guardian_aegis": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Хранитель эгиды",
+      "path_id": "guardian_aegis",
+      "room_id": "guardian"
+    },
+    "guardian_aegis:5": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Рунный бастион",
+      "path_id": "guardian_aegis",
+      "room_id": "guardian"
+    },
+    "guardian_aegis:15": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Бастион Ковена",
+      "path_id": "guardian_aegis",
+      "room_id": "guardian"
+    },
+    "guardian_possessed": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Одержимый страж",
+      "path_id": "guardian_possessed",
+      "room_id": "guardian"
+    },
+    "guardian_possessed:5": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Треснувший саркофаг",
+      "path_id": "guardian_possessed",
+      "room_id": "guardian"
+    },
+    "guardian_possessed:15": {
+      "sheet": "rooms-executioner-guardian-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Освобождённый дух",
+      "path_id": "guardian_possessed",
+      "room_id": "guardian"
+    },
+    "ogre": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        4,
+        2,
+        388,
+        194
+      ],
+      "name": "ogre",
+      "room_id": "ogre"
+    },
+    "ogre_earthshaker": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Сотрясатель",
+      "path_id": "ogre_earthshaker",
+      "room_id": "ogre"
+    },
+    "ogre_earthshaker:5": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Каменный громила",
+      "path_id": "ogre_earthshaker",
+      "room_id": "ogre"
+    },
+    "ogre_earthshaker:15": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Горный крушитель",
+      "path_id": "ogre_earthshaker",
+      "room_id": "ogre"
+    },
+    "ogre_stonethrower": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Камнемёт",
+      "path_id": "ogre_stonethrower",
+      "room_id": "ogre"
+    },
+    "ogre_stonethrower:5": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Метатель валунов",
+      "path_id": "ogre_stonethrower",
+      "room_id": "ogre"
+    },
+    "ogre_stonethrower:15": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Осадный исполин",
+      "path_id": "ogre_stonethrower",
+      "room_id": "ogre"
+    },
+    "ogre_maneater": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Людоед",
+      "path_id": "ogre_maneater",
+      "room_id": "ogre"
+    },
+    "ogre_maneater:5": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Костяная кухня",
+      "path_id": "ogre_maneater",
+      "room_id": "ogre"
+    },
+    "ogre_maneater:15": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Пожиратель знамён",
+      "path_id": "ogre_maneater",
+      "room_id": "ogre"
+    },
+    "war_hound": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ],
+      "name": "war_hound",
+      "room_id": "war_hound"
+    },
+    "war_hound_hellfire": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Адская гончая",
+      "path_id": "war_hound_hellfire",
+      "room_id": "war_hound"
+    },
+    "war_hound_hellfire:5": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Огненные врата",
+      "path_id": "war_hound_hellfire",
+      "room_id": "war_hound"
+    },
+    "war_hound_hellfire:15": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Пепельный Цербер",
+      "path_id": "war_hound_hellfire",
+      "room_id": "war_hound"
+    },
+    "war_hound_lycanthrope": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Лунная гончая",
+      "path_id": "war_hound_lycanthrope",
+      "room_id": "war_hound"
+    },
+    "war_hound_lycanthrope:5": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Оборотень",
+      "path_id": "war_hound_lycanthrope",
+      "room_id": "war_hound"
+    },
+    "war_hound_lycanthrope:15": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Кровавый оборотень",
+      "path_id": "war_hound_lycanthrope",
+      "room_id": "war_hound"
+    },
+    "war_hound_sapper_hunter": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Ищейка сапёров",
+      "path_id": "war_hound_sapper_hunter",
+      "room_id": "war_hound"
+    },
+    "war_hound_sapper_hunter:5": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Ловец сумок",
+      "path_id": "war_hound_sapper_hunter",
+      "room_id": "war_hound"
+    },
+    "war_hound_sapper_hunter:15": {
+      "sheet": "rooms-ogre-war_hound-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Разрыватель сумок",
+      "path_id": "war_hound_sapper_hunter",
+      "room_id": "war_hound"
+    },
+    "poison": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        4,
+        2,
+        354,
+        177
+      ],
+      "name": "poison",
+      "room_id": "poison"
+    },
+    "poison_fog_crypt": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        366,
+        2,
+        354,
+        177
+      ],
+      "name": "Туманный склеп",
+      "path_id": "poison_fog_crypt",
+      "room_id": "poison"
+    },
+    "poison_fog_crypt:5": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        728,
+        2,
+        354,
+        177
+      ],
+      "name": "Газовые цистерны",
+      "path_id": "poison_fog_crypt",
+      "room_id": "poison"
+    },
+    "poison_fog_crypt:15": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1090,
+        2,
+        354,
+        177
+      ],
+      "name": "Блуждающий мор",
+      "path_id": "poison_fog_crypt",
+      "room_id": "poison"
+    },
+    "poison_spore_garden": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1452,
+        2,
+        354,
+        177
+      ],
+      "name": "Сад спор",
+      "path_id": "poison_spore_garden",
+      "room_id": "poison"
+    },
+    "poison_spore_garden:5": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1814,
+        2,
+        354,
+        177
+      ],
+      "name": "Грибной питомник",
+      "path_id": "poison_spore_garden",
+      "room_id": "poison"
+    },
+    "poison_spore_garden:15": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        4,
+        183,
+        354,
+        177
+      ],
+      "name": "Моровой сад",
+      "path_id": "poison_spore_garden",
+      "room_id": "poison"
+    },
+    "poison_distiller": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        366,
+        183,
+        354,
+        177
+      ],
+      "name": "Алхимический дожигатель",
+      "path_id": "poison_distiller",
+      "room_id": "poison"
+    },
+    "poison_distiller:5": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        728,
+        183,
+        354,
+        177
+      ],
+      "name": "Реактор яда",
+      "path_id": "poison_distiller",
+      "room_id": "poison"
+    },
+    "poison_distiller:15": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1090,
+        183,
+        354,
+        177
+      ],
+      "name": "Великая перегонная",
+      "path_id": "poison_distiller",
+      "room_id": "poison"
+    },
+    "mimic": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1452,
+        183,
+        354,
+        177
+      ],
+      "name": "mimic",
+      "room_id": "mimic"
+    },
+    "mimic_weapon_swap": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1814,
+        183,
+        354,
+        177
+      ],
+      "name": "Проклятая оружейная",
+      "path_id": "mimic_weapon_swap",
+      "room_id": "mimic"
+    },
+    "mimic_weapon_swap:5": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        4,
+        364,
+        354,
+        177
+      ],
+      "name": "Мастер подделок",
+      "path_id": "mimic_weapon_swap",
+      "room_id": "mimic"
+    },
+    "mimic_weapon_swap:15": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        366,
+        364,
+        354,
+        177
+      ],
+      "name": "Арсенал обмана",
+      "path_id": "mimic_weapon_swap",
+      "room_id": "mimic"
+    },
+    "mimic_false_treasury": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        728,
+        364,
+        354,
+        177
+      ],
+      "name": "Ложная сокровищница",
+      "path_id": "mimic_false_treasury",
+      "room_id": "mimic"
+    },
+    "mimic_false_treasury:5": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1090,
+        364,
+        354,
+        177
+      ],
+      "name": "Беглый сундук",
+      "path_id": "mimic_false_treasury",
+      "room_id": "mimic"
+    },
+    "mimic_false_treasury:15": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1452,
+        364,
+        354,
+        177
+      ],
+      "name": "Зал ложных богатств",
+      "path_id": "mimic_false_treasury",
+      "room_id": "mimic"
+    },
+    "mimic_living_chamber": {
+      "path": "res://assets/fortress/living-chambers-states.png",
+      "region": [
+        4,
+        2,
+        716,
+        358
+      ],
+      "phases": {
+        "cleared": {
+          "path": "res://assets/fortress/living-chambers-states.png",
+          "region": [
+            4,
+            364,
+            716,
+            358
+          ]
+        }
+      }
+    },
+    "mimic_living_chamber:5": {
+      "path": "res://assets/fortress/living-chambers-states.png",
+      "region": [
+        728,
+        2,
+        716,
+        358
+      ],
+      "phases": {
+        "cleared": {
+          "path": "res://assets/fortress/living-chambers-states.png",
+          "region": [
+            728,
+            364,
+            716,
+            358
+          ]
+        }
+      }
+    },
+    "mimic_living_chamber:15": {
+      "path": "res://assets/fortress/living-chambers-states.png",
+      "region": [
+        1452,
+        2,
+        716,
+        358
+      ],
+      "phases": {
+        "cleared": {
+          "path": "res://assets/fortress/living-chambers-states.png",
+          "region": [
+            1452,
+            364,
+            716,
+            358
+          ]
+        }
+      }
+    },
+    "mimic_cursed_gift": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        728,
+        545,
+        354,
+        177
+      ],
+      "name": "Проклятая сокровищница",
+      "path_id": "mimic_cursed_gift",
+      "room_id": "mimic"
+    },
+    "mimic_cursed_gift:5": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1090,
+        545,
+        354,
+        177
+      ],
+      "name": "Зубастая приманка",
+      "path_id": "mimic_cursed_gift",
+      "room_id": "mimic"
+    },
+    "mimic_cursed_gift:15": {
+      "sheet": "rooms-poison-mimic-wide-v2",
+      "region": [
+        1452,
+        545,
+        354,
+        177
+      ],
+      "name": "Сокровищница предательства",
+      "path_id": "mimic_cursed_gift",
+      "room_id": "mimic"
+    },
+    "wraith": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        4,
+        2,
+        388,
+        194
+      ],
+      "name": "wraith",
+      "room_id": "wraith"
+    },
+    "wraith_twilight_hall": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Зал сумерек",
+      "path_id": "wraith_twilight_hall",
+      "room_id": "wraith"
+    },
+    "wraith_twilight_hall:5": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Теневой фонарь",
+      "path_id": "wraith_twilight_hall",
+      "room_id": "wraith"
+    },
+    "wraith_twilight_hall:15": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Врата теней",
+      "path_id": "wraith_twilight_hall",
+      "room_id": "wraith"
+    },
+    "wraith_banshee": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Баньши",
+      "path_id": "wraith_banshee",
+      "room_id": "wraith"
+    },
+    "wraith_banshee:5": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Плачущий склеп",
+      "path_id": "wraith_banshee",
+      "room_id": "wraith"
+    },
+    "wraith_banshee:15": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Траурный хор",
+      "path_id": "wraith_banshee",
+      "room_id": "wraith"
+    },
+    "wraith_throne_guardian": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Страж трона",
+      "path_id": "wraith_throne_guardian",
+      "room_id": "wraith"
+    },
+    "wraith_throne_guardian:5": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Печать телохранителя",
+      "path_id": "wraith_throne_guardian",
+      "room_id": "wraith"
+    },
+    "wraith_throne_guardian:15": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Призрачный бастион",
+      "path_id": "wraith_throne_guardian",
+      "room_id": "wraith"
+    },
+    "vampire": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ],
+      "name": "vampire",
+      "room_id": "vampire"
+    },
+    "vampire_hypnotist": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Гипнотизёр",
+      "path_id": "vampire_hypnotist",
+      "room_id": "vampire"
+    },
+    "vampire_hypnotist:5": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Алый салон",
+      "path_id": "vampire_hypnotist",
+      "room_id": "vampire"
+    },
+    "vampire_hypnotist:15": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Кровавый граф",
+      "path_id": "vampire_hypnotist",
+      "room_id": "vampire"
+    },
+    "vampire_sire": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Обращающий",
+      "path_id": "vampire_sire",
+      "room_id": "vampire"
+    },
+    "vampire_sire:5": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Гроб слуги",
+      "path_id": "vampire_sire",
+      "room_id": "vampire"
+    },
+    "vampire_sire:15": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Кровавый двор",
+      "path_id": "vampire_sire",
+      "room_id": "vampire"
+    },
+    "vampire_sarcophagus_master": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Хозяин гроба",
+      "path_id": "vampire_sarcophagus_master",
+      "room_id": "vampire"
+    },
+    "vampire_sarcophagus_master:5": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Каменный саркофаг",
+      "path_id": "vampire_sarcophagus_master",
+      "room_id": "vampire"
+    },
+    "vampire_sarcophagus_master:15": {
+      "sheet": "rooms-wraith-vampire-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Хозяин саркофага",
+      "path_id": "vampire_sarcophagus_master",
+      "room_id": "vampire"
+    },
+    "spikes": {
+      "path": "res://assets/fortress/room-spikes-wide.png"
+    },
+    "spikes_armour_press": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Шипастый пресс",
+      "path_id": "spikes_armour_press",
+      "room_id": "spikes"
+    },
+    "spikes_armour_press:5": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Сходящиеся стены",
+      "path_id": "spikes_armour_press",
+      "room_id": "spikes"
+    },
+    "spikes_armour_press:15": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Замковый пресс",
+      "path_id": "spikes_armour_press",
+      "room_id": "spikes"
+    },
+    "spikes_blood_surge": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Кровожадные колья",
+      "path_id": "spikes_blood_surge",
+      "room_id": "spikes"
+    },
+    "spikes_blood_surge:5": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Алый частокол",
+      "path_id": "spikes_blood_surge",
+      "room_id": "spikes"
+    },
+    "spikes_blood_surge:15": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Кровавый залп",
+      "path_id": "spikes_blood_surge",
+      "room_id": "spikes"
+    },
+    "spikes_collapsing_walkway": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Провальный настил",
+      "path_id": "spikes_collapsing_walkway",
+      "room_id": "spikes"
+    },
+    "spikes_collapsing_walkway:5": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Ломкий мост",
+      "path_id": "spikes_collapsing_walkway",
+      "room_id": "spikes"
+    },
+    "spikes_collapsing_walkway:15": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Мост над кольями",
+      "path_id": "spikes_collapsing_walkway",
+      "room_id": "spikes"
+    },
+    "shackles": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ],
+      "name": "shackles",
+      "room_id": "shackles"
+    },
+    "shackles_shared_chain": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Общая цепь",
+      "path_id": "shackles_shared_chain",
+      "room_id": "shackles"
+    },
+    "shackles_shared_chain:5": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Цепи узников",
+      "path_id": "shackles_shared_chain",
+      "room_id": "shackles"
+    },
+    "shackles_shared_chain:15": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Тройные оковы",
+      "path_id": "shackles_shared_chain",
+      "room_id": "shackles"
+    },
+    "shackles_prisoner_scales": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Весы узников",
+      "path_id": "shackles_prisoner_scales",
+      "room_id": "shackles"
+    },
+    "shackles_prisoner_scales:5": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Рунные весы",
+      "path_id": "shackles_prisoner_scales",
+      "room_id": "shackles"
+    },
+    "shackles_prisoner_scales:15": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Весы равновесия",
+      "path_id": "shackles_prisoner_scales",
+      "room_id": "shackles"
+    },
+    "shackles_garrison_gallery": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Решётчатый караул",
+      "path_id": "shackles_garrison_gallery",
+      "room_id": "shackles"
+    },
+    "shackles_garrison_gallery:5": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Общая галерея",
+      "path_id": "shackles_garrison_gallery",
+      "room_id": "shackles"
+    },
+    "shackles_garrison_gallery:15": {
+      "sheet": "rooms-spikes-shackles-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Караульный двор",
+      "path_id": "shackles_garrison_gallery",
+      "room_id": "shackles"
+    },
+    "silence": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        4,
+        2,
+        388,
+        194
+      ],
+      "name": "silence",
+      "room_id": "silence"
+    },
+    "silence_black_mass": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Чёрная месса",
+      "path_id": "silence_black_mass",
+      "room_id": "silence"
+    },
+    "silence_black_mass:5": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Тёмная часовня",
+      "path_id": "silence_black_mass",
+      "room_id": "silence"
+    },
+    "silence_black_mass:15": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Великая месса",
+      "path_id": "silence_black_mass",
+      "room_id": "silence"
+    },
+    "silence_null_bell": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Колокол очищения",
+      "path_id": "silence_null_bell",
+      "room_id": "silence"
+    },
+    "silence_null_bell:5": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Рунная звонница",
+      "path_id": "silence_null_bell",
+      "room_id": "silence"
+    },
+    "silence_null_bell:15": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Нулевой свод",
+      "path_id": "silence_null_bell",
+      "room_id": "silence"
+    },
+    "silence_funeral_peal": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Похоронный звон",
+      "path_id": "silence_funeral_peal",
+      "room_id": "silence"
+    },
+    "silence_funeral_peal:5": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Башня свечей",
+      "path_id": "silence_funeral_peal",
+      "room_id": "silence"
+    },
+    "silence_funeral_peal:15": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Траурная звонница",
+      "path_id": "silence_funeral_peal",
+      "room_id": "silence"
+    },
+    "rust": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ],
+      "name": "rust",
+      "room_id": "rust"
+    },
+    "rust_fracture_window": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Кузница трещин",
+      "path_id": "rust_fracture_window",
+      "room_id": "rust"
+    },
+    "rust_fracture_window:5": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Кузница клещей",
+      "path_id": "rust_fracture_window",
+      "room_id": "rust"
+    },
+    "rust_fracture_window:15": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Разжиматель лат",
+      "path_id": "rust_fracture_window",
+      "room_id": "rust"
+    },
+    "rust_shard_chamber": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Осколочная камера",
+      "path_id": "rust_shard_chamber",
+      "room_id": "rust"
+    },
+    "rust_shard_chamber:5": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Осколочный барабан",
+      "path_id": "rust_shard_chamber",
+      "room_id": "rust"
+    },
+    "rust_shard_chamber:15": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Раскалённая печь",
+      "path_id": "rust_shard_chamber",
+      "room_id": "rust"
+    },
+    "rust_reforging": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Переплавка",
+      "path_id": "rust_reforging",
+      "room_id": "rust"
+    },
+    "rust_reforging:5": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Щитовая кузница",
+      "path_id": "rust_reforging",
+      "room_id": "rust"
+    },
+    "rust_reforging:15": {
+      "sheet": "rooms-silence-rust-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Великая литейная",
+      "path_id": "rust_reforging",
+      "room_id": "rust"
+    },
+    "ballista": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        4,
+        2,
+        388,
+        194
+      ],
+      "name": "ballista",
+      "room_id": "ballista"
+    },
+    "ballista_clear_sight": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        401,
+        2,
+        388,
+        194
+      ],
+      "name": "Баллиста прострела",
+      "path_id": "ballista_clear_sight",
+      "room_id": "ballista"
+    },
+    "ballista_clear_sight:5": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        797,
+        2,
+        388,
+        194
+      ],
+      "name": "Стрелковая площадка",
+      "path_id": "ballista_clear_sight",
+      "room_id": "ballista"
+    },
+    "ballista_clear_sight:15": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1194,
+        2,
+        388,
+        194
+      ],
+      "name": "Осадная вышка",
+      "path_id": "ballista_clear_sight",
+      "room_id": "ballista"
+    },
+    "ballista_reserve_magazine": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1590,
+        2,
+        388,
+        194
+      ],
+      "name": "Запасной арсенал",
+      "path_id": "ballista_reserve_magazine",
+      "room_id": "ballista"
+    },
+    "ballista_reserve_magazine:5": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        4,
+        200,
+        388,
+        194
+      ],
+      "name": "Оружейный склад",
+      "path_id": "ballista_reserve_magazine",
+      "room_id": "ballista"
+    },
+    "ballista_reserve_magazine:15": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        401,
+        200,
+        388,
+        194
+      ],
+      "name": "Большой арсенал",
+      "path_id": "ballista_reserve_magazine",
+      "room_id": "ballista"
+    },
+    "ballista_siege": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        797,
+        200,
+        388,
+        194
+      ],
+      "name": "Осадная баллиста",
+      "path_id": "ballista_siege",
+      "room_id": "ballista"
+    },
+    "ballista_siege:5": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1194,
+        200,
+        388,
+        194
+      ],
+      "name": "Тяжёлое копьеметание",
+      "path_id": "ballista_siege",
+      "room_id": "ballista"
+    },
+    "ballista_siege:15": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1590,
+        200,
+        388,
+        194
+      ],
+      "name": "Замковый копьемёт",
+      "path_id": "ballista_siege",
+      "room_id": "ballista"
+    },
+    "blade_floor": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        3,
+        398,
+        390,
+        195
+      ],
+      "name": "blade_floor",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_blood_mill": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        400,
+        398,
+        390,
+        195
+      ],
+      "name": "Кровавая мельница",
+      "path_id": "blade_floor_blood_mill",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_blood_mill:5": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        796,
+        398,
+        390,
+        195
+      ],
+      "name": "Режущие ворота",
+      "path_id": "blade_floor_blood_mill",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_blood_mill:15": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1193,
+        398,
+        390,
+        195
+      ],
+      "name": "Большая кровавая мельница",
+      "path_id": "blade_floor_blood_mill",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_partition_corridor": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1589,
+        398,
+        390,
+        195
+      ],
+      "name": "Коридор перегородок",
+      "path_id": "blade_floor_partition_corridor",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_partition_corridor:5": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        4,
+        597,
+        388,
+        194
+      ],
+      "name": "Раздельные проходы",
+      "path_id": "blade_floor_partition_corridor",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_partition_corridor:15": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        401,
+        597,
+        388,
+        194
+      ],
+      "name": "Раздвижной лабиринт",
+      "path_id": "blade_floor_partition_corridor",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_corpse_reclaimer": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        797,
+        597,
+        388,
+        194
+      ],
+      "name": "Мельница костей",
+      "path_id": "blade_floor_corpse_reclaimer",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_corpse_reclaimer:5": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1194,
+        597,
+        388,
+        194
+      ],
+      "name": "Костедробилка",
+      "path_id": "blade_floor_corpse_reclaimer",
+      "room_id": "blade_floor"
+    },
+    "blade_floor_corpse_reclaimer:15": {
+      "sheet": "rooms-ballista-blade_floor-wide-v2",
+      "region": [
+        1590,
+        597,
+        388,
+        194
+      ],
+      "name": "Погребальная мельница",
+      "path_id": "blade_floor_corpse_reclaimer",
+      "room_id": "blade_floor"
+    },
+    "entrance": {
+      "path": "res://assets/fortress/room-entrance-wide.png"
+    },
+    "empty": {
+      "path": "res://assets/fortress/room-empty-wide.png"
+    }
+  },
+  "actors": {
+    "goblin": {
+      "sheet": "actors-1",
+      "cell": [
+        0,
+        0,
+        280,
+        280
+      ],
+      "name": "goblin",
+      "room_id": "goblin",
+      "bounds": [
+        96,
+        104,
+        210,
+        256
+      ],
+      "pivot": [
+        153.0,
+        256
+      ]
+    },
+    "war_banner": {
+      "sheet": "actors-1",
+      "cell": [
+        280,
+        0,
+        281,
+        280
+      ],
+      "name": "Военный лагерь",
+      "path_id": "war_banner",
+      "room_id": "goblin",
+      "bounds": [
+        94,
+        73,
+        191,
+        255
+      ],
+      "pivot": [
+        142.5,
+        255
+      ]
+    },
+    "war_banner:5": {
+      "sheet": "actors-1",
+      "cell": [
+        561,
+        0,
+        280,
+        280
+      ],
+      "name": "Знаменосец",
+      "path_id": "war_banner",
+      "room_id": "goblin",
+      "bounds": [
+        80,
+        67,
+        201,
+        256
+      ],
+      "pivot": [
+        140.5,
+        256
+      ]
+    },
+    "war_banner:15": {
+      "sheet": "actors-1",
+      "cell": [
+        841,
+        0,
+        281,
+        280
+      ],
+      "name": "Чёрный штандарт",
+      "path_id": "war_banner",
+      "room_id": "goblin",
+      "bounds": [
+        78,
+        78,
+        208,
+        257
+      ],
+      "pivot": [
+        143.0,
+        257
+      ]
+    },
+    "saboteurs": {
+      "sheet": "actors-1",
+      "cell": [
+        1122,
+        0,
+        280,
+        280
+      ],
+      "name": "Подрывники",
+      "path_id": "saboteurs",
+      "room_id": "goblin",
+      "bounds": [
+        68,
+        130,
+        185,
+        256
+      ],
+      "pivot": [
+        126.5,
+        256
+      ]
+    },
+    "saboteurs:5": {
+      "sheet": "actors-1",
+      "cell": [
+        0,
+        280,
+        280,
+        281
+      ],
+      "name": "Пороховая мастерская",
+      "path_id": "saboteurs",
+      "room_id": "goblin",
+      "bounds": [
+        92,
+        81,
+        218,
+        225
+      ],
+      "pivot": [
+        155.0,
+        225
+      ]
+    },
+    "saboteurs:15": {
+      "sheet": "actors-1",
+      "cell": [
+        280,
+        280,
+        281,
+        281
+      ],
+      "name": "Пороховой погреб",
+      "path_id": "saboteurs",
+      "room_id": "goblin",
+      "bounds": [
+        80,
+        76,
+        206,
+        223
+      ],
+      "pivot": [
+        143.0,
+        223
+      ]
+    },
+    "pickpockets": {
+      "sheet": "actors-1",
+      "cell": [
+        561,
+        280,
+        280,
+        281
+      ],
+      "name": "Карманники",
+      "path_id": "pickpockets",
+      "room_id": "goblin",
+      "bounds": [
+        67,
+        85,
+        202,
+        224
+      ],
+      "pivot": [
+        134.5,
+        224
+      ]
+    },
+    "pickpockets:5": {
+      "sheet": "actors-1",
+      "cell": [
+        841,
+        280,
+        281,
+        281
+      ],
+      "name": "Шайка грабителей",
+      "path_id": "pickpockets",
+      "room_id": "goblin",
+      "bounds": [
+        48,
+        90,
+        200,
+        224
+      ],
+      "pivot": [
+        124.0,
+        224
+      ]
+    },
+    "pickpockets:15": {
+      "sheet": "actors-1",
+      "cell": [
+        1122,
+        280,
+        280,
+        281
+      ],
+      "name": "Воровской король",
+      "path_id": "pickpockets",
+      "room_id": "goblin",
+      "bounds": [
+        42,
+        82,
+        205,
+        224
+      ],
+      "pivot": [
+        123.5,
+        224
+      ]
+    },
+    "spider": {
+      "path": "res://assets/fortress/spider-actor-hq.png",
+      "bounds": [
+        40,
+        59,
+        1492,
+        989
+      ],
+      "pivot": [
+        766.0,
+        989
+      ]
+    },
+    "venom_hunter": {
+      "sheet": "actors-1",
+      "cell": [
+        280,
+        561,
+        281,
+        281
+      ],
+      "name": "Ядовитый хищник",
+      "path_id": "venom_hunter",
+      "room_id": "spider",
+      "bounds": [
+        77,
+        72,
+        210,
+        173
+      ],
+      "pivot": [
+        143.5,
+        173
+      ]
+    },
+    "venom_hunter:5": {
+      "sheet": "actors-1",
+      "cell": [
+        561,
+        561,
+        280,
+        281
+      ],
+      "name": "Кислотный охотник",
+      "path_id": "venom_hunter",
+      "room_id": "spider",
+      "bounds": [
+        62,
+        69,
+        205,
+        173
+      ],
+      "pivot": [
+        133.5,
+        173
+      ]
+    },
+    "venom_hunter:15": {
+      "sheet": "actors-1",
+      "cell": [
+        841,
+        561,
+        281,
+        281
+      ],
+      "name": "Чумной пожиратель",
+      "path_id": "venom_hunter",
+      "room_id": "spider",
+      "bounds": [
+        48,
+        61,
+        200,
+        174
+      ],
+      "pivot": [
+        124.0,
+        174
+      ]
+    },
+    "cocoon_weaver": {
+      "sheet": "actors-1",
+      "cell": [
+        1122,
+        561,
+        280,
+        281
+      ],
+      "name": "Прядильщик",
+      "path_id": "cocoon_weaver",
+      "room_id": "spider",
+      "bounds": [
+        51,
+        78,
+        208,
+        174
+      ],
+      "pivot": [
+        129.5,
+        174
+      ]
+    },
+    "cocoon_weaver:5": {
+      "sheet": "actors-1",
+      "cell": [
+        0,
+        842,
+        280,
+        280
+      ],
+      "name": "Ловчая паутина",
+      "path_id": "cocoon_weaver",
+      "room_id": "spider",
+      "bounds": [
+        74,
+        46,
+        229,
+        161
+      ],
+      "pivot": [
+        151.5,
+        161
+      ]
+    },
+    "cocoon_weaver:15": {
+      "sheet": "actors-1",
+      "cell": [
+        280,
+        842,
+        281,
+        280
+      ],
+      "name": "Коконщик",
+      "path_id": "cocoon_weaver",
+      "room_id": "spider",
+      "bounds": [
+        63,
+        33,
+        216,
+        158
+      ],
+      "pivot": [
+        139.5,
+        158
+      ]
+    },
+    "brood_mother": {
+      "sheet": "actors-1",
+      "cell": [
+        561,
+        842,
+        280,
+        280
+      ],
+      "name": "Матка выводка",
+      "path_id": "brood_mother",
+      "room_id": "spider",
+      "bounds": [
+        52,
+        30,
+        209,
+        159
+      ],
+      "pivot": [
+        130.5,
+        159
+      ]
+    },
+    "brood_mother:5": {
+      "sheet": "actors-1",
+      "cell": [
+        841,
+        842,
+        281,
+        280
+      ],
+      "name": "Двойная кладка",
+      "path_id": "brood_mother",
+      "room_id": "spider",
+      "bounds": [
+        44,
+        29,
+        205,
+        159
+      ],
+      "pivot": [
+        124.5,
+        159
+      ]
+    },
+    "brood_mother:15": {
+      "sheet": "actors-1",
+      "cell": [
+        1122,
+        842,
+        280,
+        280
+      ],
+      "name": "Королева гнезда",
+      "path_id": "brood_mother",
+      "room_id": "spider",
+      "bounds": [
+        35,
+        9,
+        206,
+        161
+      ],
+      "pivot": [
+        120.5,
+        161
+      ]
+    },
+    "executioner": {
+      "sheet": "actors-2",
+      "cell": [
+        0,
+        0,
+        280,
+        280
+      ],
+      "name": "executioner",
+      "room_id": "executioner",
+      "bounds": [
+        71,
+        86,
+        211,
+        242
+      ],
+      "pivot": [
+        141.0,
+        242
+      ]
+    },
+    "guillotine": {
+      "sheet": "actors-2",
+      "cell": [
+        280,
+        0,
+        281,
+        280
+      ],
+      "name": "Гильотинёр",
+      "path_id": "guillotine",
+      "room_id": "executioner",
+      "bounds": [
+        64,
+        63,
+        212,
+        243
+      ],
+      "pivot": [
+        138.0,
+        243
+      ]
+    },
+    "guillotine:5": {
+      "sheet": "actors-2",
+      "cell": [
+        561,
+        0,
+        280,
+        280
+      ],
+      "name": "Эшафот",
+      "path_id": "guillotine",
+      "room_id": "executioner",
+      "bounds": [
+        50,
+        62,
+        209,
+        243
+      ],
+      "pivot": [
+        129.5,
+        243
+      ]
+    },
+    "guillotine:15": {
+      "sheet": "actors-2",
+      "cell": [
+        841,
+        0,
+        281,
+        280
+      ],
+      "name": "Красная гильотина",
+      "path_id": "guillotine",
+      "room_id": "executioner",
+      "bounds": [
+        41,
+        62,
+        214,
+        242
+      ],
+      "pivot": [
+        127.5,
+        242
+      ]
+    },
+    "duelist": {
+      "sheet": "actors-2",
+      "cell": [
+        1122,
+        0,
+        280,
+        280
+      ],
+      "name": "Дуэлянт",
+      "path_id": "duelist",
+      "room_id": "executioner",
+      "bounds": [
+        40,
+        84,
+        199,
+        242
+      ],
+      "pivot": [
+        119.5,
+        242
+      ]
+    },
+    "duelist:5": {
+      "sheet": "actors-2",
+      "cell": [
+        0,
+        280,
+        280,
+        281
+      ],
+      "name": "Арена суда",
+      "path_id": "duelist",
+      "room_id": "executioner",
+      "bounds": [
+        58,
+        66,
+        218,
+        228
+      ],
+      "pivot": [
+        138.0,
+        228
+      ]
+    },
+    "duelist:15": {
+      "sheet": "actors-2",
+      "cell": [
+        280,
+        280,
+        281,
+        281
+      ],
+      "name": "Чёрный судья",
+      "path_id": "duelist",
+      "room_id": "executioner",
+      "bounds": [
+        42,
+        53,
+        232,
+        229
+      ],
+      "pivot": [
+        137.0,
+        229
+      ]
+    },
+    "cleaver": {
+      "sheet": "actors-2",
+      "cell": [
+        561,
+        280,
+        280,
+        281
+      ],
+      "name": "Перерубатель",
+      "path_id": "cleaver",
+      "room_id": "executioner",
+      "bounds": [
+        54,
+        68,
+        210,
+        229
+      ],
+      "pivot": [
+        132.0,
+        229
+      ]
+    },
+    "cleaver:5": {
+      "sheet": "actors-2",
+      "cell": [
+        841,
+        280,
+        281,
+        281
+      ],
+      "name": "Широкий тесак",
+      "path_id": "cleaver",
+      "room_id": "executioner",
+      "bounds": [
+        39,
+        63,
+        216,
+        228
+      ],
+      "pivot": [
+        127.5,
+        228
+      ]
+    },
+    "cleaver:15": {
+      "sheet": "actors-2",
+      "cell": [
+        1122,
+        280,
+        280,
+        281
+      ],
+      "name": "Багровый мясник",
+      "path_id": "cleaver",
+      "room_id": "executioner",
+      "bounds": [
+        30,
+        62,
+        211,
+        227
+      ],
+      "pivot": [
+        120.5,
+        227
+      ]
+    },
+    "guardian": {
+      "sheet": "actors-2",
+      "cell": [
+        0,
+        561,
+        280,
+        281
+      ],
+      "name": "guardian",
+      "room_id": "guardian",
+      "bounds": [
+        69,
+        66,
+        225,
+        203
+      ],
+      "pivot": [
+        147.0,
+        203
+      ]
+    },
+    "guardian_parry": {
+      "sheet": "actors-2",
+      "cell": [
+        280,
+        561,
+        281,
+        281
+      ],
+      "name": "Караульный",
+      "path_id": "guardian_parry",
+      "room_id": "guardian",
+      "bounds": [
+        59,
+        53,
+        209,
+        204
+      ],
+      "pivot": [
+        134.0,
+        204
+      ]
+    },
+    "guardian_parry:5": {
+      "sheet": "actors-2",
+      "cell": [
+        561,
+        561,
+        280,
+        281
+      ],
+      "name": "Щитоносец",
+      "path_id": "guardian_parry",
+      "room_id": "guardian",
+      "bounds": [
+        54,
+        50,
+        214,
+        203
+      ],
+      "pivot": [
+        134.0,
+        203
+      ]
+    },
+    "guardian_parry:15": {
+      "sheet": "actors-2",
+      "cell": [
+        841,
+        561,
+        281,
+        281
+      ],
+      "name": "Капитан караула",
+      "path_id": "guardian_parry",
+      "room_id": "guardian",
+      "bounds": [
+        46,
+        41,
+        215,
+        203
+      ],
+      "pivot": [
+        130.5,
+        203
+      ]
+    },
+    "guardian_aegis": {
+      "sheet": "actors-2",
+      "cell": [
+        1122,
+        561,
+        280,
+        281
+      ],
+      "name": "Хранитель эгиды",
+      "path_id": "guardian_aegis",
+      "room_id": "guardian",
+      "bounds": [
+        44,
+        41,
+        205,
+        203
+      ],
+      "pivot": [
+        124.5,
+        203
+      ]
+    },
+    "guardian_aegis:5": {
+      "sheet": "actors-2",
+      "cell": [
+        0,
+        842,
+        280,
+        280
+      ],
+      "name": "Рунный бастион",
+      "path_id": "guardian_aegis",
+      "room_id": "guardian",
+      "bounds": [
+        67,
+        24,
+        225,
+        184
+      ],
+      "pivot": [
+        146.0,
+        184
+      ]
+    },
+    "guardian_aegis:15": {
+      "sheet": "actors-2",
+      "cell": [
+        280,
+        842,
+        281,
+        280
+      ],
+      "name": "Бастион Ковена",
+      "path_id": "guardian_aegis",
+      "room_id": "guardian",
+      "bounds": [
+        58,
+        20,
+        229,
+        183
+      ],
+      "pivot": [
+        143.5,
+        183
+      ]
+    },
+    "guardian_possessed": {
+      "sheet": "actors-2",
+      "cell": [
+        561,
+        842,
+        280,
+        280
+      ],
+      "name": "Одержимый страж",
+      "path_id": "guardian_possessed",
+      "room_id": "guardian",
+      "bounds": [
+        59,
+        25,
+        210,
+        183
+      ],
+      "pivot": [
+        134.5,
+        183
+      ]
+    },
+    "guardian_possessed:5": {
+      "sheet": "actors-2",
+      "cell": [
+        841,
+        842,
+        281,
+        280
+      ],
+      "name": "Треснувший саркофаг",
+      "path_id": "guardian_possessed",
+      "room_id": "guardian",
+      "bounds": [
+        49,
+        25,
+        205,
+        183
+      ],
+      "pivot": [
+        127.0,
+        183
+      ]
+    },
+    "guardian_possessed:15": {
+      "sheet": "actors-2",
+      "cell": [
+        1122,
+        842,
+        280,
+        280
+      ],
+      "name": "Освобождённый дух",
+      "path_id": "guardian_possessed",
+      "room_id": "guardian",
+      "bounds": [
+        67,
+        16,
+        206,
+        188
+      ],
+      "pivot": [
+        136.5,
+        188
+      ]
+    },
+    "ogre": {
+      "sheet": "actors-3",
+      "cell": [
+        0,
+        0,
+        280,
+        280
+      ],
+      "name": "ogre",
+      "room_id": "ogre",
+      "bounds": [
+        58,
+        92,
+        223,
+        240
+      ],
+      "pivot": [
+        140.5,
+        240
+      ]
+    },
+    "ogre_earthshaker": {
+      "sheet": "actors-3",
+      "cell": [
+        280,
+        0,
+        281,
+        280
+      ],
+      "name": "Сотрясатель",
+      "path_id": "ogre_earthshaker",
+      "room_id": "ogre",
+      "bounds": [
+        52,
+        92,
+        219,
+        240
+      ],
+      "pivot": [
+        135.5,
+        240
+      ]
+    },
+    "ogre_earthshaker:5": {
+      "sheet": "actors-3",
+      "cell": [
+        561,
+        0,
+        280,
+        280
+      ],
+      "name": "Каменный громила",
+      "path_id": "ogre_earthshaker",
+      "room_id": "ogre",
+      "bounds": [
+        39,
+        93,
+        218,
+        241
+      ],
+      "pivot": [
+        128.5,
+        241
+      ]
+    },
+    "ogre_earthshaker:15": {
+      "sheet": "actors-3",
+      "cell": [
+        841,
+        0,
+        281,
+        280
+      ],
+      "name": "Горный крушитель",
+      "path_id": "ogre_earthshaker",
+      "room_id": "ogre",
+      "bounds": [
+        31,
+        79,
+        233,
+        240
+      ],
+      "pivot": [
+        132.0,
+        240
+      ]
+    },
+    "ogre_stonethrower": {
+      "sheet": "actors-3",
+      "cell": [
+        1122,
+        0,
+        280,
+        280
+      ],
+      "name": "Камнемёт",
+      "path_id": "ogre_stonethrower",
+      "room_id": "ogre",
+      "bounds": [
+        56,
+        93,
+        200,
+        240
+      ],
+      "pivot": [
+        128.0,
+        240
+      ]
+    },
+    "ogre_stonethrower:5": {
+      "sheet": "actors-3",
+      "cell": [
+        0,
+        280,
+        280,
+        281
+      ],
+      "name": "Метатель валунов",
+      "path_id": "ogre_stonethrower",
+      "room_id": "ogre",
+      "bounds": [
+        72,
+        81,
+        225,
+        240
+      ],
+      "pivot": [
+        148.5,
+        240
+      ]
+    },
+    "ogre_stonethrower:15": {
+      "sheet": "actors-3",
+      "cell": [
+        280,
+        280,
+        281,
+        281
+      ],
+      "name": "Осадный исполин",
+      "path_id": "ogre_stonethrower",
+      "room_id": "ogre",
+      "bounds": [
+        62,
+        64,
+        223,
+        239
+      ],
+      "pivot": [
+        142.5,
+        239
+      ]
+    },
+    "ogre_maneater": {
+      "sheet": "actors-3",
+      "cell": [
+        561,
+        280,
+        280,
+        281
+      ],
+      "name": "Людоед",
+      "path_id": "ogre_maneater",
+      "room_id": "ogre",
+      "bounds": [
+        42,
+        86,
+        210,
+        240
+      ],
+      "pivot": [
+        126.0,
+        240
+      ]
+    },
+    "ogre_maneater:5": {
+      "sheet": "actors-3",
+      "cell": [
+        841,
+        280,
+        281,
+        281
+      ],
+      "name": "Костяная кухня",
+      "path_id": "ogre_maneater",
+      "room_id": "ogre",
+      "bounds": [
+        40,
+        70,
+        215,
+        240
+      ],
+      "pivot": [
+        127.5,
+        240
+      ]
+    },
+    "ogre_maneater:15": {
+      "sheet": "actors-3",
+      "cell": [
+        1122,
+        280,
+        280,
+        281
+      ],
+      "name": "Пожиратель знамён",
+      "path_id": "ogre_maneater",
+      "room_id": "ogre",
+      "bounds": [
+        45,
+        66,
+        218,
+        239
+      ],
+      "pivot": [
+        131.5,
+        239
+      ]
+    },
+    "war_hound": {
+      "sheet": "actors-3",
+      "cell": [
+        0,
+        561,
+        280,
+        281
+      ],
+      "name": "war_hound",
+      "room_id": "war_hound",
+      "bounds": [
+        71,
+        75,
+        234,
+        192
+      ],
+      "pivot": [
+        152.5,
+        192
+      ]
+    },
+    "war_hound_hellfire": {
+      "sheet": "actors-3",
+      "cell": [
+        280,
+        561,
+        281,
+        281
+      ],
+      "name": "Адская гончая",
+      "path_id": "war_hound_hellfire",
+      "room_id": "war_hound",
+      "bounds": [
+        62,
+        80,
+        227,
+        191
+      ],
+      "pivot": [
+        144.5,
+        191
+      ]
+    },
+    "war_hound_hellfire:5": {
+      "sheet": "actors-3",
+      "cell": [
+        561,
+        561,
+        280,
+        281
+      ],
+      "name": "Огненные врата",
+      "path_id": "war_hound_hellfire",
+      "room_id": "war_hound",
+      "bounds": [
+        57,
+        74,
+        222,
+        191
+      ],
+      "pivot": [
+        139.5,
+        191
+      ]
+    },
+    "war_hound_hellfire:15": {
+      "sheet": "actors-3",
+      "cell": [
+        841,
+        561,
+        281,
+        281
+      ],
+      "name": "Пепельный Цербер",
+      "path_id": "war_hound_hellfire",
+      "room_id": "war_hound",
+      "bounds": [
+        46,
+        63,
+        231,
+        192
+      ],
+      "pivot": [
+        138.5,
+        192
+      ]
+    },
+    "war_hound_lycanthrope": {
+      "sheet": "actors-3",
+      "cell": [
+        1122,
+        561,
+        280,
+        281
+      ],
+      "name": "Лунная гончая",
+      "path_id": "war_hound_lycanthrope",
+      "room_id": "war_hound",
+      "bounds": [
+        46,
+        71,
+        227,
+        192
+      ],
+      "pivot": [
+        136.5,
+        192
+      ]
+    },
+    "war_hound_lycanthrope:5": {
+      "sheet": "actors-3",
+      "cell": [
+        0,
+        842,
+        280,
+        280
+      ],
+      "name": "Оборотень",
+      "path_id": "war_hound_lycanthrope",
+      "room_id": "war_hound",
+      "bounds": [
+        79,
+        29,
+        227,
+        184
+      ],
+      "pivot": [
+        153.0,
+        184
+      ]
+    },
+    "war_hound_lycanthrope:15": {
+      "sheet": "actors-3",
+      "cell": [
+        280,
+        842,
+        281,
+        280
+      ],
+      "name": "Кровавый оборотень",
+      "path_id": "war_hound_lycanthrope",
+      "room_id": "war_hound",
+      "bounds": [
+        67,
+        20,
+        220,
+        184
+      ],
+      "pivot": [
+        143.5,
+        184
+      ]
+    },
+    "war_hound_sapper_hunter": {
+      "sheet": "actors-3",
+      "cell": [
+        561,
+        842,
+        280,
+        280
+      ],
+      "name": "Ищейка сапёров",
+      "path_id": "war_hound_sapper_hunter",
+      "room_id": "war_hound",
+      "bounds": [
+        47,
+        65,
+        219,
+        184
+      ],
+      "pivot": [
+        133.0,
+        184
+      ]
+    },
+    "war_hound_sapper_hunter:5": {
+      "sheet": "actors-3",
+      "cell": [
+        841,
+        842,
+        281,
+        280
+      ],
+      "name": "Ловец сумок",
+      "path_id": "war_hound_sapper_hunter",
+      "room_id": "war_hound",
+      "bounds": [
+        41,
+        57,
+        227,
+        184
+      ],
+      "pivot": [
+        134.0,
+        184
+      ]
+    },
+    "war_hound_sapper_hunter:15": {
+      "sheet": "actors-3",
+      "cell": [
+        1122,
+        842,
+        280,
+        280
+      ],
+      "name": "Разрыватель сумок",
+      "path_id": "war_hound_sapper_hunter",
+      "room_id": "war_hound",
+      "bounds": [
+        39,
+        62,
+        221,
+        184
+      ],
+      "pivot": [
+        130.0,
+        184
+      ]
+    },
+    "mimic": {
+      "sheet": "actors-4",
+      "cell": [
+        0,
+        0,
+        280,
+        280
+      ],
+      "name": "mimic",
+      "room_id": "mimic",
+      "bounds": [
+        76,
+        117,
+        210,
+        237
+      ],
+      "pivot": [
+        143.0,
+        237
+      ]
+    },
+    "mimic_weapon_swap": {
+      "sheet": "actors-4",
+      "cell": [
+        280,
+        0,
+        281,
+        280
+      ],
+      "name": "Проклятая оружейная",
+      "path_id": "mimic_weapon_swap",
+      "room_id": "mimic",
+      "bounds": [
+        69,
+        105,
+        220,
+        236
+      ],
+      "pivot": [
+        144.5,
+        236
+      ]
+    },
+    "mimic_weapon_swap:5": {
+      "sheet": "actors-4",
+      "cell": [
+        561,
+        0,
+        280,
+        280
+      ],
+      "name": "Мастер подделок",
+      "path_id": "mimic_weapon_swap",
+      "room_id": "mimic",
+      "bounds": [
+        53,
+        118,
+        219,
+        238
+      ],
+      "pivot": [
+        136.0,
+        238
+      ]
+    },
+    "mimic_weapon_swap:15": {
+      "sheet": "actors-4",
+      "cell": [
+        841,
+        0,
+        281,
+        280
+      ],
+      "name": "Арсенал обмана",
+      "path_id": "mimic_weapon_swap",
+      "room_id": "mimic",
+      "bounds": [
+        62,
+        74,
+        216,
+        239
+      ],
+      "pivot": [
+        139.0,
+        239
+      ]
+    },
+    "mimic_false_treasury": {
+      "sheet": "actors-4",
+      "cell": [
+        1122,
+        0,
+        280,
+        280
+      ],
+      "name": "Ложная сокровищница",
+      "path_id": "mimic_false_treasury",
+      "room_id": "mimic",
+      "bounds": [
+        70,
+        135,
+        200,
+        236
+      ],
+      "pivot": [
+        135.0,
+        236
+      ]
+    },
+    "mimic_false_treasury:5": {
+      "sheet": "actors-4",
+      "cell": [
+        0,
+        280,
+        280,
+        281
+      ],
+      "name": "Беглый сундук",
+      "path_id": "mimic_false_treasury",
+      "room_id": "mimic",
+      "bounds": [
+        82,
+        64,
+        211,
+        216
+      ],
+      "pivot": [
+        146.5,
+        216
+      ]
+    },
+    "mimic_false_treasury:15": {
+      "sheet": "actors-4",
+      "cell": [
+        280,
+        280,
+        281,
+        281
+      ],
+      "name": "Зал ложных богатств",
+      "path_id": "mimic_false_treasury",
+      "room_id": "mimic",
+      "bounds": [
+        75,
+        79,
+        222,
+        212
+      ],
+      "pivot": [
+        148.5,
+        212
+      ]
+    },
+    "mimic_living_chamber": {
+      "path": "res://assets/fortress/living-heart.png",
+      "bounds": [
+        0,
+        37,
+        1234,
+        1254
+      ],
+      "pivot": [
+        617.0,
+        1254
+      ],
+      "phases": {
+        "appendage": {
+          "path": "res://assets/fortress/living-mouth.png",
+          "bounds": [
+            0,
+            15,
+            1483,
+            1060
+          ],
+          "pivot": [
+            741.5,
+            1060
+          ]
+        }
+      }
+    },
+    "mimic_living_chamber:5": {
+      "path": "res://assets/fortress/living-heart.png",
+      "bounds": [
+        0,
+        37,
+        1234,
+        1254
+      ],
+      "pivot": [
+        617.0,
+        1254
+      ],
+      "phases": {
+        "appendage": {
+          "path": "res://assets/fortress/living-mouth.png",
+          "bounds": [
+            0,
+            15,
+            1483,
+            1060
+          ],
+          "pivot": [
+            741.5,
+            1060
+          ]
+        }
+      }
+    },
+    "mimic_living_chamber:15": {
+      "path": "res://assets/fortress/living-heart.png",
+      "bounds": [
+        0,
+        37,
+        1234,
+        1254
+      ],
+      "pivot": [
+        617.0,
+        1254
+      ],
+      "phases": {
+        "appendage": {
+          "path": "res://assets/fortress/living-mouth.png",
+          "bounds": [
+            0,
+            15,
+            1483,
+            1060
+          ],
+          "pivot": [
+            741.5,
+            1060
+          ]
+        }
+      }
+    },
+    "mimic_cursed_gift": {
+      "sheet": "actors-4",
+      "cell": [
+        0,
+        561,
+        280,
+        281
+      ],
+      "name": "Проклятая сокровищница",
+      "path_id": "mimic_cursed_gift",
+      "room_id": "mimic",
+      "bounds": [
+        66,
+        71,
+        211,
+        181
+      ],
+      "pivot": [
+        138.5,
+        181
+      ]
+    },
+    "mimic_cursed_gift:5": {
+      "sheet": "actors-4",
+      "cell": [
+        280,
+        561,
+        281,
+        281
+      ],
+      "name": "Зубастая приманка",
+      "path_id": "mimic_cursed_gift",
+      "room_id": "mimic",
+      "bounds": [
+        64,
+        71,
+        216,
+        181
+      ],
+      "pivot": [
+        140.0,
+        181
+      ]
+    },
+    "mimic_cursed_gift:15": {
+      "sheet": "actors-4",
+      "cell": [
+        561,
+        561,
+        280,
+        281
+      ],
+      "name": "Сокровищница предательства",
+      "path_id": "mimic_cursed_gift",
+      "room_id": "mimic",
+      "bounds": [
+        49,
+        50,
+        215,
+        188
+      ],
+      "pivot": [
+        132.0,
+        188
+      ]
+    },
+    "wraith": {
+      "sheet": "actors-4",
+      "cell": [
+        841,
+        561,
+        281,
+        281
+      ],
+      "name": "wraith",
+      "room_id": "wraith",
+      "bounds": [
+        61,
+        40,
+        207,
+        193
+      ],
+      "pivot": [
+        134.0,
+        193
+      ]
+    },
+    "wraith_twilight_hall": {
+      "sheet": "actors-4",
+      "cell": [
+        1122,
+        561,
+        280,
+        281
+      ],
+      "name": "Зал сумерек",
+      "path_id": "wraith_twilight_hall",
+      "room_id": "wraith",
+      "bounds": [
+        57,
+        41,
+        212,
+        193
+      ],
+      "pivot": [
+        134.5,
+        193
+      ]
+    },
+    "wraith_twilight_hall:5": {
+      "sheet": "actors-4",
+      "cell": [
+        0,
+        842,
+        280,
+        280
+      ],
+      "name": "Теневой фонарь",
+      "path_id": "wraith_twilight_hall",
+      "room_id": "wraith",
+      "bounds": [
+        75,
+        28,
+        227,
+        185
+      ],
+      "pivot": [
+        151.0,
+        185
+      ]
+    },
+    "wraith_twilight_hall:15": {
+      "sheet": "actors-4",
+      "cell": [
+        280,
+        842,
+        281,
+        280
+      ],
+      "name": "Врата теней",
+      "path_id": "wraith_twilight_hall",
+      "room_id": "wraith",
+      "bounds": [
+        72,
+        29,
+        225,
+        185
+      ],
+      "pivot": [
+        148.5,
+        185
+      ]
+    },
+    "wraith_banshee": {
+      "sheet": "actors-4",
+      "cell": [
+        561,
+        842,
+        280,
+        280
+      ],
+      "name": "Баньши",
+      "path_id": "wraith_banshee",
+      "room_id": "wraith",
+      "bounds": [
+        62,
+        36,
+        210,
+        188
+      ],
+      "pivot": [
+        136.0,
+        188
+      ]
+    },
+    "wraith_banshee:5": {
+      "sheet": "actors-4",
+      "cell": [
+        841,
+        842,
+        281,
+        280
+      ],
+      "name": "Плачущий склеп",
+      "path_id": "wraith_banshee",
+      "room_id": "wraith",
+      "bounds": [
+        61,
+        35,
+        212,
+        189
+      ],
+      "pivot": [
+        136.5,
+        189
+      ]
+    },
+    "wraith_banshee:15": {
+      "sheet": "actors-4",
+      "cell": [
+        1122,
+        842,
+        280,
+        280
+      ],
+      "name": "Траурный хор",
+      "path_id": "wraith_banshee",
+      "room_id": "wraith",
+      "bounds": [
+        43,
+        25,
+        223,
+        188
+      ],
+      "pivot": [
+        133.0,
+        188
+      ]
+    },
+    "wraith_throne_guardian": {
+      "sheet": "actors-5",
+      "cell": [
+        0,
+        0,
+        280,
+        280
+      ],
+      "name": "Страж трона",
+      "path_id": "wraith_throne_guardian",
+      "room_id": "wraith",
+      "bounds": [
+        44,
+        24,
+        230,
+        257
+      ],
+      "pivot": [
+        137.0,
+        257
+      ],
+      "phases": {
+        "throne_guard": {
+          "path": "res://assets/fortress/throne-guardian.png",
+          "bounds": [
+            0,
+            3,
+            1112,
+            1402
+          ],
+          "pivot": [
+            556.0,
+            1402
+          ]
+        }
+      }
+    },
+    "wraith_throne_guardian:5": {
+      "sheet": "actors-5",
+      "cell": [
+        280,
+        0,
+        281,
+        280
+      ],
+      "name": "Печать телохранителя",
+      "path_id": "wraith_throne_guardian",
+      "room_id": "wraith",
+      "bounds": [
+        42,
+        18,
+        236,
+        256
+      ],
+      "pivot": [
+        139.0,
+        256
+      ],
+      "phases": {
+        "throne_guard": {
+          "path": "res://assets/fortress/throne-guardian.png",
+          "bounds": [
+            0,
+            3,
+            1112,
+            1402
+          ],
+          "pivot": [
+            556.0,
+            1402
+          ]
+        }
+      }
+    },
+    "wraith_throne_guardian:15": {
+      "sheet": "actors-5",
+      "cell": [
+        561,
+        0,
+        280,
+        280
+      ],
+      "name": "Призрачный бастион",
+      "path_id": "wraith_throne_guardian",
+      "room_id": "wraith",
+      "bounds": [
+        14,
+        11,
+        256,
+        257
+      ],
+      "pivot": [
+        135.0,
+        257
+      ],
+      "phases": {
+        "throne_guard": {
+          "path": "res://assets/fortress/throne-guardian.png",
+          "bounds": [
+            0,
+            3,
+            1112,
+            1402
+          ],
+          "pivot": [
+            556.0,
+            1402
+          ]
+        }
+      }
+    },
+    "vampire": {
+      "sheet": "actors-5",
+      "cell": [
+        841,
+        0,
+        281,
+        280
+      ],
+      "name": "vampire",
+      "room_id": "vampire",
+      "bounds": [
+        81,
+        16,
+        184,
+        258
+      ],
+      "pivot": [
+        132.5,
+        258
+      ]
+    },
+    "vampire_hypnotist": {
+      "sheet": "actors-5",
+      "cell": [
+        1122,
+        0,
+        280,
+        280
+      ],
+      "name": "Гипнотизёр",
+      "path_id": "vampire_hypnotist",
+      "room_id": "vampire",
+      "bounds": [
+        41,
+        24,
+        226,
+        258
+      ],
+      "pivot": [
+        133.5,
+        258
+      ]
+    },
+    "vampire_hypnotist:5": {
+      "sheet": "actors-5",
+      "cell": [
+        0,
+        280,
+        280,
+        281
+      ],
+      "name": "Алый салон",
+      "path_id": "vampire_hypnotist",
+      "room_id": "vampire",
+      "bounds": [
+        86,
+        15,
+        199,
+        269
+      ],
+      "pivot": [
+        142.5,
+        269
+      ]
+    },
+    "vampire_hypnotist:15": {
+      "sheet": "actors-5",
+      "cell": [
+        280,
+        280,
+        281,
+        281
+      ],
+      "name": "Кровавый граф",
+      "path_id": "vampire_hypnotist",
+      "room_id": "vampire",
+      "bounds": [
+        78,
+        11,
+        225,
+        269
+      ],
+      "pivot": [
+        151.5,
+        269
+      ]
+    },
+    "vampire_sire": {
+      "sheet": "actors-5",
+      "cell": [
+        561,
+        280,
+        280,
+        281
+      ],
+      "name": "Обращающий",
+      "path_id": "vampire_sire",
+      "room_id": "vampire",
+      "bounds": [
+        53,
+        13,
+        251,
+        269
+      ],
+      "pivot": [
+        152.0,
+        269
+      ]
+    },
+    "vampire_sire:5": {
+      "sheet": "actors-5",
+      "cell": [
+        841,
+        280,
+        281,
+        281
+      ],
+      "name": "Гроб слуги",
+      "path_id": "vampire_sire",
+      "room_id": "vampire",
+      "bounds": [
+        77,
+        13,
+        217,
+        270
+      ],
+      "pivot": [
+        147.0,
+        270
+      ]
+    },
+    "vampire_sire:15": {
+      "sheet": "actors-5",
+      "cell": [
+        1122,
+        280,
+        280,
+        281
+      ],
+      "name": "Кровавый двор",
+      "path_id": "vampire_sire",
+      "room_id": "vampire",
+      "bounds": [
+        47,
+        10,
+        266,
+        270
+      ],
+      "pivot": [
+        156.5,
+        270
+      ]
+    },
+    "vampire_sarcophagus_master": {
+      "sheet": "actors-5",
+      "cell": [
+        0,
+        561,
+        280,
+        281
+      ],
+      "name": "Хозяин гроба",
+      "path_id": "vampire_sarcophagus_master",
+      "room_id": "vampire",
+      "bounds": [
+        85,
+        17,
+        237,
+        270
+      ],
+      "pivot": [
+        161.0,
+        270
+      ]
+    },
+    "vampire_sarcophagus_master:5": {
+      "sheet": "actors-5",
+      "cell": [
+        280,
+        561,
+        281,
+        281
+      ],
+      "name": "Каменный саркофаг",
+      "path_id": "vampire_sarcophagus_master",
+      "room_id": "vampire",
+      "bounds": [
+        72,
+        15,
+        221,
+        269
+      ],
+      "pivot": [
+        146.5,
+        269
+      ]
+    },
+    "vampire_sarcophagus_master:15": {
+      "sheet": "actors-5",
+      "cell": [
+        561,
+        561,
+        280,
+        281
+      ],
+      "name": "Хозяин саркофага",
+      "path_id": "vampire_sarcophagus_master",
+      "room_id": "vampire",
+      "bounds": [
+        33,
+        14,
+        251,
+        271
+      ],
+      "pivot": [
+        142.0,
+        271
+      ]
+    },
+    "spiderling": {
+      "sheet": "actors-5",
+      "cell": [
+        280,
+        842,
+        281,
+        280
+      ],
+      "bounds": [
+        53,
+        139,
+        221,
+        246
+      ],
+      "pivot": [
+        137.0,
+        246
+      ]
+    },
+    "brood_guardian": {
+      "sheet": "actors-5",
+      "cell": [
+        561,
+        842,
+        280,
+        280
+      ],
+      "bounds": [
+        12,
+        66,
+        257,
+        253
+      ],
+      "pivot": [
+        134.5,
+        253
+      ]
+    },
+    "vampire_servant": {
+      "sheet": "actors-5",
+      "cell": [
+        841,
+        842,
+        281,
+        280
+      ],
+      "bounds": [
+        22,
+        21,
+        205,
+        258
+      ],
+      "pivot": [
+        113.5,
+        258
+      ]
+    },
+    "vampire_bat": {
+      "sheet": "actors-5",
+      "cell": [
+        1122,
+        842,
+        280,
+        280
+      ],
+      "bounds": [
+        11,
+        61,
+        267,
+        203
+      ],
+      "pivot": [
+        139.0,
+        203
+      ]
+    }
+  },
+  "heroes": {
+    "knight": {
+      "path": "res://assets/fortress/hero-knight.png",
+      "bounds": [
+        222,
+        19,
+        892,
+        1358
+      ],
+      "pivot": [
+        557.0,
+        1358
+      ]
+    },
+    "barbarian": {
+      "path": "res://assets/fortress/hero-barbarian.png",
+      "bounds": [
+        255,
+        14,
+        1005,
+        1268
+      ],
+      "pivot": [
+        630.0,
+        1268
+      ]
+    },
+    "mage": {
+      "path": "res://assets/fortress/hero-mage.png",
+      "bounds": [
+        121,
+        57,
+        1004,
+        1331
+      ],
+      "pivot": [
+        562.5,
+        1331
+      ]
+    },
+    "priest": {
+      "path": "res://assets/fortress/hero-priest.png",
+      "bounds": [
+        134,
+        29,
+        907,
+        1518
+      ],
+      "pivot": [
+        520.5,
+        1518
+      ]
+    },
+    "bard": {
+      "path": "res://assets/fortress/hero-bard.png",
+      "bounds": [
+        143,
+        22,
+        798,
+        1409
+      ],
+      "pivot": [
+        470.5,
+        1409
+      ]
+    },
+    "rogue": {
+      "path": "res://assets/fortress/hero-rogue.png",
+      "bounds": [
+        138,
+        18,
+        942,
+        1378
+      ],
+      "pivot": [
+        540.0,
+        1378
+      ]
+    }
+  },
+  "lords": {
+    "fallen_knight": {
+      "sheet": "actors-5",
+      "cell": [
+        841,
+        561,
+        281,
+        281
+      ],
+      "bounds": [
+        8,
+        12,
+        251,
+        270
+      ],
+      "pivot": [
+        129.5,
+        270
+      ]
+    },
+    "necromancer": {
+      "sheet": "actors-5",
+      "cell": [
+        1122,
+        561,
+        280,
+        281
+      ],
+      "bounds": [
+        36,
+        14,
+        247,
+        268
+      ],
+      "pivot": [
+        141.5,
+        268
+      ]
+    },
+    "plague_alchemist": {
+      "sheet": "actors-5",
+      "cell": [
+        0,
+        842,
+        280,
+        280
+      ],
+      "bounds": [
+        64,
+        14,
+        230,
+        261
+      ],
+      "pivot": [
+        147.0,
+        261
+      ]
+    }
+  },
+  "terrain": {
+    "1": {
+      "rock": {
+        "path": "res://assets/fortress/soil-roots.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          1194,
+          200,
+          388,
+          194
+        ]
+      }
+    },
+    "2": {
+      "rock": {
+        "path": "res://assets/fortress/sandstone.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          1590,
+          200,
+          388,
+          194
+        ]
+      }
+    },
+    "3": {
+      "rock": {
+        "path": "res://assets/fortress/limestone.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          3,
+          398,
+          390,
+          195
+        ]
+      }
+    },
+    "4": {
+      "rock": {
+        "path": "res://assets/fortress/slate.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          400,
+          398,
+          390,
+          195
+        ]
+      }
+    },
+    "5": {
+      "rock": {
+        "path": "res://assets/fortress/crystalline.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          796,
+          398,
+          390,
+          195
+        ]
+      }
+    },
+    "6": {
+      "rock": {
+        "path": "res://assets/fortress/ironstone.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          1193,
+          398,
+          390,
+          195
+        ]
+      }
+    },
+    "7": {
+      "rock": {
+        "path": "res://assets/fortress/basalt.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          1589,
+          398,
+          390,
+          195
+        ]
+      }
+    },
+    "8": {
+      "rock": {
+        "path": "res://assets/fortress/deepstone.png"
+      },
+      "empty": {
+        "sheet": "terrain-and-core-wide-v2",
+        "region": [
+          4,
+          597,
+          388,
+          194
+        ]
+      }
+    }
+  }
+}

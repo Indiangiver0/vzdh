@@ -44,7 +44,7 @@ func reset_layout(empty: bool = true) -> void:
 	throne_slot = -1
 	if empty:
 		return
-	# Retained only for explicitly authored layouts; normal runs start at the entrance.
+	# Retained for authored layouts; normal runs use reset_with_core().
 	entrance_slot = 3
 	treasury_slot = 2
 	throne_slot = 8
@@ -63,6 +63,16 @@ func reset_layout(empty: bool = true) -> void:
 
 static func adjacent(a: Vector2i, b: Vector2i) -> bool:
 	return absi(a.x - b.x) + absi(a.y - b.y) == 1
+
+
+func reset_with_core() -> void:
+	# New runs begin with movable treasury and throne plus two clear build sites.
+	# This starter foundation is free; later excavation still uses the normal price.
+	reset_layout()
+	append_cell(Vector2i(0, 1))
+	append_cell(Vector2i(1, 1))
+	treasury_slot = append_cell(Vector2i(1, 0))
+	throne_slot = append_cell(Vector2i(2, 1))
 
 
 static func boundary_key(a: int, b: int) -> String:

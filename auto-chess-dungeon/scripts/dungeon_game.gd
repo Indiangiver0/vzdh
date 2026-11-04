@@ -145,7 +145,7 @@ func restart(new_seed: int = 0) -> void:
 	_battle_room_indices.clear()
 	tutorial_run = false
 	labyrinth_enabled = true
-	_labyrinth.reset_layout()
+	_labyrinth.reset_with_core()
 	current_place = -1
 	visit_id = 0
 	_route_from_place = -1
@@ -212,7 +212,7 @@ func restart(new_seed: int = 0) -> void:
 	_recalculate_lord()
 	_generate_party()
 	_generate_shop()
-	_log("Подземелье открыто. Постройте защиту и запустите первую волну.")
+	_log("Казна и трон готовы. Постройте защиту и расширяйте подземелье.")
 
 
 func prepare_linear_showcase() -> void:
@@ -533,23 +533,42 @@ func buy_room(index: int, id: String) -> String:
 	return ""
 
 
-func move_room(from_index: int, to_index: int) -> String:
+## Read-only feedback shared by drag highlighting and the committed action.
+func room_move_error(from_index: int, to_index: int) -> String:
 	if phase != "prepare":
 		return "Перестановка доступна между волнами."
 	if not _valid_slot(from_index) or not _valid_slot(to_index):
 		return "Выберите два строительных слота."
-	if is_treasury_slot(to_index) or is_throne_slot(to_index) or is_treasury_slot(from_index) or is_throne_slot(from_index):
-		return "Переместите казну или трон отдельным действием."
-	if rooms[from_index].is_empty():
+	if rooms[from_index].is_empty() and not is_treasury_slot(from_index) and not is_throne_slot(from_index):
 		return "Сначала выберите построенную комнату."
 	if from_index == to_index:
 		return ""
 	var reserved: Dictionary = reserved_room_slots()
 	if reserved.has(to_index) and int(reserved[to_index]) != from_index:
 		return "Это место занимает пасть живой комнаты."
+	return ""
+
+
+func move_room(from_index: int, to_index: int) -> String:
+	var error: String = room_move_error(from_index, to_index)
+	if not error.is_empty():
+		return error
+	if from_index == to_index:
+		return ""
+	# Core rooms live in layout metadata; their corresponding room dictionaries
+	# stay empty. Swap both representations together, preserving room instances.
 	var previous: Dictionary = rooms[to_index]
 	rooms[to_index] = rooms[from_index]
 	rooms[from_index] = previous
+	if labyrinth_enabled:
+		if _labyrinth.treasury_slot == from_index:
+			_labyrinth.treasury_slot = to_index
+		elif _labyrinth.treasury_slot == to_index:
+			_labyrinth.treasury_slot = from_index
+		if _labyrinth.throne_slot == from_index:
+			_labyrinth.throne_slot = to_index
+		elif _labyrinth.throne_slot == to_index:
+			_labyrinth.throne_slot = from_index
 	_log("Порядок комнат изменён.")
 	return ""
 

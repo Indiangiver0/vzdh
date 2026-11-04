@@ -27,8 +27,6 @@ const VIOLET = Color("#ae97d4")
 var game = Game.new()
 var selected_slot: int = -1
 var selected_room: String = ""
-var grid_build_mode: String = "rooms"
-var grid_selected_boundary: String = ""
 var selecting_deal: bool = false
 var speed: int = 1
 var speed_before_throne: int = 0
@@ -100,6 +98,7 @@ var _camp_live_ui: Array[Dictionary] = []
 var _camp_ui_state: Dictionary = {}
 var skill_wallet_button: Button
 var soul_feedback: Control
+var _pending_exit_result: bool = false
 
 func _ready() -> void:
 	get_window().title = "No Hero Returns · Лабиринт · " + str(ProjectSettings.get_setting("application/config/version", ""))
@@ -110,8 +109,6 @@ func _ready() -> void:
 	game.restart()
 	if is_instance_valid(dungeon_view) and dungeon_view.has_method("reset_camera"):
 		dungeon_view.reset_camera()
-	if _uses_labyrinth() and game.rooms.is_empty():
-		grid_build_mode = "excavate"
 	run_skill_camera.clear()
 	talent_tree_focus = "root"
 	_configure_selected_lord(game)
@@ -316,8 +313,15 @@ func _refresh(keep_modal: bool = false) -> void:
 			if is_instance_valid(floor_scroll):
 				floor_scroll.set_deferred("scroll_vertical", scroll_position)
 	if not keep_modal and not phase_modal_dismissed:
-		_show_phase_modal()
+		if _exit_transition_active():
+			_pending_exit_result = true
+		else:
+			_show_phase_modal()
 	_refresh_live_values()
+
+
+func _exit_transition_active() -> bool:
+	return game.phase == "result" and str(game.report.get("outcome", "")) == "robbed" and _uses_labyrinth() and is_instance_valid(dungeon_view) and dungeon_view.has_method("is_party_transition_active") and bool(dungeon_view.is_party_transition_active())
 
 
 func _bind_live(node: Object, property: String, read: Callable) -> void:
@@ -626,7 +630,9 @@ func _boss_warning(parent: Control) -> void:
 
 
 func _grid_room_dragged(from_index: int, to_index: int) -> void:
-	if menu_open or is_instance_valid(modal) or game.phase != "prepare" or grid_build_mode != "rooms":
+	if menu_open or is_instance_valid(modal) or game.phase != "prepare":
+		return
+	if selecting_deal or not selected_room.is_empty() or from_index == to_index:
 		return
 	var error: String = game.move_room(from_index, to_index)
 	if error.is_empty():
@@ -860,27 +866,7 @@ func _labyrinth_panel(parent: Control, floor_actions: Control = null) -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(title)
 	title_row.add_child(_label("%d клеток" % game.rooms.size(), 11, GOLD))
-	var toolbar := GridContainer.new()
-	toolbar.columns = 3 if compact_ui and not short_ui else 5
-	toolbar.add_theme_constant_override("h_separation", 5)
-	toolbar.add_theme_constant_override("v_separation", 5)
-	center.add_child(toolbar)
-	for entry in [["rooms", "Комнаты"], ["walls", "Проходы"], ["excavate", "Копать"], ["treasury", "Казна"], ["throne", "Трон"]]:
-		var button = _button(str(entry[1]), _set_grid_mode.bind(str(entry[0])), game.phase != "prepare")
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.custom_minimum_size.y = 38 if compact_ui else 32
-		if grid_build_mode == str(entry[0]):
-			button.add_theme_color_override("font_color", GOLD)
-			button.add_theme_stylebox_override("normal", _style(TILE, GOLD, 5, 6))
-		toolbar.add_child(button)
-	var explanations := {
-		"rooms": "Покупка: магазин → пустая клетка. Зажмите построенную комнату и перетащите; занятые комнаты меняются местами.",
-		"walls": "Выберите границу между клетками: открытый проход или глухая стена.",
-		"excavate": "Выберите клетку с плюсом. Для раскопок ниже нужен доступ к глубине.",
-		"treasury": "Выберите пустую клетку для казны. Добычу можно отбить на обратном пути.",
-		"throne": "Выберите пустую клетку для трона. Вход и казна должны оставаться доступны.",
-	}
-	var guidance: String = message if not message.is_empty() else str(explanations.get(grid_build_mode, ""))
+	var guidance: String = message if not message.is_empty() else ("+ — раскопать · маркер — проход/стена · удержание и движение — перенос" if compact_ui else "+ — раскопать · маркер — проход/стена · ЛКМ — перенос · ПКМ/СКМ — карта")
 	if game.phase in ["raid", "camp"]:
 		guidance = _combat_guidance()
 	var caption = _label(guidance, 11 if compact_ui else 12, MUTED, true)
@@ -888,17 +874,6 @@ func _labyrinth_panel(parent: Control, floor_actions: Control = null) -> void:
 	center.add_child(caption)
 	if game.phase in ["raid", "camp"]:
 		_bind_live(caption, "text", func(): return _ui_text(_combat_guidance()))
-	if grid_build_mode == "walls" and game.phase == "prepare":
-		for boundary in layout.get("boundaries", []):
-			if str(boundary.id) != grid_selected_boundary:
-				continue
-			var row := HBoxContainer.new()
-			center.add_child(row)
-			var status = _label("Открытый проход" if bool(boundary.open) else "Глухая стена", 12, GREEN if bool(boundary.open) else RED)
-			status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(status)
-			row.add_child(_button("Закрыть стеной" if bool(boundary.open) else "Открыть проход", _change_grid_boundary.bind(str(boundary.id), not bool(boundary.open))))
-			break
 	if is_instance_valid(dungeon_view) and dungeon_view.get_script() != LabyrinthView:
 		dungeon_view.free()
 		dungeon_view = null
@@ -913,7 +888,7 @@ func _labyrinth_panel(parent: Control, floor_actions: Control = null) -> void:
 	dungeon_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	center.add_child(dungeon_view)
 	dungeon_view.compact = compact_ui
-	dungeon_view.build_mode = grid_build_mode
+	dungeon_view.room_drag_enabled = not selecting_deal and selected_room.is_empty()
 	dungeon_view.configure(game, selected_slot, str(game.deal_offer().get("room_id", "")) if selecting_deal else selected_room)
 	dungeon_view.tutorial_slot = -1
 	var controls := HBoxContainer.new()
@@ -941,33 +916,19 @@ func _labyrinth_panel(parent: Control, floor_actions: Control = null) -> void:
 		center.add_child(warning)
 
 
-func _set_grid_mode(mode: String) -> void:
-	if menu_open or is_instance_valid(modal) or game.phase != "prepare":
-		return
-	grid_build_mode = mode
-	grid_selected_boundary = ""
-	selected_slot = -1
-	selected_room = ""
-	selecting_deal = false
-	message = ""
-	_refresh()
-
-
 func _grid_boundary_clicked(id: String) -> void:
 	if menu_open or is_instance_valid(modal) or game.phase != "prepare":
 		return
-	grid_selected_boundary = id
-	_refresh()
-
-
-func _change_grid_boundary(id: String, opened: bool) -> void:
-	if menu_open or is_instance_valid(modal) or game.phase != "prepare":
-		return
-	_action(game.set_boundary_state(id, opened))
+	var layout: Dictionary = game.layout_snapshot()
+	for boundary in layout.get("boundaries", []):
+		if str(boundary.id) == id:
+			_action(game.set_boundary_state(id, not bool(boundary.open)))
+			return
+	_action("Граница больше недоступна. Выберите её на карте заново.")
 
 
 func _expand_grid(coordinate: Vector2i) -> void:
-	if menu_open or is_instance_valid(modal) or game.phase != "prepare" or grid_build_mode != "excavate":
+	if menu_open or is_instance_valid(modal) or game.phase != "prepare":
 		return
 	_action(game.expand_grid_at(coordinate))
 
@@ -1072,6 +1033,8 @@ func _dungeon_panel(parent: Control, floor_actions: Control = null) -> void:
 	_tutorial_mark(floor_button, "floor")
 
 func _inspector_panel(parent: Control) -> void:
+	if _uses_labyrinth() and (game.is_treasury_slot(selected_slot) or game.is_throne_slot(selected_slot)):
+		return
 	var box = _panel(parent, 238)
 	var scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1283,6 +1246,11 @@ func _footer() -> void:
 		row.add_child(_button(_phase_action_text(), _show_phase_modal))
 
 func _process(delta: float) -> void:
+	if _pending_exit_result:
+		if game.phase != "result" or phase_modal_dismissed:
+			_pending_exit_result = false
+		elif not menu_open and not paused and not is_instance_valid(modal) and not _exit_transition_active():
+			_show_phase_modal()
 	var suspended: bool = paused or is_instance_valid(modal) or menu_open
 	if is_instance_valid(soul_feedback):
 		soul_feedback.paused = suspended
@@ -1370,6 +1338,10 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_ESCAPE:
+			if _uses_labyrinth() and is_instance_valid(dungeon_view) and dungeon_view.has_method("has_active_interaction") and dungeon_view.has_active_interaction():
+				_cancel_map_interaction()
+				get_viewport().set_input_as_handled()
+				return
 			if is_instance_valid(modal):
 				_modal_back()
 			elif tutorial.active() and not menu_open:
@@ -1406,16 +1378,7 @@ func _slot_clicked(index: int) -> void:
 			message = "Вход остаётся на границе подземелья."
 			_refresh()
 			return
-		if grid_build_mode == "treasury":
-			_action(game.set_treasury_slot(index))
-			return
-		if grid_build_mode == "throne":
-			_action(game.set_throne_slot(index))
-			return
-		var layout: Dictionary = game.layout_snapshot()
-		if game.is_treasury_slot(index) or index == int(layout.get("throne_slot", -1)):
-			message = "Для переноса выберите режим «Казна» или «Трон», затем пустую клетку."
-			_refresh()
+		if index >= game.rooms.size():
 			return
 	if menu_open or is_instance_valid(modal) or game.phase != "prepare" or not _tutorial_allow("slot:" + str(index)):
 		return
@@ -1429,6 +1392,13 @@ func _slot_clicked(index: int) -> void:
 			last_room_tap = -1
 		_action(error)
 		return
+	if _uses_labyrinth() and (game.is_treasury_slot(index) or game.is_throne_slot(index)):
+		selected_slot = index
+		last_room_tap = -1
+		var core_name: String = "Казна" if game.is_treasury_slot(index) else "Трон"
+		message = core_name + (" · удержите и потяните для переноса или обмена." if compact_ui else " · перетащите ЛКМ для переноса или обмена.")
+		_refresh()
+		return
 	var now: int = Time.get_ticks_msec()
 	if compact_ui and selected_slot == index and not game.rooms[index].is_empty():
 		var double_tap: bool = last_room_tap == index and now - last_room_tap_msec <= 550
@@ -1437,6 +1407,19 @@ func _slot_clicked(index: int) -> void:
 		if double_tap:
 			last_room_tap = -1
 			_show_room_details()
+		return
+	if _uses_labyrinth():
+		# A tap selects; only room_dragged commits a move in the labyrinth.
+		message = ""
+		if not game.rooms[index].is_empty():
+			selected_slot = index
+			last_room_tap = index
+			last_room_tap_msec = now
+		else:
+			selected_slot = -1
+			last_room_tap = -1
+			message = "Выберите комнату в магазине."
+		_refresh()
 		return
 	if selected_slot >= 0:
 		if selected_slot == index:
@@ -1458,8 +1441,6 @@ func _slot_clicked(index: int) -> void:
 		_refresh()
 
 func _select_shop(id: String) -> void:
-	grid_build_mode = "rooms"
-	grid_selected_boundary = ""
 	if not _tutorial_allow("shop:" + id):
 		return
 	_close_modal()
@@ -1472,8 +1453,6 @@ func _select_shop(id: String) -> void:
 	_refresh()
 
 func _cancel_selection() -> void:
-	grid_build_mode = "rooms"
-	grid_selected_boundary = ""
 	if not _tutorial_allow("cancel"):
 		return
 	selected_slot = -1
@@ -1613,6 +1592,8 @@ func _toggle_sound() -> void:
 func _show_phase_modal() -> void:
 	if menu_open or game.phase not in ["result", "level_up", "floor_choice", "defeat", "blueprint", "relic"]:
 		return
+	# Explicit user requests open immediately; only _refresh defers auto-results.
+	_pending_exit_result = false
 	phase_modal_dismissed = false
 	if game.phase == "level_up":
 		game.defer_talents()
@@ -1710,7 +1691,7 @@ func _show_help() -> void:
 	_disclosure(content, "Способность Q", "Два заряда на волну. Каждое применение стоит половину базового дохода этой волны, без бонусов заработка. Цена видна заранее и не меняется в бою; неудачное нажатие ничего не списывает.")
 	_disclosure(content, "Босс-отряд", "Каждые 50 волн приходит «Босс: Клятва пяти»: пять разных классов. Состав, индивидуальные HP и снаряжение заранее видны в разведке.")
 	_disclosure(content, "Привал и E", "На развилках и в безопасных местах при тяжёлом ранении одного героя отряд может отдыхать. Один привал на место за волну. Таймер, оставшиеся порции и возможное лечение показаны у кнопки E. Пауза, меню и окна останавливают отдых. E за золото отменяет оставшееся лечение текущего привала и работает на паузе. Лимита зарядов нет: первое успешное применение за волну бесплатно, второе стоит 25% базового дохода, следующие — 50%. Неудача ничего не списывает. Q на привале недоступна.")
-	_disclosure(content, "Управление", "Магазин > пустое место. Комната > другой слот для переноса. Пробел — пауза, Q — сила Лорда, E — сорвать текущий привал, Esc — меню, F11 — полный экран.")
+	_disclosure(content, "Управление", "Магазин > пустое место. Клик выбирает комнату. Для переноса или обмена комнаты, казны и трона потяните их ЛКМ; пальцем сначала удержите. ПКМ/СКМ двигают карту. Пробел — пауза, Q — сила Лорда, E — сорвать привал. Esc отменяет жест, затем выбор, затем открывает меню. F11 — полный экран." if _uses_labyrinth() else "Магазин > пустое место. Комната > другой слот для переноса. Пробел — пауза, Q — сила Лорда, E — сорвать текущий привал, Esc — меню, F11 — полный экран.")
 	_disclosure(content, "Улучшение комнат", "Нажмите «Улучшить» в сведениях о комнате. Первый выбор усиления откроется сразу после прокачки; следующие - на рангах 5 и 15. На телефоне сведения открываются двойным нажатием. После «Назад» тот же выбор доступен без доплаты.")
 	content.add_child(_button("Пройти обучение в игре", _request_tutorial))
 
@@ -2717,8 +2698,6 @@ func _request_new_run() -> void:
 func _begin_run() -> void:
 	_restore_travel_speed()
 	throne_slow_wave = -1
-	grid_build_mode = "rooms"
-	grid_selected_boundary = ""
 	phase_modal_dismissed = false
 	_close_modal()
 	remembered_scrolls.clear()
@@ -2733,8 +2712,6 @@ func _begin_run() -> void:
 	game.restart()
 	if is_instance_valid(dungeon_view) and dungeon_view.has_method("reset_camera"):
 		dungeon_view.reset_camera()
-	if _uses_labyrinth() and game.rooms.is_empty():
-		grid_build_mode = "excavate"
 	run_skill_camera.clear()
 	talent_tree_focus = "root"
 	_configure_selected_lord(game)
@@ -2751,7 +2728,7 @@ func _begin_run() -> void:
 	selected_room = ""
 	scroll_position = 0
 	active_floor = -1
-	message = "Раскопайте клетки, разместите казну и трон, затем постройте защиту. Проходы можно закрывать стенами." if _uses_labyrinth() and game.rooms.is_empty() else ""
+	message = ""
 	_sound("click")
 	_refresh()
 
@@ -3196,8 +3173,6 @@ func _select_deal() -> void:
 	_close_modal()
 	last_room_tap = -1
 	selecting_deal = not selecting_deal
-	grid_build_mode = "rooms"
-	grid_selected_boundary = ""
 	selected_room = ""
 	selected_slot = -1
 	message = "Выберите свободное место для комнаты по сделке." if selecting_deal else "Размещение сделки отменено."
