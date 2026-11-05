@@ -16,6 +16,7 @@ const LINE = Color("#333e4e")
 const PANEL = Color("#181e28")
 const TILE = Color("#212938")
 const EvolutionArt = preload("res://scripts/evolution_visuals.gd")
+const Language = preload("res://scripts/game_language.gd")
 
 var _nodes: Array[Dictionary] = []
 var _selected_id: String = ""
@@ -119,7 +120,7 @@ func _create_node(data: Dictionary) -> void:
 	var id: String = str(data.id)
 	var button := Button.new()
 	button.name = "Progression_" + id.validate_node_name()
-	button.text = str(data.get("name", id))
+	button.text = Language.text(str(data.get("name", id)))
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	# A long word must wrap inside the chosen column, not enlarge its minimum width.
 	button.clip_text = true
@@ -127,7 +128,7 @@ func _create_node(data: Dictionary) -> void:
 	button.focus_mode = Control.FOCUS_ALL
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.tooltip_text = button.text
-	var status_text: String = str(data.get("status", ""))
+	var status_text: String = Language.text(str(data.get("status", "")))
 	if not status_text.is_empty():
 		button.tooltip_text += "\n" + status_text
 	button.pressed.connect(_select_node.bind(id))

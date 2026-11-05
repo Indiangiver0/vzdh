@@ -1,4 +1,5 @@
 extends Control
+const Language = preload("res://scripts/game_language.gd")
 ## Presentation only: a living cutaway of the deterministic dungeon model.
 ## The view never advances combat or modifies the run state.
 
@@ -1310,16 +1311,17 @@ func _draw_run_skill_marks(at: Vector2, actor: Dictionary) -> void:
 
 
 func _text(value: String, at: Vector2, font_size: int, color: Color) -> void:
-	draw_string(_font, at, value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+	draw_string(_font, at, Language.text(value), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 
 func _center_text(value: String, at: Vector2, font_size: int, color: Color) -> void:
-	var text_width: float = _font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-	_text(value, at - Vector2(text_width / 2, 0), font_size, color)
+	var translated: String = Language.text(value)
+	var text_width: float = _font.get_string_size(translated, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	draw_string(_font, at - Vector2(text_width / 2, 0), translated, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 
 func _center_text_fitted(value: String, at: Vector2, font_size: int, color: Color, width: float) -> void:
-	var result: String = value
+	var result: String = Language.text(value)
 	if _font.get_string_size(result, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
 		while result.length() > 1 and _font.get_string_size(result + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
 			result = result.left(result.length() - 1)

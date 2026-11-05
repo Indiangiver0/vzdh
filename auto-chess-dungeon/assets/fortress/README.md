@@ -48,3 +48,8 @@ chamber's base actor is its small vulnerable heart. `living-chambers-states.png`
 has three columns (stages 2/5/15) and two rows (alive/cleared), each region 2:1.
 Only final owner defeat selects `cleared`; preparation restores the live view.
 Prompts and source copies: `deliverables/ui/fortress-special-forms/sources.json`.
+
+`title-encounter.jpg` is the main menu illustration, generated from text with
+the built-in ImageGen tool and encoded as a 1536×1024 JPEG. Prompt:
+
+> Landscape 3:2 cinematic dark fantasy painted key art for the Godot game No Hero Returns. Three small medieval adventurers seen clearly from behind in the lower center foreground, knight with shield, hooded ranger and staff mage, preparing to face a towering ominous crowned dungeon lord silhouette looming above them in the darkness at the back of a stone throne hall. Torches warm amber against deep charcoal stone and smoky dark shadows. Grounded painterly game illustration, crisp silhouettes, atmosphere and scale. Keep group and lord within central 65 percent for mobile crops. No lettering, typography, UI, logo or watermark.

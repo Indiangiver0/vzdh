@@ -10,8 +10,12 @@ const CELL_STEP := Vector2(328, 178)
 const THRONE_GUARD_TINT := Color(0.92, 0.92, 1.0, 0.9)
 const MIN_ZOOM: float = 0.25
 const MAX_ZOOM: float = 2.2
+const TOUCH_BOUNDARY_RADIUS: float = 22.0
 
 var room_drag_enabled: bool = true
+var tutorial_target: String = ""
+var _last_tutorial_target: String = ""
+var _tutorial_focus_pending: bool = false
 var _layout: Dictionary = {}
 var _places: Dictionary = {}
 var _grid_camera := Vector2.ZERO
@@ -19,6 +23,7 @@ var _camera_target := Vector2.ZERO
 var _grid_zoom: float = 1.0
 var _zoom_target: float = 1.0
 var _camera_ready: bool = false
+var _camera_view_size := Vector2.ZERO
 var _fit_pending: bool = false
 var _pointer_down: bool = false
 var _pointer_start := Vector2.ZERO
@@ -52,6 +57,7 @@ func configure(game_ref, slot: int = -1, room_id: String = "") -> void:
 		_cancel_grid_pointer()
 		_camera_ready = false
 		_grid_route_seq = -1
+		_last_tutorial_target = ""
 	super.configure(game_ref, slot, room_id)
 
 
@@ -69,6 +75,9 @@ func refresh() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = true
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_MIRROR
+	if tutorial_target != _last_tutorial_target:
+		_last_tutorial_target = tutorial_target
+		_tutorial_focus_pending = not tutorial_target.is_empty()
 	if not _camera_ready and size.x > 1 and size.y > 1:
 		fit_map.call_deferred()
 
@@ -84,6 +93,11 @@ func visual_to_global(at: Vector2) -> Vector2:
 
 func _on_resized() -> void:
 	_cancel_grid_pointer()
+	if _camera_ready and _camera_view_size.x > 0.0 and _camera_view_size.y > 0.0:
+		var offset: Vector2 = (size - _camera_view_size) * 0.5
+		_grid_camera += offset
+		_camera_target += offset
+	_camera_view_size = size
 	if not _camera_ready:
 		fit_map.call_deferred()
 	queue_redraw()
@@ -100,6 +114,8 @@ func has_active_interaction() -> bool:
 
 func reset_camera() -> void:
 	_camera_ready = false
+	_last_tutorial_target = ""
+	_tutorial_focus_pending = not tutorial_target.is_empty()
 	_cancel_grid_pointer()
 
 
@@ -124,13 +140,19 @@ func fit_map() -> void:
 	if _places.size() <= 1:
 		for coordinate in _layout.get("expansion_cells", []):
 			bounds = bounds.merge(Rect2(Vector2(coordinate) * CELL_STEP, CELL_SIZE))
+	var target_rect: Rect2 = _tutorial_world_rect()
+	var fit_area := Rect2(Vector2.ZERO, size)
+	if target_rect.has_area():
+		bounds = bounds.merge(target_rect)
+		fit_area = Rect2(Vector2(8, 8), Vector2(maxf(1, size.x - 16), maxf(1, size.y - 43)))
 	bounds = bounds.grow(32)
-	_zoom_target = clampf(minf(size.x / bounds.size.x, size.y / bounds.size.y), MIN_ZOOM, 1.1)
-	_camera_target = size * 0.5 - bounds.get_center() * _zoom_target
+	_zoom_target = clampf(minf(fit_area.size.x / bounds.size.x, fit_area.size.y / bounds.size.y), MIN_ZOOM, 1.1)
+	_camera_target = fit_area.get_center() - bounds.get_center() * _zoom_target
 	if not _camera_ready:
 		_grid_zoom = _zoom_target
 		_grid_camera = _camera_target
 	_camera_ready = true
+	_camera_view_size = size
 	queue_redraw()
 
 
@@ -161,10 +183,60 @@ func _process(delta: float) -> void:
 		_cancel_grid_pointer()
 	if _pointer_down and _pointer_touch >= 0 and _room_drag_from >= 0 and not _pointer_moved and not _room_drag_active:
 		_hold_time += delta
+	if _tutorial_focus_pending and _camera_ready and not _fit_pending and not _pointer_down and _grid_touches.is_empty():
+		_reveal_tutorial_target()
 	var blend: float = 1.0 - exp(-18.0 * delta)
 	_grid_zoom = lerpf(_grid_zoom, _zoom_target, blend)
 	_grid_camera = _grid_camera.lerp(_camera_target, blend)
 	super._process(delta)
+
+
+func _tutorial_world_rect() -> Rect2:
+	if game == null or str(game.phase) != "prepare" or tutorial_target.is_empty():
+		return Rect2()
+	if tutorial_target.begins_with("excavate:"):
+		for coordinate in _layout.get("expansion_cells", []):
+			if tutorial_target == "excavate:%s" % str(coordinate):
+				return Rect2(Vector2(coordinate) * CELL_STEP, CELL_SIZE)
+	elif tutorial_target.begins_with("boundary:"):
+		for boundary in _layout.get("boundaries", []):
+			if tutorial_target == "boundary:" + str(boundary.id):
+				var gap: Rect2 = _boundary_gap(boundary)
+				var midpoint: Vector2 = (_slot_rect(int(boundary.a)).get_center() + _slot_rect(int(boundary.b)).get_center()) * 0.5
+				return gap.intersection(Rect2(midpoint - Vector2(12, 12), Vector2(24, 24)))
+	elif tutorial_slot >= 0 and tutorial_target == "slot:%d" % tutorial_slot and _places.has(tutorial_slot):
+		return _place_rect(_places[tutorial_slot])
+	return Rect2()
+
+
+func _reveal_tutorial_target() -> void:
+	_tutorial_focus_pending = false
+	var target_rect: Rect2 = _tutorial_world_rect()
+	if not target_rect.has_area() or size.x <= 1.0 or size.y <= 1.0:
+		return
+	# The bottom field hint must not cover the teaching target. This runs once
+	# per guide target; ordinary refreshes and manual pan keep their camera.
+	var usable := Rect2(Vector2(8, 8), Vector2(maxf(1, size.x - 16), maxf(1, size.y - 43)))
+	var shown := Rect2(_camera_target + target_rect.position * _zoom_target, target_rect.size * _zoom_target)
+	if usable.encloses(shown):
+		return
+	var fit_zoom: float = minf(usable.size.x / target_rect.size.x, usable.size.y / target_rect.size.y)
+	_zoom_target = clampf(minf(_zoom_target, fit_zoom), MIN_ZOOM, MAX_ZOOM)
+	_camera_target = usable.get_center() - target_rect.get_center() * _zoom_target
+
+
+func _draw_tutorial_target() -> void:
+	if compact and tutorial_target.begins_with("boundary:"):
+		return # The screen-sized handle below carries the highlight.
+	var target_rect: Rect2 = _tutorial_world_rect()
+	if not target_rect.has_area():
+		return
+	var shown := Rect2(_grid_camera + target_rect.position * _grid_zoom, target_rect.size * _grid_zoom)
+	# Draw inside the exact target. No Control or hit area is added over neighbours.
+	draw_rect(shown.grow(-1), GOLD, false, 2.0)
+	var marker: float = minf(5.0, minf(shown.size.x, shown.size.y) * 0.2)
+	var point := Vector2(shown.get_center().x, shown.position.y + marker)
+	draw_colored_polygon(PackedVector2Array([point + Vector2(-marker, 0), point + Vector2(marker, 0), point + Vector2(0, marker)]), GOLD)
 
 
 func _place_rect(place: Dictionary) -> Rect2:
@@ -282,14 +354,16 @@ func _draw() -> void:
 			var rect := Rect2(Vector2(coordinate) * CELL_STEP, CELL_SIZE)
 			if not visible.intersects(rect):
 				continue
-			draw_rect(rect.grow(-3), Color(TEAL, 0.45), false, 1.5)
-			_center_text("+", rect.get_center() + Vector2(0, -3), 28, TEAL)
-			_center_text("%d зол." % game.grid_expansion_cost(), rect.get_center() + Vector2(0, 24), 13, MUTED)
+			var tint: Color = GOLD if tutorial_target == "excavate:%s" % str(coordinate) else TEAL
+			draw_rect(rect.grow(-3), Color(tint, 0.45), false, 1.5)
+			if not compact:
+				_center_text("+", rect.get_center() + Vector2(0, -3), 28, tint)
+				_center_text("%d зол." % game.grid_expansion_cost(), rect.get_center() + Vector2(0, 24), 13, MUTED)
 	for place in _places.values():
 		if visible.intersects(_place_rect(place)):
 			_draw_place(place)
 	# Wall handles are drawn over cell edges, but never over room content.
-	if str(game.phase) == "prepare":
+	if str(game.phase) == "prepare" and not compact:
 		for boundary in _layout.get("boundaries", []):
 			var midpoint: Vector2 = (_slot_rect(int(boundary.a)).get_center() + _slot_rect(int(boundary.b)).get_center()) * 0.5
 			var tint: Color = TEAL if bool(boundary.open) else CORAL
@@ -304,6 +378,10 @@ func _draw() -> void:
 	_draw_event_feedback()
 	_draw_vampire_flights()
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	if compact and str(game.phase) == "prepare":
+		_draw_touch_excavation_labels()
+		_draw_touch_boundary_handles()
+	_draw_tutorial_target()
 	_draw_room_drag()
 	if str(game.phase) in ["raid", "camp"]:
 		var carried: int = int(_layout.get("carried_gold", 0))
@@ -313,8 +391,41 @@ func _draw() -> void:
 		_text(travelling, Vector2(12, 20), 12, GOLD)
 	draw_rect(Rect2(0, size.y - 27, size.x, 27), Color(0.06, 0.09, 0.11, 0.94))
 	var hint: String = "Зажмите комнату — перенос / обмен · колесо — масштаб" if not compact else "Зажмите комнату — перенос · щипок — масштаб"
+	if not tutorial_target.is_empty():
+		hint = "Следуйте подсветке · щипок — масштаб" if compact else "Следуйте подсветке · колесо — масштаб"
 	_text(hint, Vector2(12, size.y - 12), 11, Color(MUTED, 0.8))
 	_text("%d%%" % roundi(_grid_zoom * 100), Vector2(size.x - 48, size.y - 12), 11, GOLD)
+
+
+func _boundary_center(boundary: Dictionary) -> Vector2:
+	return (_slot_rect(int(boundary.a)).get_center() + _slot_rect(int(boundary.b)).get_center()) * 0.5
+
+
+func _draw_touch_excavation_labels() -> void:
+	var visible := Rect2(Vector2.ZERO, size)
+	var price: String = "%d зол." % game.grid_expansion_cost()
+	for coordinate in _layout.get("expansion_cells", []):
+		var world_center: Vector2 = Vector2(coordinate) * CELL_STEP + CELL_SIZE * 0.5
+		var center: Vector2 = _grid_camera + world_center * _grid_zoom
+		if not visible.has_point(center):
+			continue
+		var tint: Color = GOLD if tutorial_target == "excavate:%s" % str(coordinate) else TEAL
+		_center_text("+", center, 20, tint)
+		_center_text(price, center + Vector2(0, 13), 10, CREAM)
+
+
+func _draw_touch_boundary_handles() -> void:
+	var visible := Rect2(Vector2.ZERO, size).grow(12.0)
+	for boundary in _layout.get("boundaries", []):
+		var center: Vector2 = _grid_camera + _boundary_center(boundary) * _grid_zoom
+		if not visible.has_point(center):
+			continue
+		var tint: Color = TEAL if bool(boundary.open) else CORAL
+		if tutorial_target == "boundary:" + str(boundary.id):
+			tint = GOLD
+		draw_circle(center, 11.0, Color("111c22"))
+		draw_arc(center, 11.0, 0.0, TAU, 24, tint, 1.5, true)
+		_center_text("·" if bool(boundary.open) else "×", center + Vector2(0, 5), 17, tint)
 
 
 func _draw_boundary(boundary: Dictionary) -> void:
@@ -644,30 +755,39 @@ func _draw_grid_party() -> void:
 
 func _hit(at: Vector2) -> Dictionary:
 	var world: Vector2 = (at - _grid_camera) / _grid_zoom
-	# Room interiors always own their press, including at the smallest zoom.
-	# Expanded boundary targets are clipped to the actual inter-room gap below.
+	var preparing: bool = game != null and str(game.phase) == "prepare"
+	# A phone's visible wall handles have a fixed hit area. During a room drop,
+	# the room beneath the handle remains the destination.
+	if preparing and compact and not _room_drag_active:
+		var handle: Dictionary = _boundary_hit(at, world, true)
+		if not handle.is_empty():
+			return handle
 	for place in _places.values():
 		if _place_rect(place).has_point(world):
 			return {"kind": "slot", "slot": int(place.slot), "key": "s:%d" % int(place.slot)}
-	if game != null and str(game.phase) == "prepare":
-		var best: Dictionary = {}
-		var best_distance: float = 22.0 if compact or _pointer_touch >= 0 or not _grid_touches.is_empty() else 14.0
-		var canvas: Transform2D = get_global_transform_with_canvas()
-		var pointer: Vector2 = canvas * at
-		for boundary in _layout.get("boundaries", []):
-			if not _boundary_gap(boundary).has_point(world):
-				continue
-			var middle: Vector2 = (_slot_rect(int(boundary.a)).get_center() + _slot_rect(int(boundary.b)).get_center()) * 0.5
-			var distance: float = pointer.distance_to(canvas * (_grid_camera + middle * _grid_zoom))
-			if distance < best_distance:
-				best_distance = distance
-				best = {"kind": "boundary", "id": str(boundary.id), "key": "b:" + str(boundary.id)}
-		if not best.is_empty():
-			return best
+	if preparing:
+		if not compact:
+			var handle: Dictionary = _boundary_hit(at, world, false)
+			if not handle.is_empty():
+				return handle
 		for coordinate in _layout.get("expansion_cells", []):
 			if Rect2(Vector2(coordinate) * CELL_STEP, CELL_SIZE).has_point(world):
 				return {"kind": "expansion", "position": coordinate, "key": "e:%s" % str(coordinate)}
 	return {}
+
+
+func _boundary_hit(at: Vector2, world: Vector2, wide: bool) -> Dictionary:
+	var nearest: Dictionary = {}
+	var distance_limit: float = TOUCH_BOUNDARY_RADIUS if wide else 14.0
+	for boundary in _layout.get("boundaries", []):
+		if not wide and not _boundary_gap(boundary).has_point(world):
+			continue
+		var center: Vector2 = _grid_camera + _boundary_center(boundary) * _grid_zoom
+		var distance: float = at.distance_to(center)
+		if distance < distance_limit:
+			distance_limit = distance
+			nearest = {"kind": "boundary", "id": str(boundary.id), "key": "b:" + str(boundary.id)}
+	return nearest
 
 
 func _boundary_gap(boundary: Dictionary) -> Rect2:
@@ -697,23 +817,23 @@ func _get_tooltip(at_position: Vector2) -> String:
 	if hit.is_empty():
 		return ""
 	if str(hit.kind) == "boundary":
-		return "Нажмите границу, чтобы открыть проход или возвести стену."
+		return Language.text("Нажмите границу, чтобы открыть проход или возвести стену.")
 	if str(hit.kind) == "expansion":
-		return "Раскопать клетку · %d зол." % game.grid_expansion_cost()
+		return Language.text("Раскопать клетку · %d зол." % game.grid_expansion_cost())
 	var index: int = int(hit.slot)
 	var place: Dictionary = _places.get(index, {})
 	if str(place.get("type", "")) == "treasury":
-		return "Казна: при первом ограблении герои забирают половину текущего золота. Добычу можно отбить на обратном пути."
+		return Language.text("Казна: при первом ограблении герои забирают половину текущего золота. Добычу можно отбить на обратном пути.")
 	if str(place.get("type", "")) == "throne":
-		return "Трон Лорда. Его гибель завершает забег."
+		return Language.text("Трон Лорда. Его гибель завершает забег.")
 	if index < 0:
-		return "Вход героев и выход с добычей."
+		return Language.text("Вход героев и выход с добычей.")
 	if _reserved_snapshot.has(index):
 		var owner: int = int(_reserved_snapshot[index])
-		return "Пасть Живой комнаты: помогает центру в общем бою, примерно 30% его урона. Отдельного боя здесь нет. После гибели сердца пасть исчезает. Центр: %s." % str(_places.get(owner, {}).get("position", ""))
+		return Language.text("Пасть Живой комнаты: помогает центру в общем бою, примерно 30% его урона. Отдельного боя здесь нет. После гибели сердца пасть исчезает. Центр: %s." % str(_places.get(owner, {}).get("position", "")))
 	if game.rooms[index].is_empty():
-		return "Пустая клетка. Выберите комнату в магазине или перенесите сюда существующую."
-	return super._get_tooltip(at_position)
+		return Language.text("Пустая клетка. Выберите комнату в магазине или перенесите сюда существующую.")
+	return Language.text(super._get_tooltip(at_position))
 
 
 func _input(event: InputEvent) -> void:

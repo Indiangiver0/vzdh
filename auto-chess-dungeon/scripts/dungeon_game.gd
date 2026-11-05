@@ -232,10 +232,6 @@ func begin_tutorial() -> void:
 	# A disposable run: the caller must exclude it from permanent rewards.
 	restart(7102026)
 	tutorial_run = true
-	labyrinth_enabled = false
-	rooms.clear()
-	for _slot in range(SLOTS_PER_FLOOR):
-		rooms.append({})
 	unlocked_paths.clear()
 	gold = 90
 	configure_lord("fallen_knight")
@@ -2524,6 +2520,11 @@ func _finish_wave(outcome: String = "defended") -> void:
 		_log("Отряд отступил, добыча возвращена." if int(report.get("escaped_gold", 0)) == 0 else "Отряд скрылся с добычей: унесено %d золота." % int(report.escaped_gold))
 		return
 	last_defended_wave = wave
+	if tutorial_run and wave == 1 and run_souls == 0:
+		# Guarantee the first purchase in the lesson even if the soul roll failed.
+		run_souls = 1
+		report.souls = 1
+		run_souls_changed.emit(run_souls, 1)
 	if not defended_waves.has(wave):
 		defended_waves.append(wave)
 	if not elite_id.is_empty() and not defeated_special_waves.has(wave):
@@ -2554,18 +2555,6 @@ func _finish_wave(outcome: String = "defended") -> void:
 	_grant_lord_levels()
 	_pending_blueprint = wave % BLUEPRINT_WAVE_INTERVAL == 0 and not _available_blueprint_ids().is_empty()
 	_pending_relic = wave % RELIC_WAVE_INTERVAL == 0 and not _available_relic_ids().is_empty()
-	if tutorial_run and wave == 1:
-		if int(lord.level) < 2:
-			lord.level = 2
-			_recalculate_lord()
-		var tutorial_souls: int = maxi(0, 3 - run_souls)
-		run_souls += tutorial_souls
-		report.souls = int(report.get("souls", 0)) + tutorial_souls
-		report.tutorial_souls = tutorial_souls
-		run_souls_changed.emit(run_souls, tutorial_souls)
-		_pending_blueprint = true
-		_pending_relic = true
-		_log("Учебные награды: души, чертёж и реликвия. Они действуют только в тренировке.")
 	phase = "result"
 	_log("Волна %d отражена! +4 золота за защиту." % wave)
 

@@ -3,6 +3,7 @@ extends PanelContainer
 signal purchase_requested(id: String)
 signal close_requested
 const SkillMap = preload("res://scripts/run_skill_map.gd")
+const Language = preload("res://scripts/game_language.gd")
 const PAPER = Color("#ede5d5")
 const MUTED = Color("#a0acbb")
 const GOLD = Color("#dfba70")
@@ -77,7 +78,7 @@ func _ready() -> void:
 	_toolbar = toolbar
 	_root_box.add_child(toolbar)
 	_search = LineEdit.new()
-	_search.placeholder_text = "Найти навык…"
+	_search.placeholder_text = Language.text("Найти навык…")
 	_search.custom_minimum_size.x = 110
 	_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_search.clear_button_enabled = true
@@ -114,7 +115,7 @@ func _ready() -> void:
 	_navigation.add_child(_zoom_controls)
 	var zoom_out: Button = _button("−", func(): map.zoom_by(1.0 / 1.25))
 	zoom_out.custom_minimum_size.x = 36
-	zoom_out.tooltip_text = "Отдалить карту"
+	zoom_out.tooltip_text = Language.text("Отдалить карту")
 	_zoom_controls.add_child(zoom_out)
 	_zoom_slider = HSlider.new()
 	_zoom_slider.min_value = 0.0
@@ -123,13 +124,13 @@ func _ready() -> void:
 	_zoom_slider.custom_minimum_size = Vector2(64, 36)
 	_zoom_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_zoom_slider.focus_mode = Control.FOCUS_ALL
-	_zoom_slider.tooltip_text = "Масштаб карты: перетащите ползунок или нажмите ← / →"
+	_zoom_slider.tooltip_text = Language.text("Масштаб карты: перетащите ползунок или нажмите ← / →")
 	_zoom_slider.value_changed.connect(_zoom_slider_changed)
 	_zoom_slider.gui_input.connect(_zoom_slider_input)
 	_zoom_controls.add_child(_zoom_slider)
 	var zoom_in: Button = _button("+", func(): map.zoom_by(1.25))
 	zoom_in.custom_minimum_size.x = 36
-	zoom_in.tooltip_text = "Приблизить карту"
+	zoom_in.tooltip_text = Language.text("Приблизить карту")
 	_zoom_controls.add_child(zoom_in)
 	_zoom = _label("", 12, MUTED)
 	_zoom.custom_minimum_size.x = 54
@@ -140,7 +141,7 @@ func _ready() -> void:
 	_navigation.add_child(_camera_actions)
 	_camera_actions.add_child(_button("Центр", func(): map.reset_center()))
 	_fit_button = _button("Всё дерево", func(): map.fit_all())
-	_fit_button.tooltip_text = "Показать всё дерево"
+	_fit_button.tooltip_text = Language.text("Показать всё дерево")
 	_camera_actions.add_child(_fit_button)
 	_camera_changed(map.zoom)
 	map_frame.resized.connect(_layout_navigation)
@@ -184,7 +185,11 @@ func configure(nodes: Array[Dictionary], souls: int, phase: String, selected: St
 	_nodes = nodes.duplicate(true)
 	_by_id.clear()
 	for node in _nodes:
-		_by_id[str(node.id)] = node
+		var id: String = str(node.id)
+		node.name = Language.skill_name(id, str(node.get("name", id)))
+		node.description = Language.skill_description(id, str(node.get("description", node.get("effect", ""))))
+		node.reason = Language.text(str(node.get("reason", "")))
+		_by_id[id] = node
 	_souls = souls
 	_phase = phase
 	_can_purchase = phase == "prepare"
@@ -194,9 +199,11 @@ func configure(nodes: Array[Dictionary], souls: int, phase: String, selected: St
 		_refresh()
 
 func configure_drop_info(ordinary: Dictionary, special: Dictionary, failures: int) -> void:
-	_drop_info = "Текущие шансы:\nОбычный герой: %d%% — 0, %d%% — 1 душа.\nОсобый герой: %d%% — 0, %d%% — 1, %d%% — 2 души.\nНулевых наград подряд: %d / 2." % [roundi(float(ordinary.get("0", 0)) * 100), roundi(float(ordinary.get("1", 0)) * 100), roundi(float(special.get("0", 0)) * 100), roundi(float(special.get("1", 0)) * 100), roundi(float(special.get("2", 0)) * 100), failures]
+	var english: bool = Language.is_english()
+	var template: String = "Soul drop chances:\nRegular hero: %d%% for 0, %d%% for 1 soul.\nSpecial hero: %d%% for 0, %d%% for 1, %d%% for 2 souls.\nConsecutive misses: %d / 2." if english else "Текущие шансы:\nОбычный герой: %d%% — 0, %d%% — 1 душа.\nОсобый герой: %d%% — 0, %d%% — 1, %d%% — 2 души.\nНулевых наград подряд: %d / 2."
+	_drop_info = template % [roundi(float(ordinary.get("0", 0)) * 100), roundi(float(ordinary.get("1", 0)) * 100), roundi(float(special.get("0", 0)) * 100), roundi(float(special.get("1", 0)) * 100), roundi(float(special.get("2", 0)) * 100), failures]
 	if bool(ordinary.get("guaranteed", false)):
-		_drop_info += " Следующая душа гарантирована."
+		_drop_info += " Your next soul is guaranteed." if english else " Следующая душа гарантирована."
 	_wallet.tooltip_text = _drop_info
 	_show_details()
 
@@ -210,7 +217,7 @@ func _layout() -> void:
 	_heading.visible = size.x >= 380
 	map.custom_minimum_size.y = 60 if size.y < 300 else 130
 	_detail_toggle.visible = short_portrait
-	_detail_toggle.text = "Карта" if _details_only else "Описание"
+	_detail_toggle.text = Language.text("Карта" if _details_only else "Описание")
 	_map_frame.visible = not short_portrait or not _details_only
 	_sidebar.visible = not short_portrait or _details_only
 	_body.vertical = portrait
@@ -229,7 +236,7 @@ func _layout() -> void:
 func _layout_navigation() -> void:
 	if not is_instance_valid(_navigation):
 		return
-	_fit_button.text = "Всё" if _map_frame.size.x < 460 else "Всё дерево"
+	_fit_button.text = Language.text("Всё" if _map_frame.size.x < 460 else "Всё дерево")
 	var row_width: float = _zoom_controls.get_combined_minimum_size().x + _camera_actions.get_combined_minimum_size().x + float(_navigation.get_theme_constant("separation"))
 	_navigation.vertical = _map_frame.size.x < row_width + 24.0
 
@@ -270,14 +277,18 @@ func _toggle_details() -> void:
 	_details_only = not _details_only
 	_layout()
 
+func show_node_details() -> void:
+	_details_only = true
+	_layout()
+
 func _refresh() -> void:
 	var learned: int = 0
 	for node in _nodes:
 		if bool(node.get("learned", false)):
 			learned += 1
-	_wallet.text = "Души: %d" % _souls
-	_wallet.tooltip_text = "Души и навыки действуют только в текущем забеге. Печати Владыки сохраняются отдельно."
-	_hint.text = "%d / %d изучено · до конца забега · %s" % [learned, _nodes.size(), "покупка один раз за души" if _can_purchase else "просмотр; покупки между волнами"]
+	_wallet.text = Language.format_text("Души: %d", [_souls])
+	_wallet.tooltip_text = Language.text("Души и навыки действуют только в текущем забеге. Печати Владыки сохраняются отдельно.")
+	_hint.text = Language.format_text("%d / %d изучено · до конца забега · %s", [learned, _nodes.size(), Language.text("покупка один раз за души" if _can_purchase else "просмотр; покупки между волнами")])
 	if _phase == "raid":
 		_hint.text += " · бой на паузе"
 	map.configure(_nodes, selected_id)
@@ -297,16 +308,18 @@ func _show_details() -> void:
 		child.queue_free()
 	_detail_scroll.scroll_vertical = 0
 	if selected_id == "root" or not _by_id.has(selected_id):
-		_category.text = "ОБЩЕЕ ДЕРЕВО"
-		_title.text = "Владыка подземелья"
-		_description.text = "Шесть направлений можно развивать параллельно. Выберите круглый узел, чтобы увидеть его эффект и цену.\n\nПеретаскивайте карту мышью или пальцем. Колесо, ползунок и жест двумя пальцами меняют масштаб. Мини-карта возвращает к нужному участку.\n\nКаждый навык покупается один раз. Души и изученные навыки сбросятся после забега."
+		_category.text = Language.text("ОБЩЕЕ ДЕРЕВО")
+		_title.text = Language.text("Владыка подземелья")
+		_description.text = "Choose a round node to see its effect and price. Drag the map to pan. Use the wheel, slider, or pinch to zoom.\n\nEach skill can be bought once per run. Souls and skills reset after the run." if Language.is_english() else "Шесть направлений можно развивать параллельно. Выберите круглый узел, чтобы увидеть его эффект и цену.\n\nПеретаскивайте карту мышью или пальцем. Колесо, ползунок и жест двумя пальцами меняют масштаб. Мини-карта возвращает к нужному участку.\n\nКаждый навык покупается один раз. Души и изученные навыки сбросятся после забега."
 		if not _drop_info.is_empty():
 			_description.text += "\n\n" + _drop_info
-		_buy.text = "Выберите навык на карте"
+		_buy.text = Language.text("Выберите навык на карте")
 		_buy.disabled = true
 		return
 	var node: Dictionary = _by_id[selected_id]
-	_category.text = str(CATEGORY_NAMES.get(str(node.get("category", "shared")), "Общие навыки")).to_upper() + " · %d душ" % int(node.get("cost", 0))
+	var cost: int = int(node.get("cost", 0))
+	var price: String = Language.format_text("%d душа" if cost == 1 else "%d души" if cost in [2, 3, 4] else "%d душ", [cost])
+	_category.text = Language.text(str(CATEGORY_NAMES.get(str(node.get("category", "shared")), "Общие навыки"))).to_upper() + " · " + price
 	_title.text = str(node.get("name", selected_id))
 	_description.text = str(node.get("description", node.get("effect", "")))
 	var parents: Array = node.get("parents", [])
@@ -326,18 +339,18 @@ func _show_details() -> void:
 	var required_lord: String = str(node.get("required_lord", ""))
 	if not required_lord.is_empty():
 		var names := {"fallen_knight": "Падший рыцарь", "necromancer": "Некромант", "plague_alchemist": "Чумной алхимик"}
-		_requires.add_child(_label("Владыка: " + str(names.get(required_lord, required_lord)), 12, GOLD))
+		_requires.add_child(_label(Language.format_text("Владыка: %s", [Language.text(str(names.get(required_lord, required_lord)))]), 12, GOLD))
 	var learned: bool = bool(node.get("learned", false))
 	var available: bool = bool(node.get("available", node.get("can_buy", false)))
 	_buy.disabled = learned or not available or not _can_purchase
 	if learned:
-		_buy.text = "Изучено · до конца забега"
+		_buy.text = Language.text("Изучено · до конца забега")
 	elif not _can_purchase:
-		_buy.text = "Покупки между волнами"
+		_buy.text = Language.text("Покупки между волнами")
 	elif available:
-		_buy.text = "Изучить · %d душ" % int(node.cost)
+		_buy.text = Language.format_text("Изучить · %s", [price])
 	else:
-		_buy.text = str(node.get("reason", "Условия не выполнены"))
+		_buy.text = Language.text(str(node.get("reason", "Условия не выполнены")))
 	_buy.tooltip_text = str(node.get("reason", ""))
 
 func _focus(id: String) -> void:
@@ -357,9 +370,9 @@ func _search_changed(query: String) -> void:
 	_picker.disabled = _picker.item_count == 0
 	if _picker.item_count > 0:
 		_picker.select(-1)
-		_picker.text = "Найдено: %d" % _picker.item_count
+		_picker.text = Language.format_text("Найдено: %d", [_picker.item_count])
 	else:
-		_picker.text = "Нет совпадений"
+		_picker.text = Language.text("Нет совпадений")
 
 func _pick_result(index: int) -> void:
 	if index >= 0 and index < _picker.item_count:
@@ -367,14 +380,14 @@ func _pick_result(index: int) -> void:
 
 func _button(text: String, action: Callable) -> Button:
 	var button := Button.new()
-	button.text = text
+	button.text = Language.text(text)
 	button.custom_minimum_size.y = 36
 	button.pressed.connect(action)
 	return button
 
 func _label(text: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()
-	label.text = text
+	label.text = Language.text(text)
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
 	return label
