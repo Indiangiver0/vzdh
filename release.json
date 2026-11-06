@@ -1,14 +1,14 @@
 {
-  "version": "2.2.2",
+  "version": "2.2.3",
   "name": "Крепость",
-  "source_commit": "7a1ebe84649c680b9188b6894df579755bc71031",
-  "source_tag": "v2.2.2",
+  "source_commit": "cdc116010c24a58d29ddb5488430f4aabc2e8228",
+  "source_tag": "v2.2.3",
   "engine": "4.7.2.stable.official.ed1daf0bf",
-  "engine_runtime_source": "7d72b906407c7423e5cc864784173625bfb14b19",
-  "built_at_utc": "2026-11-05T09:11:38.612709+00:00",
-  "pack": "game-v2.2.2-7a1ebe8.pck",
-  "pack_bytes": 84924724,
-  "pack_sha256": "851d3ce1c4dc42dd4e0d351e1069550077893f5a3f1d06dae80221b89b967196",
+  "engine_runtime_source": "970bd2f0b50b6b832ab345a0fa143fb4ba7017c7",
+  "built_at_utc": "2026-11-06T13:17:53.515607+00:00",
+  "pack": "game-v2.2.3-cdc1160.pck",
+  "pack_bytes": 84986252,
+  "pack_sha256": "93a9cb502b48ffc150bdd81c78c6bad5913cea47069dbe89ea65557e90e6fe1c",
   "previous_version_url": "https://indiangiver0.github.io/vzdh/versions/2.1.1/",
   "verification": {
     "build_steps": [
