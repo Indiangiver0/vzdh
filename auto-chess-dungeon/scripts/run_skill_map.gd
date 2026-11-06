@@ -326,7 +326,8 @@ func _draw() -> void:
 			_draw_caption(pos + Vector2(0, radius + 16), str(node.get("name", id)), PAPER if selected else accent, caption_alpha)
 	_draw_minimap()
 
-func _draw_caption(pos: Vector2, text: String, color: Color, opacity: float = 1.0) -> void:
+func _draw_caption(pos: Vector2, source: String, color: Color, opacity: float = 1.0) -> void:
+	var text: String = load("res://scripts/game_language.gd").text(source)
 	var font: Font = get_theme_default_font()
 	var width: float = minf(210, font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x)
 	var background: Color = INK

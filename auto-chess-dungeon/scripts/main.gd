@@ -105,6 +105,7 @@ func _ready() -> void:
 	get_window().title = "No Hero Returns · Лабиринт · " + str(ProjectSettings.get_setting("application/config/version", ""))
 	_apply_screen_layout()
 	get_window().size_changed.connect(_request_screen_layout)
+	get_tree().node_added.connect(_localize_new_control)
 	_load_local()
 	game.unlocked_paths.assign(profile.get("unlocked_paths", []))
 	game.restart()
@@ -764,7 +765,7 @@ func _equipment_row(parent: Control, hero: Dictionary) -> void:
 		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		_bind_live(button, "text", func():
 			var item: Dictionary = _hero_item(hero, slot)
-			return ("• " if bool(item.get("special", false)) else "") + str(item.get("name", label)))
+			return ("• " if bool(item.get("special", false)) else "") + _ui_text(str(item.get("name", label))))
 		_bind_live(button, "tooltip_text", func():
 			var item: Dictionary = _hero_item(hero, slot)
 			return _ui_text(str(item.get("name", label)) + "\n" + str(item.get("description", "")) + ("\nВременно отключено" if not bool(item.get("active", true)) else "")))
@@ -1309,14 +1310,14 @@ func _shop_panel(parent: Control = null) -> void:
 func _shop_description(definition: Dictionary) -> String:
 	var description: String = str(definition.get("description", ""))
 	if _uses_labyrinth() and str(definition.get("kind", "monster")) != "monster":
-		return description.get_slice(". ", 0) + ". Повторяется при каждом проходе. Следопыт: одна попытка за волну, 50% полностью отключить; при провале полный эффект. Арсенал расходует запас болтов."
+		return GameLanguage.text(description).get_slice(". ", 0) + ". " + GameLanguage.text("Повторяется при каждом проходе. Следопыт: одна попытка за волну, 50% полностью отключить; при провале полный эффект. Арсенал расходует запас болтов.")
 	return description
 
 func _room_role(definition: Dictionary) -> String:
 	var role: String = str(definition.get("role", ""))
 	if not role.is_empty():
 		return role
-	return str(definition.get("description", "")).get_slice(". ", 0)
+	return GameLanguage.text(str(definition.get("description", ""))).get_slice(". ", 0)
 
 func _footer() -> void:
 	if game.phase == "camp":
@@ -2270,6 +2271,21 @@ func _vbox(parent: Control, spacing: int = 8) -> VBoxContainer:
 	parent.add_child(box)
 	return box
 
+## Some controls assign tooltip or button text directly, without going through _ui_text.
+func _localize_new_control(node: Node) -> void:
+	if GameLanguage.is_english() and node is Control:
+		# Deferred: callers often fill the text right after add_child.
+		_apply_control_language.call_deferred(node)
+
+func _apply_control_language(node: Node) -> void:
+	if not is_instance_valid(node):
+		return
+	var control: Control = node
+	if not control.tooltip_text.is_empty():
+		control.tooltip_text = _ui_text(control.tooltip_text)
+	if control is Label or control is BaseButton and "text" in control:
+		control.set("text", _ui_text(str(control.get("text"))))
+
 func _ui_text(value: String) -> String:
 	value = GameLanguage.text(value)
 	var replacements: Dictionary = {
@@ -3001,7 +3017,7 @@ func _fill_showcase(target) -> void:
 	target.gold = 27
 func _matchup_text(stats: Dictionary) -> String:
 	if _uses_labyrinth() and str(stats.get("kind", "monster")) != "monster":
-		return str(stats.get("role", "")) + " При каждом проходе срабатывает снова. Следопыт тратит инструмент: 50% отключить до конца волны; при провале полный эффект. Арсеналу нужны оставшиеся болты."
+		return GameLanguage.text(str(stats.get("role", ""))) + GameLanguage.text(" При каждом проходе срабатывает снова. Следопыт тратит инструмент: 50% отключить до конца волны; при провале полный эффект. Арсеналу нужны оставшиеся болты.")
 	var path: Dictionary = RoomEvolutions.path(str(stats.get("evolution_path", "")))
 	if not path.is_empty():
 		return str(path.get("counter", ""))
@@ -3133,7 +3149,7 @@ func _show_room_tree(index: int, focused_id: String = "") -> void:
 	if not status.is_empty():
 		selected_title += " · " + status
 	_tree_details(body, footer, selected_title, description, change)
-	var matchups = _label(_matchup_text(after if not after.is_empty() else stats).get_slice(". ", 0), 12, MUTED, true)
+	var matchups = _label(GameLanguage.text(_matchup_text(after if not after.is_empty() else stats)).get_slice(". ", 0), 12, MUTED, true)
 	body.add_child(matchups)
 	var pending: bool = _has_pending_evolution(index)
 	if pending:

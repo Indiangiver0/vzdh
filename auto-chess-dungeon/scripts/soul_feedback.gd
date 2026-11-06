@@ -36,7 +36,7 @@ func _draw() -> void:
 				var direction := Vector2.from_angle(i * TAU / 5.0 - PI * 0.5)
 				var point: Vector2 = start + direction * (4 + t * 30)
 				draw_line(point - direction * 3, point + direction * 3, Color(0.53, 0.59, 0.65, alpha), 2, true)
-			draw_string(font, start + Vector2(-43, -20 - t * 10), "Душа рассыпалась", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.65, 0.70, 0.75, alpha))
+			draw_string(font, start + Vector2(-43, -20 - t * 10), load("res://scripts/game_language.gd").text("Душа рассыпалась"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.65, 0.70, 0.75, alpha))
 			continue
 		var eased: float = 1.0 - pow(1.0 - t, 2)
 		var point: Vector2 = start.lerp(flight.to, eased) + Vector2(0, -sin(t * PI) * 55)

@@ -3,6 +3,8 @@ extends RefCounted
 ## Exact phrases and a finite set of anchored printf templates; unknown text is kept.
 
 const SkillEnglish = preload("res://scripts/run_skill_english.gd")
+const MoreEnglish = preload("res://scripts/game_language_more.gd")
+const RoomEnglish = preload("res://scripts/game_language_rooms.gd")
 
 static var _locale: String = "ru"
 static var _ready_catalog: bool = false
@@ -64,14 +66,39 @@ static func _translate(value: String, depth: int) -> String:
 		for index in range(lines.size()):
 			lines[index] = _translate(lines[index], depth + 1)
 		return "\n".join(lines)
+	# Fragments are glued into longer lines at runtime: translate each complete piece.
+	if depth < 4 and _has_cyrillic(value):
+		var trimmed: String = value.strip_edges()
+		if trimmed != value and not trimmed.is_empty():
+			var start: int = value.find(trimmed)
+			return value.substr(0, start) + _translate(trimmed, depth + 1) + value.substr(start + trimmed.length())
+		for marker in ["+ ", "- ", "* "]:
+			if value.begins_with(marker):
+				return marker + _translate(value.substr(marker.length()), depth + 1)
+		for separator in [" · ", ". "]:
+			if value.contains(separator):
+				var pieces: PackedStringArray = value.split(separator)
+				for index in range(pieces.size()):
+					var closed: bool = separator == ". " and index < pieces.size() - 1
+					var piece: String = _translate(pieces[index] + ("." if closed else ""), depth + 1)
+					pieces[index] = piece.trim_suffix(".") if closed else piece
+				return separator.join(pieces)
 	return value
+
+
+static func _has_cyrillic(value: String) -> bool:
+	for character in value:
+		var code: int = character.unicode_at(0)
+		if code >= 0x0400 and code <= 0x04FF:
+			return true
+	return false
 
 
 static func _prepare_catalog() -> void:
 	if _ready_catalog:
 		return
 	_ready_catalog = true
-	for catalog in [UI, TEMPLATES, CONTENT, ERRORS]:
+	for catalog in [UI, TEMPLATES, CONTENT, ERRORS, MoreEnglish.ENTRIES, RoomEnglish.ENTRIES]:
 		for source in catalog:
 			var translated: String = str(catalog[source])
 			_phrases[str(source)] = translated
@@ -79,6 +106,13 @@ static func _prepare_catalog() -> void:
 			if not str(source).contains("%"):
 				_phrases[str(source).to_upper()] = translated.to_upper()
 				_phrases[_display_alias(str(source)).to_upper()] = _display_alias(translated).to_upper()
+	# Rules quote skill names by their Russian catalog name, for example "Learn first: %s."
+	var skills: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/run_skills.json"))
+	if skills is Dictionary:
+		for skill: Variant in skills.get("skills", []):
+			var id: String = str(skill.get("id", ""))
+			if SkillEnglish.ENTRIES.has(id) and not _phrases.has(str(skill.get("name", ""))):
+				_phrases[str(skill.get("name", ""))] = str(SkillEnglish.ENTRIES[id][0])
 	var tokens := RegEx.new()
 	tokens.compile("%(?:\\.[0-9]+)?[dfs]|%%")
 	for source in _phrases:
@@ -114,7 +148,9 @@ static func _prepare_catalog() -> void:
 			output += "%%" if token.get_string() == "%%" else "%s"
 			last = token.get_end()
 		output += translated.substr(last).replace("%", "%%")
-		_rules.append({"regex": regex, "prefix": prefix, "output": output, "strings": strings})
+		_rules.append({"regex": regex, "prefix": prefix, "output": output, "strings": strings, "weight": str(source).length()})
+	# "%s потерял добычу: возвращено %d" must win over the looser "%s: возвращено %d".
+	_rules.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.weight) > int(b.weight))
 
 
 static func _escape_regex(value: String) -> String:
@@ -441,8 +477,8 @@ const TEMPLATES: Dictionary = {
 	"БОСС-ВОЛНА! · %d · Клятва пяти": "BOSS WAVE! · %d · Oath of Five",
 	"Цена: %d зол. · зафиксирована на волну, без бонусов дохода": "Cost: %d gold · fixed for this wave, without income bonuses",
 	"%s · отряд: %d": "%s · party: %d",
-	"Следующая группа · %d чел.": "Next party · %d heroes",
-	"Группа в подземелье · %d чел.": "Party in the dungeon · %d heroes",
+	"Следующая группа · %d чел.": "Next party · heroes: %d",
+	"Группа в подземелье · %d чел.": "Party in the dungeon · heroes: %d",
 	"Уровень %d": "Level %d",
 	"%d/%d HP    Урон %d  ·  Броня %d": "%d/%d HP    Damage %d  ·  Armor %d",
 	"Уровень %d · мастерство %d / 5": "Level %d · mastery %d / 5",
