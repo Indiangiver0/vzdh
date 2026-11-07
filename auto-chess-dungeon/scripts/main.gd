@@ -102,7 +102,7 @@ var soul_feedback: Control
 var _pending_exit_result: bool = false
 
 func _ready() -> void:
-	get_window().title = "No Hero Returns · Лабиринт · " + str(ProjectSettings.get_setting("application/config/version", ""))
+	get_window().title = "No Hero Returns · " + str(ProjectSettings.get_setting("application/config/version", ""))
 	_apply_screen_layout()
 	get_window().size_changed.connect(_request_screen_layout)
 	get_tree().node_added.connect(_localize_new_control)
